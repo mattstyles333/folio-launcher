@@ -30,7 +30,7 @@ adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 | Gesture | What |
 |---|---|
 | Tap Search / swipe down / tap clock | Spotlight |
-| Drag the four icons up | App sheet — springs open, then scrolls. Recent / most used first, then A–Z. |
+| Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Plug in | Hairline around the clock fills with charge |

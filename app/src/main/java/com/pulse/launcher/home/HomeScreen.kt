@@ -6,21 +6,17 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
@@ -33,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,7 +41,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -92,9 +86,7 @@ fun HomeScreen(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
-    val pullAnim = remember { Animatable(0f) }
-    var dragging by remember { mutableStateOf(false) }
-    var rawPull by remember { mutableFloatStateOf(0f) }
+    val pull = remember { SheetPull() }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var pinSlot by remember { mutableIntStateOf(-1) }
@@ -104,7 +96,6 @@ fun HomeScreen(
     var revealOrigin by remember { mutableStateOf(Offset.Zero) }
     var revealTarget by remember { mutableStateOf<RingerVisual?>(null) }
     val revealProgress = remember { Animatable(0f) }
-    var sheetLocked by remember { mutableStateOf(false) }
 
     val look = lookOverride ?: state.mode
     val developing = revealTarget != null
@@ -120,18 +111,16 @@ fun HomeScreen(
         flashLook = false
     }
 
-    val pullPx = if (dragging) rawPull else pullAnim.value
-
     LaunchedEffect(idleEpoch) {
         if (idleEpoch == 0) return@LaunchedEffect
         searchOpen = false
         query = ""
         pinSlot = -1
-        dragging = false
         revealTarget = null
         revealProgress.snapTo(0f)
-        sheetLocked = false
-        pullAnim.animateTo(0f, sheetSpring())
+        pull.cancelSettle()
+        pull.locked = false
+        pull.px = 0f
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -143,24 +132,27 @@ fun HomeScreen(
         val maxSheetPx = with(density) { (maxHeight * 0.62f).toPx() }.coerceAtLeast(rowPx * 3.2f)
         val searchSlop = with(density) { 56.dp.toPx() }
 
-        fun settleSheet(from: Float = if (dragging) rawPull else pullAnim.value, velocityY: Float = 0f) {
-            scope.launch {
-                dragging = false
-                val start = from.coerceAtLeast(0f)
-                pullAnim.snapTo(start)
-                val pullVel = -velocityY
-                val open = if (kotlin.math.abs(pullVel) > 900f) {
-                    pullVel > 0f
-                } else {
-                    start > maxSheetPx * 0.22f
-                }
+        fun grabSheet() {
+            pull.cancelSettle()
+            pull.locked = false
+        }
+
+        fun settleSheet(velocityY: Float = 0f) {
+            pull.cancelSettle()
+            pull.settleJob = scope.launch {
+                val start = pull.px
+                val open = sheetShouldOpen(start, maxSheetPx, velocityY)
                 val target = if (open) maxSheetPx else 0f
-                pullAnim.animateTo(
+                animate(
+                    initialValue = start,
                     targetValue = target,
+                    initialVelocity = -velocityY,
                     animationSpec = sheetSpring(),
-                    initialVelocity = pullVel,
-                )
-                sheetLocked = open
+                ) { value, _ ->
+                    pull.px = value
+                }
+                pull.px = target
+                pull.locked = open
                 if (open) {
                     val tick = if (Build.VERSION.SDK_INT >= 34) {
                         HapticFeedbackConstants.GESTURE_START
@@ -173,14 +165,28 @@ fun HomeScreen(
         }
 
         val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0
+        fun sheetDrag(): Modifier = Modifier.pulseSheetPull(
+            enabled = gesturesEnabled,
+            pull = pull,
+            maxPx = maxSheetPx,
+            searchSlop = searchSlop,
+            onGrab = { grabSheet() },
+            onSettle = { settleSheet(it) },
+            onSwipeDownSearch = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                searchOpen = true
+            },
+        )
 
         fun collapse() {
-            val from = if (dragging) rawPull else pullAnim.value
-            dragging = false
-            sheetLocked = false
-            scope.launch {
-                pullAnim.snapTo(from)
-                pullAnim.animateTo(0f, sheetSpring())
+            grabSheet()
+            pull.settleJob = scope.launch {
+                val start = pull.px
+                animate(start, 0f, 0f, sheetSpring()) { value, _ ->
+                    pull.px = value
+                }
+                pull.px = 0f
+                pull.locked = false
             }
         }
 
@@ -189,7 +195,7 @@ fun HomeScreen(
             searchOpen = true
         }
 
-        BackHandler(enabled = searchOpen || pullPx > 4f || pinSlot >= 0) {
+        BackHandler(enabled = searchOpen || pull.locked || pinSlot >= 0) {
             when {
                 pinSlot >= 0 -> pinSlot = -1
                 searchOpen -> {
@@ -200,38 +206,6 @@ fun HomeScreen(
             }
         }
 
-        fun revealDrag(): Modifier = Modifier.pointerInput(gesturesEnabled, maxSheetPx) {
-            if (!gesturesEnabled) return@pointerInput
-            var downAccum = 0f
-            val tracker = VelocityTracker()
-            detectVerticalDragGestures(
-                onDragStart = {
-                    downAccum = 0f
-                    tracker.resetTracking()
-                    rawPull = pullAnim.value
-                    dragging = true
-                },
-                onVerticalDrag = { change, dy ->
-                    change.consume()
-                    tracker.addPosition(change.uptimeMillis, change.position)
-                    downAccum += dy
-                    rawPull = rubberBand(rawPull - dy, maxSheetPx)
-                },
-                onDragEnd = {
-                    if (rawPull < 8f && downAccum > searchSlop) {
-                        dragging = false
-                        openSearch()
-                    } else {
-                        settleSheet(rawPull, tracker.calculateVelocity().y)
-                    }
-                },
-                onDragCancel = {
-                    settleSheet(rawPull, 0f)
-                },
-            )
-        }
-
-        val open = if (maxSheetPx <= 0f) 0f else (pullPx / maxSheetPx).coerceIn(0f, 1f)
         val targetLook = revealTarget
         val iconSat = if (targetLook != null) {
             lerp(look.iconSaturation(), targetLook.iconSaturation(), revealProgress.value)
@@ -240,7 +214,7 @@ fun HomeScreen(
         }
 
         val parallax = rememberParallax(
-            enabled = gesturesEnabled && pullPx < 12f && !developing,
+            enabled = gesturesEnabled && !developing,
         )
         WallpaperLayer(
             photo = state.wallpaper,
@@ -261,13 +235,17 @@ fun HomeScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = open * 0.38f)),
+                .graphicsLayer {
+                    val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
+                    alpha = open * 0.38f
+                }
+                .background(Color.Black),
         )
 
         Box(
             Modifier
                 .fillMaxSize()
-                .then(revealDrag())
+                .then(sheetDrag())
                 .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
@@ -276,9 +254,8 @@ fun HomeScreen(
                             onNextBing()
                         },
                         onLongPress = { origin ->
-                            if (revealTarget != null || dragging) return@detectTapGestures
-                            val heldPull = if (dragging) rawPull else pullAnim.value
-                            if (heldPull > 8f) return@detectTapGestures
+                            if (revealTarget != null) return@detectTapGestures
+                            if (pull.px > 8f) return@detectTapGestures
                             val current = look
                             val next = current.nextRinger()
                             lookOverride = current
@@ -326,40 +303,29 @@ fun HomeScreen(
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(top = (maxHeight * 0.045f).coerceIn(18.dp, 32.dp))
-                    .then(
-                        if (open > 0.01f) {
-                            Modifier.graphicsLayer {
-                                alpha = 1f - open * 0.92f
-                                translationY = -open * 18f
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .graphicsLayer {
+                        val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
+                        alpha = 1f - open * 0.92f
+                        translationY = -open * 18f
+                    },
             )
         }
 
-        Column(
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .windowInsetsPadding(
                     WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ExpandingDock(
-                pullPx = pullPx,
+                pull = pull,
                 maxSheetPx = maxSheetPx,
                 rail = state.rail,
                 extras = extras,
                 iconSaturation = iconSat,
-                scrollEnabled = sheetLocked,
-                onSheetPull = { next ->
-                    dragging = true
-                    rawPull = next
-                },
-                onSheetRelease = { velY -> settleSheet(velocityY = velY) },
+                onSettle = { settleSheet(it) },
                 onLaunch = {
                     onLaunch(it)
                     searchOpen = false
@@ -368,19 +334,23 @@ fun HomeScreen(
                 onPinRequest = { pinSlot = it },
                 onReorder = onReorder,
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .then(if (sheetLocked) Modifier else revealDrag()),
+                    .padding(bottom = 64.dp)
+                    .then(if (pull.locked) Modifier else sheetDrag()),
             )
             if (state.onboarding == null) {
-                Spacer(Modifier.height(8.dp))
                 SearchButton(
                     onClick = { if (!searchOpen && pinSlot < 0) openSearch() },
-                    modifier = Modifier.graphicsLayer {
-                        alpha = if (searchOpen) 0f else 1f - open * 0.12f
-                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
+                        .graphicsLayer {
+                            val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
+                            alpha = if (searchOpen) 0f else 1f - open * 0.12f
+                        },
                 )
             }
-            Spacer(Modifier.height(12.dp))
         }
 
         val results = remember(query, state.apps, launches, state.rail, state.recents) {
@@ -461,7 +431,7 @@ fun HomeScreen(
             state.mode == RingerVisual.Silent &&
             state.onboarding == null &&
             !searchOpen &&
-            pullPx < 8f
+            !pull.locked
         ) {
             Box(
                 Modifier
@@ -482,20 +452,6 @@ fun HomeScreen(
         }
     }
 }
-
-private fun rubberBand(offset: Float, limit: Float): Float {
-    if (offset <= 0f) return 0f
-    if (offset <= limit) return offset
-    val extra = offset - limit
-    val dim = 420f
-    return limit + extra * dim / (dim + extra)
-}
-
-private fun sheetSpring() = spring<Float>(
-    dampingRatio = 0.86f,
-    stiffness = 380f,
-    visibilityThreshold = 0.4f,
-)
 
 private fun developSpec() = tween<Float>(
     durationMillis = 580,

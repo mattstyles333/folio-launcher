@@ -1,6 +1,7 @@
 package com.pulse.launcher.recents
 
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -26,74 +26,68 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pulse.launcher.data.LaunchableApp
 import com.pulse.launcher.data.RailSlot
 import com.pulse.launcher.home.Rail
+import com.pulse.launcher.home.SheetPull
 import com.pulse.launcher.ui.AppIcon
 import com.pulse.launcher.ui.PrintInk
+import kotlin.math.roundToInt
 
 val RailHeight = 80.dp
 val DockRowHeight = 80.dp
 
 @Composable
 fun ExpandingDock(
-    pullPx: Float,
+    pull: SheetPull,
     maxSheetPx: Float,
     rail: List<RailSlot>,
     extras: List<LaunchableApp>,
     iconSaturation: Float,
-    scrollEnabled: Boolean,
-    onSheetPull: (Float) -> Unit,
-    onSheetRelease: (Float) -> Unit,
+    onSettle: (Float) -> Unit,
     onLaunch: (LaunchableApp) -> Unit,
     onPinRequest: (Int) -> Unit,
     onReorder: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val railPx = with(density) { RailHeight.toPx() }
-    val extraPx = pullPx.coerceAtLeast(0f)
-    val viewportPx = railPx + extraPx
     val gridState = rememberLazyGridState()
+    val settle = rememberUpdatedState(onSettle)
 
-    LaunchedEffect(scrollEnabled) {
-        if (!scrollEnabled && extraPx < 8f) {
-            gridState.scrollToItem(0)
-        }
+    LaunchedEffect(pull.locked) {
+        if (!pull.locked) gridState.scrollToItem(0)
     }
 
-    val pullNow = rememberUpdatedState(pullPx)
-    val maxNow = rememberUpdatedState(maxSheetPx)
-    val pullCb = rememberUpdatedState(onSheetPull)
-    val releaseCb = rememberUpdatedState(onSheetRelease)
-    val nested = remember(gridState) {
+    val nested = remember(gridState, pull, maxSheetPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (available.y <= 0f) return Offset.Zero
                 val atTop = gridState.firstVisibleItemIndex == 0 &&
                     gridState.firstVisibleItemScrollOffset == 0
                 if (!atTop) return Offset.Zero
-                val next = (pullNow.value - available.y).coerceAtLeast(0f)
-                pullCb.value(next)
-                return Offset(0f, available.y)
+                val next = (pull.px - available.y).coerceAtLeast(0f)
+                val consumed = pull.px - next
+                if (consumed == 0f) return Offset.Zero
+                pull.px = next
+                return Offset(0f, consumed)
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val shrinking = pullNow.value < maxNow.value - 8f
+                val shrinking = pull.px < maxSheetPx - 8f
                 val atTop = gridState.firstVisibleItemIndex == 0 &&
                     gridState.firstVisibleItemScrollOffset == 0
-                if (shrinking || (atTop && available.y > 400f)) {
-                    releaseCb.value(available.y)
+                if (shrinking || (atTop && available.y > 350f)) {
+                    settle.value(available.y)
                     return if (available.y > 0f) available else Velocity.Zero
                 }
                 return Velocity.Zero
@@ -101,44 +95,60 @@ fun ExpandingDock(
         }
     }
 
-    Box(
-        modifier
+    Layout(
+        modifier = modifier
             .fillMaxWidth()
-            .height(with(density) { viewportPx.toDp() })
             .clipToBounds()
-            .then(if (scrollEnabled) Modifier.nestedScroll(nested) else Modifier),
-    ) {
-        Rail(
-            slots = rail,
-            iconSaturation = iconSaturation,
-            onLaunch = onLaunch,
-            onPinRequest = onPinRequest,
-            onReorder = onReorder,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth(),
-        )
-        if (extraPx > 0.5f && extras.isNotEmpty() && maxSheetPx > 1f) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                state = gridState,
-                userScrollEnabled = scrollEnabled,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = RailHeight)
+            .then(if (pull.locked) Modifier.nestedScroll(nested) else Modifier),
+        content = {
+            Rail(
+                slots = rail,
+                iconSaturation = iconSaturation,
+                onLaunch = onLaunch,
+                onPinRequest = onPinRequest,
+                onReorder = onReorder,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Box(
+                Modifier
                     .fillMaxWidth()
-                    .requiredHeight(with(density) { maxSheetPx.toDp() }),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                    .graphicsLayer(),
             ) {
-                items(extras, key = { it.key }) { app ->
-                    DrawerCell(
-                        app = app,
-                        iconSaturation = iconSaturation,
-                        onLaunch = onLaunch,
-                    )
+                if (extras.isNotEmpty() && maxSheetPx > 1f) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        state = gridState,
+                        userScrollEnabled = pull.locked,
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        items(extras, key = { it.key }, contentType = { "app" }) { app ->
+                            DrawerCell(
+                                app = app,
+                                iconSaturation = iconSaturation,
+                                onLaunch = onLaunch,
+                            )
+                        }
+                    }
                 }
             }
+        },
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val extra = pull.px.coerceAtLeast(0f)
+        val railPlaceable = measurables[0].measure(
+            Constraints.fixedWidth(width),
+        )
+        val gridHeight = maxSheetPx.roundToInt().coerceAtLeast(0)
+        val gridPlaceable = measurables[1].measure(
+            Constraints.fixed(width, gridHeight),
+        )
+        val height = (railPlaceable.height + extra).roundToInt()
+            .coerceAtLeast(railPlaceable.height)
+        layout(width, height) {
+            railPlaceable.placeRelative(0, 0)
+            gridPlaceable.placeRelative(0, railPlaceable.height)
         }
     }
 }
@@ -149,15 +159,18 @@ private fun DrawerCell(
     iconSaturation: Float,
     onLaunch: (LaunchableApp) -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
             .height(DockRowHeight)
-            .padding(horizontal = 2.dp, vertical = 4.dp)
-            .pointerInput(app.key) {
-                detectTapGestures { onLaunch(app) }
-            },
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = { onLaunch(app) },
+            )
+            .padding(horizontal = 2.dp, vertical = 4.dp),
     ) {
         AppIcon(
             bitmap = app.icon,

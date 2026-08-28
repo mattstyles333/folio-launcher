@@ -28,7 +28,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 |---|---|
 | Home composition | `home/HomeScreen.kt` |
 | Print + ringer grades | `home/WallpaperLayer.kt` (full colour / 50% sat / grey) |
-| Rail + pull-up sheet | `home/Rail.kt`, `recents/ExpandingDock.kt` — two-stop sheet, LazyGrid of every app |
+| Rail + pull-up sheet | `home/Rail.kt`, `home/Sheet.kt`, `recents/ExpandingDock.kt` — finger-tracked sheet, LazyGrid of every app |
 | Ringer develop | Long-press print — `GradeReveal` circular clip in `home/WallpaperLayer.kt` |
 | Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
 | Onboarding | Role → Bing auto-fetch → one Allow walk (DND then usage). Both skippable; now-playing stays in Settings. |
@@ -44,7 +44,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: open app sheet (spring, fling velocity kept). Once open, the grid scrolls. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
+- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote.
