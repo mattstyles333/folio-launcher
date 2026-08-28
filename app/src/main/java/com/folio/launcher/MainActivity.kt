@@ -222,6 +222,7 @@ class MainActivity : ComponentActivity() {
                             onPlayPause = { viewModel.playPause() },
                             onSkipTrack = { viewModel.skipTrack() },
                             onOpenPlayer = { viewModel.openPlayer() },
+                            onSeekTrack = { viewModel.seekTrack(it) },
                         )
                     }
                     composable("settings") {

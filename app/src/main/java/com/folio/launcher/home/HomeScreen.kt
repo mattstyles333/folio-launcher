@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
@@ -43,9 +44,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import kotlin.math.roundToInt
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.Ranking
@@ -86,11 +89,13 @@ fun HomeScreen(
     onPlayPause: () -> Unit,
     onSkipTrack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onSeekTrack: (Float) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
     val pull = remember { SheetPull() }
+    val page = remember { SheetPull() }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var pinSlot by remember { mutableIntStateOf(-1) }
@@ -125,6 +130,9 @@ fun HomeScreen(
         pull.cancelSettle()
         pull.locked = false
         pull.px = 0f
+        page.cancelSettle()
+        page.locked = false
+        page.px = 0f
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -136,11 +144,17 @@ fun HomeScreen(
         val paneWidth = maxWidth
         val paneHeight = maxHeight
         val maxSheetPx = with(density) { (paneHeight * 0.62f).toPx() }.coerceAtLeast(rowPx * 3.2f)
+        val maxPagePx = with(density) { paneWidth.toPx() }.coerceAtLeast(1f)
         val searchSlop = with(density) { 56.dp.toPx() }
 
         fun grabSheet() {
             pull.cancelSettle()
             pull.locked = false
+        }
+
+        fun grabPage() {
+            page.cancelSettle()
+            page.locked = false
         }
 
         fun settleSheet(velocityY: Float = 0f) {
@@ -170,14 +184,45 @@ fun HomeScreen(
             }
         }
 
+        fun settlePage(velocityX: Float = 0f) {
+            page.cancelSettle()
+            page.settleJob = scope.launch {
+                val start = page.px
+                val open = pageShouldOpen(start, maxPagePx, velocityX)
+                val target = if (open) maxPagePx else 0f
+                animate(
+                    initialValue = start,
+                    targetValue = target,
+                    initialVelocity = velocityX,
+                    animationSpec = sheetSpring(),
+                ) { value, _ ->
+                    page.px = value
+                }
+                page.px = target
+                page.locked = open
+                if (open) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+            }
+        }
+
+        fun openPlayerPage() {
+            grabPage()
+            settlePage(1800f)
+        }
+
         val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0
-        fun sheetDrag(): Modifier = Modifier.folioSheetPull(
+        fun homeDrag(): Modifier = Modifier.folioHomeGestures(
             enabled = gesturesEnabled,
-            pull = pull,
-            maxPx = maxSheetPx,
+            sheet = pull,
+            page = page,
+            maxSheetPx = maxSheetPx,
+            maxPagePx = maxPagePx,
             searchSlop = searchSlop,
-            onGrab = { grabSheet() },
-            onSettle = { settleSheet(it) },
+            onGrabSheet = { grabSheet() },
+            onSettleSheet = { settleSheet(it) },
+            onGrabPage = { grabPage() },
+            onSettlePage = { settlePage(it) },
             onSwipeDownSearch = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 searchOpen = true
@@ -201,12 +246,16 @@ fun HomeScreen(
             searchOpen = true
         }
 
-        BackHandler(enabled = searchOpen || pull.locked || pinSlot >= 0) {
+        BackHandler(enabled = searchOpen || pull.locked || page.locked || pinSlot >= 0) {
             when {
                 pinSlot >= 0 -> pinSlot = -1
                 searchOpen -> {
                     searchOpen = false
                     query = ""
+                }
+                page.locked -> {
+                    grabPage()
+                    settlePage(-1800f)
                 }
                 else -> collapse()
             }
@@ -220,9 +269,35 @@ fun HomeScreen(
         }
 
         val parallax = rememberParallax(
-            enabled = gesturesEnabled && !developing,
+            enabled = gesturesEnabled && !developing && !page.locked,
         )
         val namedLook = targetLook ?: look
+        NowPlayingPage(
+            line = state.nowPlaying,
+            title = state.musicTitle,
+            artist = state.musicArtist,
+            playing = state.musicPlaying,
+            art = state.musicArt,
+            positionMs = state.musicPositionMs,
+            durationMs = state.musicDurationMs,
+            hasAccess = state.hasNowPlayingAccess,
+            accent = state.accent,
+            onPrevious = onPreviousTrack,
+            onPlayPause = onPlayPause,
+            onNext = onSkipTrack,
+            onSeek = onSeekTrack,
+            onOpenApp = onOpenPlayer,
+            onAllowAccess = onMediaHint,
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { IntOffset((page.px - maxPagePx).roundToInt(), 0) }
+                .then(homeDrag()),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .offset { IntOffset(page.px.roundToInt(), 0) },
+        ) {
         WallpaperLayer(
             photo = state.wallpaper,
             blurred = state.blurredWallpaper,
@@ -252,7 +327,7 @@ fun HomeScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(sheetDrag())
+                .then(homeDrag())
                 .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
@@ -262,7 +337,7 @@ fun HomeScreen(
                         },
                         onLongPress = { origin ->
                             if (revealTarget != null) return@detectTapGestures
-                            if (pull.px > 8f) return@detectTapGestures
+                            if (pull.px > 8f || page.px > 8f) return@detectTapGestures
                             val current = look
                             val next = current.nextRinger()
                             lookOverride = current
@@ -302,7 +377,6 @@ fun HomeScreen(
                 captionBusy = state.wallpaperBusy,
                 onClockTap = { openSearch() },
                 onClockLongPress = onOpenSettings,
-                haloSize = (paneWidth * 0.56f).coerceIn(196.dp, 224.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
@@ -342,7 +416,7 @@ fun HomeScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(bottom = 64.dp)
-                    .then(if (pull.locked) Modifier else sheetDrag()),
+                    .then(if (pull.locked) Modifier else homeDrag()),
             )
             if (state.nowPlaying.isNotEmpty() &&
                 state.onboarding == null &&
@@ -357,7 +431,7 @@ fun HomeScreen(
                     onPrevious = onPreviousTrack,
                     onPlayPause = onPlayPause,
                     onNext = onSkipTrack,
-                    onOpen = onOpenPlayer,
+                    onOpen = { openPlayerPage() },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -381,6 +455,7 @@ fun HomeScreen(
                         },
                 )
             }
+        }
         }
 
         val results = remember(query, state.apps, launches, state.rail, state.recents) {
@@ -463,12 +538,14 @@ fun HomeScreen(
                 state.mode == RingerVisual.Silent &&
                 state.onboarding == null &&
                 !searchOpen &&
-                !pull.locked ->
+                !pull.locked &&
+                !page.locked ->
                 "Tap to let Silent mute the ringer." to onSilentHint
             state.mediaHint &&
                 state.onboarding == null &&
                 !searchOpen &&
                 !pull.locked &&
+                !page.locked &&
                 state.nowPlaying.isEmpty() ->
                 "Tap to show Spotify on the print." to onMediaHint
             else -> null

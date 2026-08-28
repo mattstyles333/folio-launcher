@@ -119,7 +119,7 @@ private fun SkipButton(
     ) { glyph() }
 }
 
-private fun DrawScope.playGlyph(color: Color) {
+internal fun DrawScope.playGlyph(color: Color) {
     val path = Path().apply {
         val cx = size.width * 0.54f
         val cy = size.height * 0.5f
@@ -132,7 +132,16 @@ private fun DrawScope.playGlyph(color: Color) {
     drawPath(path, color)
 }
 
-private fun DrawScope.prevGlyph(color: Color) {
+internal fun DrawScope.pauseGlyph(color: Color) {
+    val w = size.width * 0.07f
+    val h = size.height * 0.32f
+    val y = (size.height - h) / 2f
+    val r = CornerRadius(w / 2f, w / 2f)
+    drawRoundRect(color, Offset(size.width * 0.36f, y), Size(w, h), r)
+    drawRoundRect(color, Offset(size.width * 0.57f, y), Size(w, h), r)
+}
+
+internal fun DrawScope.prevGlyph(color: Color) {
     val bar = size.width * 0.07f
     drawRoundRect(
         color = color,
@@ -149,7 +158,7 @@ private fun DrawScope.prevGlyph(color: Color) {
     drawPath(path, color)
 }
 
-private fun DrawScope.nextGlyph(color: Color) {
+internal fun DrawScope.nextGlyph(color: Color) {
     val bar = size.width * 0.07f
     val path = Path().apply {
         moveTo(size.width * 0.22f, size.height * 0.26f)

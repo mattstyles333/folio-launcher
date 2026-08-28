@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,7 +21,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.folio.launcher.ui.ClockDateStyle
@@ -44,7 +42,6 @@ fun ClockCluster(
     captionBusy: Boolean,
     onClockTap: () -> Unit,
     onClockLongPress: () -> Unit,
-    haloSize: Dp = 220.dp,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -54,7 +51,7 @@ fun ClockCluster(
                     ChargeHairline(
                         accent = accent,
                         fraction = charge,
-                        modifier = Modifier.size(haloSize),
+                        modifier = Modifier.matchParentSize(),
                     )
                 }
                 ClockDisplay(
@@ -62,6 +59,7 @@ fun ClockCluster(
                     dim = dimClock,
                     onTap = onClockTap,
                     onLongPress = onClockLongPress,
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 20.dp),
                 )
             }
         }
@@ -127,7 +125,7 @@ private fun ChargeHairline(
     modifier: Modifier = Modifier,
 ) {
     val sweep by animateFloatAsState(
-        targetValue = 260f * fraction.coerceIn(0f, 1f),
+        targetValue = 360f * fraction.coerceIn(0f, 1f),
         animationSpec = tween(420),
         label = "charge",
     )
@@ -136,24 +134,25 @@ private fun ChargeHairline(
         val pad = stroke / 2f + 1.dp.toPx()
         val arcSize = Size(size.width - pad * 2f, size.height - pad * 2f)
         val topLeft = Offset(pad, pad)
+        val cap = if (sweep >= 359.5f) StrokeCap.Butt else StrokeCap.Round
         drawArc(
             color = accent.copy(alpha = 0.18f),
-            startAngle = 140f,
-            sweepAngle = 260f,
+            startAngle = -90f,
+            sweepAngle = 360f,
             useCenter = false,
             topLeft = topLeft,
             size = arcSize,
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
+            style = Stroke(width = stroke, cap = StrokeCap.Butt),
         )
         if (sweep > 0.5f) {
             drawArc(
                 color = accent.copy(alpha = 0.88f),
-                startAngle = 140f,
+                startAngle = -90f,
                 sweepAngle = sweep,
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round),
+                style = Stroke(width = stroke, cap = cap),
             )
         }
     }
