@@ -54,4 +54,16 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Tests
 
-`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability. Run `testDebugUnitTest` before a push.
+`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability, sheet open/rubber-band. Run `testDebugUnitTest` before a push.
+
+## Ship
+
+The S23 is installed from **GitHub Releases**, not from a local `adb` on this machine. After any change meant to be felt on the phone:
+
+```bash
+./gradlew testDebugUnitTest assembleRelease
+git add -A && git commit && git push origin main
+gh release create vX.Y.Z --target main --title "X.Y.Z" app/build/outputs/apk/release/app-release.apk
+```
+
+Bump `versionCode` / `versionName` in `app/build.gradle.kts` for each of those. Release is debug-signed for sideload.
