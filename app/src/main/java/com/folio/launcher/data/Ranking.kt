@@ -135,13 +135,14 @@ object Ranking {
         launches: Map<String, List<Long>>,
         now: Long = System.currentTimeMillis(),
     ): List<LaunchableApp> {
+        val visible = apps.filter { !it.isHome }
         val order = orderDrawer(
-            labeled = apps.map { it.packageName to it.label },
+            labeled = visible.map { it.packageName to it.label },
             rail = railPackages,
             launches = launches,
             now = now,
         )
-        val byPkg = apps.groupBy { it.packageName }
+        val byPkg = visible.groupBy { it.packageName }
         return order.flatMap { pkg -> byPkg[pkg].orEmpty() }
     }
 
@@ -150,9 +151,10 @@ object Ranking {
         rail: Set<String>,
         launches: Map<String, List<Long>>,
         now: Long = System.currentTimeMillis(),
+        hide: Set<String> = emptySet(),
     ): List<String> {
         return labeled
-            .filter { it.first !in rail }
+            .filter { it.first !in rail && it.first !in hide }
             .distinctBy { it.first }
             .sortedWith(
                 compareByDescending<Pair<String, String>> {

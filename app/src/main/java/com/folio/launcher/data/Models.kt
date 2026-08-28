@@ -14,6 +14,7 @@ data class LaunchableApp(
     val user: UserHandle,
     val label: String,
     val icon: ImageBitmap,
+    val isHome: Boolean = false,
 ) {
     val key: String get() = "$packageName/$activityName"
 }

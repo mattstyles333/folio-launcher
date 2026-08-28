@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
+import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
@@ -70,6 +71,7 @@ class AppRepository(private val context: Context) {
         return runCatching {
             val user = Process.myUserHandle()
             val infos = launcherApps.getActivityList(null, user)
+            val homes = homePackages()
             val density = context.resources.displayMetrics.densityDpi
             val size = (56 * context.resources.displayMetrics.density).toInt().coerceIn(48, 192)
             infos.mapNotNull { info ->
@@ -85,10 +87,20 @@ class AppRepository(private val context: Context) {
                     user = info.user,
                     label = label,
                     icon = icon,
+                    isHome = cn.packageName in homes,
                 )
             }.distinctBy { it.key }
                 .sortedBy { it.label.lowercase() }
         }.getOrElse { emptyList() }
+    }
+
+    private fun homePackages(): Set<String> {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        return runCatching {
+            context.packageManager
+                .queryIntentActivities(intent, PackageManager.MATCH_ALL)
+                .mapTo(HashSet()) { it.activityInfo.packageName }
+        }.getOrDefault(emptySet())
     }
 
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {

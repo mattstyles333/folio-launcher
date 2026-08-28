@@ -30,7 +30,7 @@ adb shell cmd role add-role-holder android.app.role.HOME com.folio.launcher
 | Gesture | What |
 |---|---|
 | Tap Search / swipe down / tap clock | Spotlight |
-| Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. |
+| Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. |
 | Swipe right | Full-screen player. Album art is the print. Swipe left or Back to return. |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |

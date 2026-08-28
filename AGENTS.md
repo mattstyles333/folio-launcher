@@ -44,7 +44,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
+- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps except other home screens (search still finds them); recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
 - Swipe right: full-screen now-playing page (`NowPlayingPage`, `page` SheetPull). Home translates X. Swipe left or Back closes. Long-press the rail art opens the same page. Do not start a page swipe while the app sheet is open, or a sheet swipe while the player page is open.
 - Swipe down (idle): search.
 - Search pill: tap.

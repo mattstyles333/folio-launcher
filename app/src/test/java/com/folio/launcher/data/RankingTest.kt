@@ -76,6 +76,24 @@ class RankingTest {
     }
 
     @Test
+    fun drawer_hidesOtherHomes() {
+        val now = noon
+        val launches = mapOf("com.sec.android.app.launcher" to listOf(now))
+        val labeled = listOf(
+            "com.chat" to "Chat",
+            "com.sec.android.app.launcher" to "One UI Home",
+        )
+        val order = Ranking.orderDrawer(
+            labeled,
+            rail = emptySet(),
+            launches = launches,
+            now = now,
+            hide = setOf("com.sec.android.app.launcher"),
+        )
+        assertEquals(listOf("com.chat"), order)
+    }
+
+    @Test
     fun combinedLaunches_mergesDistinct() {
         val local = mapOf("a" to listOf(1L, 2L))
         val extra = mapOf("a" to listOf(2L, 3L), "b" to listOf(9L))
