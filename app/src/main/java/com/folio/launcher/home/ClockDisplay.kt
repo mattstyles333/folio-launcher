@@ -15,9 +15,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
@@ -25,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.folio.launcher.ui.ClockAmPmStyle
 import com.folio.launcher.ui.ClockDateStyle
 import com.folio.launcher.ui.ClockTimeStyle
+import com.folio.launcher.ui.PrintInk
+import com.folio.launcher.ui.PrintShadow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -34,7 +33,6 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun ClockDisplay(
-    accent: Color,
     dim: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
@@ -54,13 +52,8 @@ fun ClockDisplay(
     val copy = remember(now, is24, locale) {
         ClockCopy.of(now, is24, locale)
     }
-    val timeAlpha = if (dim) 0.40f else 0.94f
-    val dateAlpha = if (dim) 0.26f else 0.72f
-    val shadow = Shadow(
-        color = Color.Black.copy(alpha = if (dim) 0.35f else 0.70f),
-        offset = Offset(0f, 1.2f),
-        blurRadius = 2.4f,
-    )
+    val timeAlpha = if (dim) 0.72f else 1f
+    val dateAlpha = if (dim) 0.54f else 0.90f
     Column(
         modifier
             .pointerInput(onTap, onLongPress) {
@@ -75,15 +68,15 @@ fun ClockDisplay(
         Row {
             Text(
                 text = copy.time,
-                style = ClockTimeStyle.copy(shadow = shadow),
-                color = accent.copy(alpha = timeAlpha),
+                style = ClockTimeStyle.copy(shadow = PrintShadow),
+                color = PrintInk.copy(alpha = timeAlpha),
                 modifier = Modifier.alignByBaseline(),
             )
             if (copy.ampm != null) {
                 Text(
                     text = copy.ampm,
-                    style = ClockAmPmStyle.copy(shadow = shadow),
-                    color = accent.copy(alpha = timeAlpha * 0.78f),
+                    style = ClockAmPmStyle.copy(shadow = PrintShadow),
+                    color = PrintInk.copy(alpha = timeAlpha * 0.86f),
                     modifier = Modifier
                         .alignByBaseline()
                         .padding(start = 8.dp),
@@ -93,8 +86,8 @@ fun ClockDisplay(
         Spacer(Modifier.height(2.dp))
         Text(
             text = copy.date,
-            style = ClockDateStyle.copy(shadow = shadow),
-            color = accent.copy(alpha = dateAlpha),
+            style = ClockDateStyle.copy(shadow = PrintShadow),
+            color = PrintInk.copy(alpha = dateAlpha),
         )
     }
 }

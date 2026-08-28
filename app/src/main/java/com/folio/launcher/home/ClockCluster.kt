@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
@@ -25,16 +24,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.folio.launcher.ui.ClockDateStyle
 import com.folio.launcher.ui.PrintInk
+import com.folio.launcher.ui.PrintShadow
 import com.folio.launcher.ui.QuoteAuthorStyle
 import com.folio.launcher.ui.QuoteStyle
 
 @Composable
 fun ClockCluster(
     showClock: Boolean,
-    accent: Color,
     dimClock: Boolean,
     charging: Boolean,
     charge: Float,
+    chargeColor: Color,
     quote: String,
     quoteAuthor: String,
     lookName: String?,
@@ -45,17 +45,36 @@ fun ClockCluster(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (lookName == null && quote.isNotEmpty()) {
+            Text(
+                text = "“$quote”",
+                style = QuoteStyle.copy(shadow = PrintShadow),
+                color = PrintInk.copy(alpha = if (dimClock) 0.78f else 1f),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 36.dp),
+            )
+            if (quoteAuthor.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = quoteAuthor,
+                    style = QuoteAuthorStyle.copy(shadow = PrintShadow),
+                    color = PrintInk.copy(alpha = if (dimClock) 0.52f else 0.78f),
+                )
+            }
+            if (showClock) Spacer(Modifier.height(10.dp))
+        }
         if (showClock) {
             Box(contentAlignment = Alignment.Center) {
                 if (charging) {
                     ChargeHairline(
-                        accent = accent,
+                        color = chargeColor,
                         fraction = charge,
                         modifier = Modifier.matchParentSize(),
                     )
                 }
                 ClockDisplay(
-                    accent = accent,
                     dim = dimClock,
                     onTap = onClockTap,
                     onLongPress = onClockLongPress,
@@ -67,48 +86,17 @@ fun ClockCluster(
             Spacer(Modifier.height(10.dp))
             Text(
                 text = lookName,
-                style = ClockDateStyle,
-                color = accent.copy(alpha = 0.72f),
+                style = ClockDateStyle.copy(shadow = PrintShadow),
+                color = PrintInk.copy(alpha = 0.88f),
                 letterSpacing = 3.sp,
             )
-        } else if (quote.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "“$quote”",
-                style = QuoteStyle.copy(
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.72f),
-                        offset = Offset(0f, 1f),
-                        blurRadius = 0.8f,
-                    ),
-                ),
-                color = accent.copy(alpha = if (dimClock) 0.52f else 0.94f),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 40.dp),
-            )
-            if (quoteAuthor.isNotEmpty()) {
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = quoteAuthor,
-                    style = QuoteAuthorStyle.copy(
-                        shadow = Shadow(
-                            color = Color.Black.copy(alpha = 0.70f),
-                            offset = Offset(0f, 1f),
-                            blurRadius = 0.8f,
-                        ),
-                    ),
-                    color = accent.copy(alpha = if (dimClock) 0.36f else 0.58f),
-                )
-            }
         }
         if (lookName == null && caption.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text(
                 text = caption,
-                style = ClockDateStyle,
-                color = PrintInk.copy(alpha = if (captionBusy) 0.42f else 0.62f),
+                style = ClockDateStyle.copy(shadow = PrintShadow),
+                color = PrintInk.copy(alpha = if (captionBusy) 0.58f else 0.82f),
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -120,7 +108,7 @@ fun ClockCluster(
 
 @Composable
 private fun ChargeHairline(
-    accent: Color,
+    color: Color,
     fraction: Float,
     modifier: Modifier = Modifier,
 ) {
@@ -136,7 +124,7 @@ private fun ChargeHairline(
         val topLeft = Offset(pad, pad)
         val cap = if (sweep >= 359.5f) StrokeCap.Butt else StrokeCap.Round
         drawArc(
-            color = accent.copy(alpha = 0.18f),
+            color = color.copy(alpha = 0.22f),
             startAngle = -90f,
             sweepAngle = 360f,
             useCenter = false,
@@ -146,7 +134,7 @@ private fun ChargeHairline(
         )
         if (sweep > 0.5f) {
             drawArc(
-                color = accent.copy(alpha = 0.88f),
+                color = color.copy(alpha = 0.95f),
                 startAngle = -90f,
                 sweepAngle = sweep,
                 useCenter = false,

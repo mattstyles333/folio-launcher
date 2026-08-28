@@ -3,7 +3,9 @@ package com.folio.launcher.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -14,6 +16,13 @@ import androidx.compose.ui.unit.sp
 val PrintInk = Color(0xFFE8E0D4)
 val PrintMute = Color(0xFF8A847C)
 val VoidBlack = Color(0xFF050607)
+val ChargeGreen = Color(0xFF6FBE6A)
+
+val PrintShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.84f),
+    offset = Offset(0f, 1.6f),
+    blurRadius = 0f,
+)
 
 private val FolioColors = darkColorScheme(
     primary = PrintInk,

@@ -59,6 +59,7 @@ import com.folio.launcher.recents.ExpandingDock
 import com.folio.launcher.search.AppPicker
 import com.folio.launcher.search.AskOverlay
 import com.folio.launcher.search.SearchOverlay
+import com.folio.launcher.ui.ChargeGreen
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
 import kotlinx.coroutines.delay
@@ -314,10 +315,10 @@ fun HomeScreen(
         ) {
             ClockCluster(
                 showClock = state.showClock,
-                accent = state.accent,
                 dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
                 charging = state.charging,
                 charge = state.charge,
+                chargeColor = if (namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
                 quote = state.quote,
                 quoteAuthor = state.quoteAuthor,
                 lookName = if (developing || flashLook) namedLook.label() else null,

@@ -42,11 +42,11 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
-| Plug in | Hairline oval around the clock fills with charge. Closed at 100%. |
+| Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. |
 | Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens Spotify. |
 | Settings → Hidden apps | Unhide. |
 
-Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
+Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page.
 
 ## Permissions
 

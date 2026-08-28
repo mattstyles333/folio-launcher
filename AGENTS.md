@@ -52,9 +52,9 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Double-tap print: next Bing + next quote.
 - Now playing on home is prev / play / next above the rail, always visible — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause, or to start Spotify if nothing is playing; long-press opens Spotify. Prefer Spotify if several sessions are active.
 - Clock tap does nothing. Clock long-press → Settings → Choose photo for a local print.
-- Plug in: hairline oval around the clock. At 100% the oval is closed.
+- Plug in: hairline oval around the clock. Green on Sound. At 100% the oval is closed.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
-- Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
+- Quote sits above the clock: 16sp serif, PrintInk, hard drop shadow (no blur). Clock and date use the same ink and shadow so they read on the print. Clock cluster is not rasterized while idle.
 
 ## Tests
 
