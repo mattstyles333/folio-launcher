@@ -1,4 +1,4 @@
-# Pulse
+# Folio
 
 An Android home screen. Idle is a photograph. Apps are four icons, a Search pill, and a pull-up grid. The ringer is the theme: **Sound** is full colour, **Vibrate** is half the saturation, **Silent** is black and white.
 
@@ -19,10 +19,10 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 Release is **debug-signed** for sideload (not Play). Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-Press Home and pick **Pulse**, or:
+Press Home and pick **Folio**, or:
 
 ```bash
-adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
+adb shell cmd role add-role-holder android.app.role.HOME com.folio.launcher
 ```
 
 ## Use
@@ -41,7 +41,7 @@ Quotes sit under the date — one short line a day, from an on-device bank. A ne
 
 ## Permissions
 
-First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow** walks Do Not Disturb, usage access, and notification access for Spotify (find Pulse, switch on, Back). Skip any; they stay in Settings.
+First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow** walks Do Not Disturb, usage access, and notification access for Spotify (find Folio, switch on, Back). Skip any; they stay in Settings.
 
 | Access | When |
 |---|---|

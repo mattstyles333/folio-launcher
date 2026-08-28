@@ -6,15 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "com.pulse.launcher"
+    namespace = "com.folio.launcher"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.pulse.launcher"
+        applicationId = "com.folio.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.1.8"
+        versionCode = 11
+        versionName = "1.2.0"
     }
 
     buildTypes {

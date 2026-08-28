@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Pulse"
+rootProject.name = "Folio"
 include(":app")

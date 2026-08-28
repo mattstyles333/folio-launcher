@@ -5,8 +5,8 @@
 -keepclassmembers class ** {
     @kotlinx.serialization.Required <fields>;
 }
--keep,includedescriptorclasses class com.pulse.launcher.**$$serializer { *; }
--keepclassmembers class com.pulse.launcher.** {
+-keep,includedescriptorclasses class com.folio.launcher.**$$serializer { *; }
+-keepclassmembers class com.folio.launcher.** {
     *** Companion;
 }
 -dontwarn org.slf4j.**
