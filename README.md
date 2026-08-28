@@ -33,8 +33,9 @@ adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 | Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
+| Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline around the clock fills with charge |
-| Music (optional) | Song under the date; tap to skip |
+| Music (optional) | Previous / play / next under the clock. Tap the title to open Spotify. Settings → Now playing. |
 
 Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
 
@@ -48,7 +49,7 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 | Photo picker | Settings → Choose photo. No broad storage. |
 | Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny. |
 | Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Last 30 days of opens. |
-| Notification access | Optional. Settings → Now playing. |
+| Notification access | Optional. Settings → Now playing. Needed for Spotify controls on the print. |
 
 ## Build
 

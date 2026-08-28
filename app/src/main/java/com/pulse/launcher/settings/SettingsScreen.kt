@@ -97,7 +97,11 @@ fun SettingsScreen(
         }
         SettingsRow(
             "Now playing",
-            if (state.hasNowPlayingAccess) "Song under the clock, tap to skip" else "Allow notification access",
+            if (state.hasNowPlayingAccess) {
+                "Spotify under the clock — previous, play, next. Tap the title to open the app."
+            } else {
+                "Allow notification access so Pulse can show Spotify controls"
+            },
         ) {
             context.startActivity(
                 Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)

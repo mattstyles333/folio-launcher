@@ -3,7 +3,6 @@ package com.pulse.launcher.home
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -40,6 +39,8 @@ fun ClockCluster(
     charging: Boolean,
     charge: Float,
     nowPlaying: String,
+    musicPlaying: Boolean,
+    musicArt: ImageBitmap?,
     quote: String,
     quoteAuthor: String,
     lookName: String?,
@@ -47,7 +48,10 @@ fun ClockCluster(
     captionBusy: Boolean,
     onClockTap: () -> Unit,
     onClockLongPress: () -> Unit,
+    onPreviousTrack: () -> Unit,
+    onPlayPause: () -> Unit,
     onSkipTrack: () -> Unit,
+    onOpenPlayer: () -> Unit,
     haloSize: Dp = 220.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -110,19 +114,17 @@ fun ClockCluster(
             }
         }
         if (nowPlaying.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = nowPlaying,
-                style = ClockDateStyle,
-                color = accent.copy(alpha = if (dimClock) 0.38f else 0.62f),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(horizontal = 36.dp)
-                    .pointerInput(nowPlaying) {
-                        detectTapGestures(onTap = { onSkipTrack() })
-                    },
+            Spacer(Modifier.height(10.dp))
+            PlaybackStrip(
+                line = nowPlaying,
+                playing = musicPlaying,
+                art = musicArt,
+                accent = accent,
+                dim = dimClock,
+                onPrevious = onPreviousTrack,
+                onPlayPause = onPlayPause,
+                onNext = onSkipTrack,
+                onOpen = onOpenPlayer,
             )
         } else if (lookName == null && caption.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))

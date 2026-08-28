@@ -81,7 +81,10 @@ fun HomeScreen(
     onSkipAccess: () -> Unit,
     onSilentHint: () -> Unit,
     onNextBing: () -> Unit,
+    onPreviousTrack: () -> Unit,
+    onPlayPause: () -> Unit,
     onSkipTrack: () -> Unit,
+    onOpenPlayer: () -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -290,6 +293,8 @@ fun HomeScreen(
                 charging = state.charging,
                 charge = state.charge,
                 nowPlaying = state.nowPlaying,
+                musicPlaying = state.musicPlaying,
+                musicArt = state.musicArt,
                 quote = state.quote,
                 quoteAuthor = state.quoteAuthor,
                 lookName = if (developing || flashLook) namedLook.label() else null,
@@ -297,7 +302,10 @@ fun HomeScreen(
                 captionBusy = state.wallpaperBusy,
                 onClockTap = { openSearch() },
                 onClockLongPress = onOpenSettings,
+                onPreviousTrack = onPreviousTrack,
+                onPlayPause = onPlayPause,
                 onSkipTrack = onSkipTrack,
+                onOpenPlayer = onOpenPlayer,
                 haloSize = (maxWidth * 0.56f).coerceIn(196.dp, 224.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)

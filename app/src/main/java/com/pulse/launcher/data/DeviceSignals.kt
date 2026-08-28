@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -28,6 +29,8 @@ data class ChargeState(
 data class NowPlaying(
     val line: String = "",
     val playing: Boolean = false,
+    val packageName: String = "",
+    val art: Bitmap? = null,
 )
 
 class DeviceSignals(private val context: Context) {
@@ -48,6 +51,8 @@ class DeviceSignals(private val context: Context) {
     private val listenerName = ComponentName(app, PulseSessionListener::class.java)
     private val main = Handler(Looper.getMainLooper())
     private var controller: MediaController? = null
+    private var artKey: String = ""
+    private var artCache: Bitmap? = null
     private val controllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) = publish()
         override fun onPlaybackStateChanged(state: PlaybackState?) = publish()
@@ -87,16 +92,38 @@ class DeviceSignals(private val context: Context) {
 
     fun hasNowPlayingAccess(): Boolean = listenerEnabled()
 
-    fun skip() {
+    fun skip() = transportOrKey(MediaController.TransportControls::skipToNext, KeyEvent.KEYCODE_MEDIA_NEXT)
+
+    fun previous() = transportOrKey(MediaController.TransportControls::skipToPrevious, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+
+    fun playPause() {
         val controls = controller?.transportControls
         if (controls != null) {
-            controls.skipToNext()
+            if (controller?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                controls.pause()
+            } else {
+                controls.play()
+            }
             return
         }
-        val down = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT)
-        val up = KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT)
-        audio.dispatchMediaKeyEvent(down)
-        audio.dispatchMediaKeyEvent(up)
+        dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+    }
+
+    private fun transportOrKey(
+        call: MediaController.TransportControls.() -> Unit,
+        keyCode: Int,
+    ) {
+        val controls = controller?.transportControls
+        if (controls != null) {
+            controls.call()
+            return
+        }
+        dispatchKey(keyCode)
+    }
+
+    private fun dispatchKey(code: Int) {
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
 
     private fun attachSessions() {
@@ -129,8 +156,12 @@ class DeviceSignals(private val context: Context) {
     }
 
     private fun pick(list: List<MediaController>): MediaController? {
-        return list.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
-            ?: list.firstOrNull { playingOrPaused(it.playbackState?.state) }
+        val playing = list.filter { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+        val paused = list.filter { playingOrPaused(it.playbackState?.state) }
+        return playing.firstOrNull { it.packageName.contains("spotify", ignoreCase = true) }
+            ?: playing.firstOrNull()
+            ?: paused.firstOrNull { it.packageName.contains("spotify", ignoreCase = true) }
+            ?: paused.firstOrNull()
     }
 
     private fun bind(next: MediaController?) {
@@ -158,7 +189,27 @@ class DeviceSignals(private val context: Context) {
             else -> ""
         }
         val active = playingOrPaused(state) && line.isNotEmpty()
-        _now.value = NowPlaying(line = if (active) line else "", playing = state == PlaybackState.STATE_PLAYING)
+        val pkg = c?.packageName.orEmpty()
+        val art = if (active) albumArt(meta, "$pkg|$line") else {
+            artKey = ""
+            artCache = null
+            null
+        }
+        _now.value = NowPlaying(
+            line = if (active) line else "",
+            playing = state == PlaybackState.STATE_PLAYING,
+            packageName = if (active) pkg else "",
+            art = art,
+        )
+    }
+
+    private fun albumArt(meta: MediaMetadata?, key: String): Bitmap? {
+        if (key == artKey) return artCache
+        artKey = key
+        val src = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+        artCache = src?.let { Bitmap.createScaledBitmap(it, 96, 96, true) }
+        return artCache
     }
 
     private fun readBattery(intent: Intent) {

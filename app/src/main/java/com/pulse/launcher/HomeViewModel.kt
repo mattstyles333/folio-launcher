@@ -1,10 +1,12 @@
 package com.pulse.launcher
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Rect
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pulse.launcher.data.DefaultApps
@@ -102,6 +104,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         charging = charge.charging,
                         charge = charge.fraction,
                         nowPlaying = now.line,
+                        musicPlaying = now.playing,
+                        musicArt = now.art?.asImageBitmap(),
+                        nowPlayingPackage = now.packageName,
                         hasNowPlayingAccess = app.signals.hasNowPlayingAccess(),
                     )
                 }
@@ -116,6 +121,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipTrack() {
         app.signals.skip()
+    }
+
+    fun previousTrack() {
+        app.signals.previous()
+    }
+
+    fun playPause() {
+        app.signals.playPause()
+    }
+
+    fun openPlayer() {
+        val pkg = extra.value.nowPlayingPackage.ifEmpty { return }
+        val intent = app.packageManager.getLaunchIntentForPackage(pkg)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ?: return
+        runCatching { app.startActivity(intent) }
     }
 
     fun requestIdle() {
@@ -500,6 +521,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             charging = extraState.charging,
             charge = extraState.charge,
             nowPlaying = extraState.nowPlaying,
+            musicPlaying = extraState.musicPlaying,
+            musicArt = extraState.musicArt,
             hasNowPlayingAccess = extraState.hasNowPlayingAccess,
             quote = quote?.text.orEmpty(),
             quoteAuthor = quote?.author.orEmpty(),
@@ -523,6 +546,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val charging: Boolean = false,
         val charge: Float = 0f,
         val nowPlaying: String = "",
+        val musicPlaying: Boolean = false,
+        val musicArt: ImageBitmap? = null,
+        val nowPlayingPackage: String = "",
         val hasNowPlayingAccess: Boolean = false,
     )
 

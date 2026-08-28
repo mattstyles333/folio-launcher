@@ -47,7 +47,8 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
 - Swipe down (idle): search.
 - Search pill: tap.
-- Double-tap print: next Bing + next quote.
+- Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
+- Now playing: previous / play-pause / next under the clock when notification access is on. Title opens the player. Prefer a Spotify session if several are active.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
 - Clock tap: search. Clock long-press: settings.

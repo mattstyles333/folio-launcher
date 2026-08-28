@@ -52,6 +52,8 @@ data class HomeUiState(
     val charging: Boolean = false,
     val charge: Float = 0f,
     val nowPlaying: String = "",
+    val musicPlaying: Boolean = false,
+    val musicArt: ImageBitmap? = null,
     val hasNowPlayingAccess: Boolean = false,
     val quote: String = "",
     val quoteAuthor: String = "",

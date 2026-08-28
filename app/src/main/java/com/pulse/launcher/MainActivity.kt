@@ -178,7 +178,10 @@ class MainActivity : ComponentActivity() {
                                 openDndAccess()
                             },
                             onNextBing = { viewModel.nextBingPrint() },
+                            onPreviousTrack = { viewModel.previousTrack() },
+                            onPlayPause = { viewModel.playPause() },
                             onSkipTrack = { viewModel.skipTrack() },
+                            onOpenPlayer = { viewModel.openPlayer() },
                         )
                     }
                     composable("settings") {
