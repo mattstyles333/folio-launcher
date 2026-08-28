@@ -38,6 +38,19 @@
             <data android:scheme="spotify" />
         </intent>
         <package android:name="com.spotify.music" />
+        <package android:name="ai.x.grok" />
+        <package android:name="com.openai.chatgpt" />
+        <package android:name="com.google.android.apps.gemini" />
+        <package android:name="com.google.android.apps.bard" />
+        <package android:name="com.anthropic.claude" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="chatgpt" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="xai-grok" />
+        </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>

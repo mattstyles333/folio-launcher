@@ -89,6 +89,8 @@ fun Modifier.folioSheetPull(
                 val dy = change.positionChange().y
                 totalDy += dy
                 if (!dragging && !shading) {
+                    val pressed = event.changes.count { it.pressed }
+                    if (pressed >= 2) break
                     val dx = change.position.x - originX
                     if (abs(totalDy) < slop && abs(dx) < slop) {
                         if (!change.pressed) break

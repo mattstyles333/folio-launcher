@@ -48,6 +48,7 @@ fun SettingsScreen(
     onResetPins: () -> Unit,
     onSetDefault: () -> Unit,
     onUnhideApp: (LaunchableApp) -> Unit,
+    onCycleAi: () -> Unit,
 ) {
     val context = LocalContext.current
     var hiddenOpen by remember { mutableStateOf(false) }
@@ -97,6 +98,15 @@ fun SettingsScreen(
             )
         }
         SettingsRow("Reset pins", "Four slots fill from use") { onResetPins() }
+        SettingsRow(
+            "Ask",
+            when {
+                state.aiInstalled.isEmpty() ->
+                    "Install Grok, ChatGPT, Gemini or Claude"
+                else ->
+                    "${state.aiLabel} · two-finger tap the print"
+            },
+        ) { onCycleAi() }
         SettingsRow(
             "Hidden apps",
             if (hiddenApps.isEmpty()) {

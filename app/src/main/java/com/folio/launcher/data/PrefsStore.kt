@@ -40,6 +40,7 @@ data class Prefs(
     val bingIndex: Int = -1,
     val quoteSalt: Int = 0,
     val hiddenPackages: List<String> = emptyList(),
+    val aiPackage: String = "",
 )
 
 class PrefsStore(context: Context) {

@@ -223,6 +223,7 @@ class MainActivity : ComponentActivity() {
                             onSkipTrack = { viewModel.skipTrack() },
                             onOpenPlayer = { viewModel.openPlayer(this@MainActivity) },
                             onHideApp = { viewModel.hideApp(it) },
+                            onAskAi = { viewModel.openAi(this@MainActivity, it) },
                         )
                     }
                     composable("settings") {
@@ -235,6 +236,7 @@ class MainActivity : ComponentActivity() {
                             onResetPins = { viewModel.resetPins() },
                             onSetDefault = { openHomeRole() },
                             onUnhideApp = { viewModel.unhideApp(it) },
+                            onCycleAi = { viewModel.cycleAi() },
                         )
                     }
                 }

@@ -47,7 +47,8 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. Other home screens are hidden from the grid, recents, and the rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
 - Swipe an icon right (rail or drawer) to hide that package from the home screen. Settings → Hidden apps to unhide. Search still finds hidden apps.
 - Swipe down (idle): Android notification shade, not search.
-- Search pill: tap. No search gesture.
+- Search pill: tap. No search gesture. Long-press Search: Ask overlay for the chosen AI.
+- Two-finger tap the print: Ask overlay. Settings → Ask cycles Grok / ChatGPT / Gemini / Claude if installed. Folio only launches the app (with a prompt when it can); no AI network of its own.
 - Double-tap print: next Bing + next quote.
 - Now playing on home is prev / play / next above the rail, always visible — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause, or to start Spotify if nothing is playing; long-press opens Spotify. Prefer Spotify if several sessions are active.
 - Clock tap does nothing. Clock long-press → Settings → Choose photo for a local print.
@@ -57,7 +58,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Tests
 
-`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability, sheet open/rubber-band. Run `testDebugUnitTest` before a push.
+`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability, sheet open/rubber-band, AiApps install/cycle/uris. Run `testDebugUnitTest` before a push.
 
 ## Ship
 

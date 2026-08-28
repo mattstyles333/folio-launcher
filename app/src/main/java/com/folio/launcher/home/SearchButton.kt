@@ -33,6 +33,7 @@ import com.folio.launcher.ui.PrintInk
 @Composable
 fun SearchButton(
     onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -45,8 +46,11 @@ fun SearchButton(
             }
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White.copy(alpha = 0.16f))
-            .pointerInput(onClick) {
-                detectTapGestures(onTap = { onClick() })
+            .pointerInput(onClick, onLongPress) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
             }
             .padding(horizontal = 20.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,

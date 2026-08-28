@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.DefaultApps
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
@@ -301,6 +302,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { prefsStore.update { it.copy(showClock = show) } }
     }
 
+    fun cycleAi() {
+        viewModelScope.launch {
+            prefsStore.update { prefs ->
+                val installed = AiApps.installed(latestApps)
+                prefs.copy(aiPackage = AiApps.cyclePackage(prefs.aiPackage, installed))
+            }
+        }
+    }
+
+    fun openAi(host: Context, prompt: String) {
+        val packages = latestApps.map { it.packageName }.toSet()
+        val kind = AiApps.resolve(state.value.aiPackage, AiApps.installedFrom(packages)) ?: return
+        val pkg = AiApps.matchedPackage(kind, packages) ?: return
+        if (AiApps.open(host, kind, prompt, pkg)) {
+            viewModelScope.launch { usageStore.record(pkg) }
+        }
+    }
+
     fun skipRole() {
         viewModelScope.launch {
             prefsStore.update { finishOnboarding(it.copy(skippedRole = true)) }
@@ -530,6 +549,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             QuoteBank.todayIndex(),
             prefs.quoteSalt,
         )
+        val packages = apps.map { it.packageName }.toSet()
+        val aiInstalled = AiApps.installedFrom(packages)
+        val ai = AiApps.resolve(prefs.aiPackage, aiInstalled)
+        val aiPackage = ai?.let { AiApps.matchedPackage(it, packages) }.orEmpty()
 
         val roleDone = prefs.skippedRole || extraState.isDefaultHome
         val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
@@ -577,6 +600,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             quote = quote?.text.orEmpty(),
             quoteAuthor = quote?.author.orEmpty(),
             hiddenPackages = prefs.hiddenPackages.toSet(),
+            aiPackage = aiPackage,
+            aiLabel = ai?.label.orEmpty(),
+            aiInstalled = aiInstalled,
         )
     }
 

@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.Ranking
@@ -56,6 +57,7 @@ import com.folio.launcher.onboarding.Onboarding
 import com.folio.launcher.recents.DockRowHeight
 import com.folio.launcher.recents.ExpandingDock
 import com.folio.launcher.search.AppPicker
+import com.folio.launcher.search.AskOverlay
 import com.folio.launcher.search.SearchOverlay
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
@@ -89,6 +91,7 @@ fun HomeScreen(
     onSkipTrack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onHideApp: (LaunchableApp) -> Unit,
+    onAskAi: (String) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -96,7 +99,9 @@ fun HomeScreen(
     val context = LocalContext.current
     val pull = remember { SheetPull() }
     var searchOpen by remember { mutableStateOf(false) }
+    var askOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var askQuery by remember { mutableStateOf("") }
     var pinSlot by remember { mutableIntStateOf(-1) }
     var lookOverride by remember { mutableStateOf<RingerVisual?>(null) }
     var flashLook by remember { mutableStateOf(false) }
@@ -122,7 +127,9 @@ fun HomeScreen(
     LaunchedEffect(idleEpoch) {
         if (idleEpoch == 0) return@LaunchedEffect
         searchOpen = false
+        askOpen = false
         query = ""
+        askQuery = ""
         pinSlot = -1
         revealTarget = null
         revealProgress.snapTo(0f)
@@ -172,7 +179,7 @@ fun HomeScreen(
             }
         }
 
-        val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0
+        val gesturesEnabled = state.onboarding == null && !searchOpen && !askOpen && pinSlot < 0
         fun sheetDrag(): Modifier = Modifier.folioSheetPull(
             enabled = gesturesEnabled,
             pull = pull,
@@ -196,12 +203,26 @@ fun HomeScreen(
 
         fun openSearch() {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            askOpen = false
             searchOpen = true
         }
 
-        BackHandler(enabled = searchOpen || pull.locked || pinSlot >= 0) {
+        fun openAsk() {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            searchOpen = false
+            query = ""
+            askQuery = ""
+            askOpen = true
+            if (pull.px > 8f) collapse()
+        }
+
+        BackHandler(enabled = searchOpen || askOpen || pull.locked || pinSlot >= 0) {
             when {
                 pinSlot >= 0 -> pinSlot = -1
+                askOpen -> {
+                    askOpen = false
+                    askQuery = ""
+                }
                 searchOpen -> {
                     searchOpen = false
                     query = ""
@@ -251,6 +272,9 @@ fun HomeScreen(
             Modifier
                 .fillMaxSize()
                 .then(sheetDrag())
+                .detectTwoFingerTap(enabled = gesturesEnabled) {
+                    if (pull.px < 8f) openAsk()
+                }
                 .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
@@ -284,6 +308,7 @@ fun HomeScreen(
         )
 
         if (!searchOpen &&
+            !askOpen &&
             state.onboarding == null &&
             (state.showClock || state.wallpaperCaption.isNotEmpty() || developing || flashLook || state.quote.isNotEmpty())
         ) {
@@ -345,7 +370,7 @@ fun HomeScreen(
                     .padding(bottom = 64.dp)
                     .then(if (pull.locked) Modifier else sheetDrag()),
             )
-            if (state.onboarding == null && !searchOpen) {
+            if (state.onboarding == null && !searchOpen && !askOpen) {
                 val namedLook = targetLook ?: look
                 PlaybackStrip(
                     playing = state.musicPlaying,
@@ -367,13 +392,14 @@ fun HomeScreen(
             }
             if (state.onboarding == null) {
                 SearchButton(
-                    onClick = { if (!searchOpen && pinSlot < 0) openSearch() },
+                    onClick = { if (!searchOpen && !askOpen && pinSlot < 0) openSearch() },
+                    onLongPress = { if (pinSlot < 0) openAsk() },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 12.dp)
                         .graphicsLayer {
                             val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
-                            alpha = if (searchOpen) 0f else 1f - open * 0.12f
+                            alpha = if (searchOpen || askOpen) 0f else 1f - open * 0.12f
                         },
                 )
             }
@@ -406,6 +432,28 @@ fun HomeScreen(
             onDismiss = {
                 searchOpen = false
                 query = ""
+            },
+        )
+
+        val askChips = remember(state.aiLabel, state.quote) {
+            if (state.aiLabel.isEmpty()) emptyList()
+            else AiApps.suggestions(state.aiLabel, state.quote)
+        }
+        AskOverlay(
+            visible = askOpen,
+            aiLabel = state.aiLabel,
+            query = askQuery,
+            onQueryChange = { askQuery = it },
+            suggestions = askChips,
+            accent = state.accent,
+            onAsk = { prompt ->
+                onAskAi(prompt)
+                askOpen = false
+                askQuery = ""
+            },
+            onDismiss = {
+                askOpen = false
+                askQuery = ""
             },
         )
 
@@ -460,11 +508,13 @@ fun HomeScreen(
                 state.mode == RingerVisual.Silent &&
                 state.onboarding == null &&
                 !searchOpen &&
+                !askOpen &&
                 !pull.locked ->
                 "Tap to let Silent mute the ringer." to onSilentHint
             state.mediaHint &&
                 state.onboarding == null &&
                 !searchOpen &&
+                !askOpen &&
                 !pull.locked ->
                 "Tap so Folio can see what’s playing." to onMediaHint
             else -> null

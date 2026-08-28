@@ -64,4 +64,7 @@ data class HomeUiState(
     val quote: String = "",
     val quoteAuthor: String = "",
     val hiddenPackages: Set<String> = emptySet(),
+    val aiPackage: String = "",
+    val aiLabel: String = "",
+    val aiInstalled: List<AiKind> = emptyList(),
 )
