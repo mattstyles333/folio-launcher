@@ -1,53 +1,63 @@
 # Pulse
 
-Opinionated Android launcher. Idle is a print. Apps are reached by search, a four-app rail, and a pull-up recents sheet. Ringer mode is the theme.
+An Android home screen. Idle is a photograph. Apps are four icons, a Search pill, and a pull-up grid. The ringer is the theme: **Sound** is full colour, **Vibrate** is half the saturation, **Silent** is black and white.
+
+No ads, no feed, no account. Sideload only.
+
+**Primary device:** Galaxy S23 (6.1", 1080×2340, 19.5:9, 120 Hz, centre punch-hole).
 
 Requires Android 12 (API 31)+.
-
-## Build
-
-JDK 17 and Android SDK (platform 35, build-tools 35) are required.
-
-```bash
-cd pulse
-export JAVA_HOME="${JAVA_HOME:-$(mise where java 2>/dev/null)}"
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-./gradlew testDebugUnitTest assembleDebug assembleRelease
-```
-
-| Artifact | Path |
-|---|---|
-| Debug APK | `app/build/outputs/apk/debug/app-debug.apk` |
-| Sideload release | `app/build/outputs/apk/release/app-release.apk` (debug-signed) |
 
 ## Install
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+export JAVA_HOME="${JAVA_HOME:-$(mise where java 2>/dev/null)}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+./gradlew testDebugUnitTest assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-## Set as Home
+Release is **debug-signed** for sideload (not Play). Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-After install, press Home and pick **Pulse**, or:
-
-1. Open Pulse (it asks on first run).
-2. Android Settings → Apps → Default apps → Home app → **Pulse**.
-3. From Pulse settings: **Set as default launcher**.
-
-From a computer:
+Press Home and pick **Pulse**, or:
 
 ```bash
 adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 ```
 
-## Permissions
+## Use
 
-Pulse does not need a network, an account, or Play services.
+| Gesture | What |
+|---|---|
+| Tap Search / swipe down / tap clock | Spotlight |
+| Drag the four icons up | More apps |
+| Double-tap the print | Next Bing photograph + next quote |
+| Jewel on the right | Sound / Vibrate / Silent. Drag to scrub, tap to cycle. Long-press for settings. |
+| Plug in | Hairline around the clock fills with charge |
+| Music (optional) | Song under the date; tap to skip |
+
+Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
+
+## Permissions
 
 | Access | When |
 |---|---|
-| Photo picker | Choosing a print. System picker only; no broad storage. |
-| Do Not Disturb | First time you set Silent, so the phone can actually mute. Deny and the look still changes. |
-| Usage access | Optional, Settings → Better ranking. Improves recents and unpinned rail slots. |
+| Internet | Bing prints only. Everything else is local. |
+| Photo picker | Settings → Choose photo. No broad storage. |
+| Do Not Disturb | Optional. Silent still *looks* silent if you deny; tap the hint to mute for real. |
+| Usage access | Optional. Settings → Better ranking. |
+| Notification access | Optional. Settings → Now playing. |
 
-Sound / Vibrate / Silent follow the ringer jewel and the hardware ringer switch.
+## Build
+
+JDK 17, Android SDK 35.
+
+```bash
+./gradlew testDebugUnitTest assembleDebug assembleRelease
+```
+
+See `AGENTS.md` if you are a coding agent working in this tree.
+
+## License
+
+MIT. See `LICENSE`.

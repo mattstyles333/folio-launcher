@@ -28,7 +28,7 @@ class ParallaxState {
 }
 
 @Composable
-fun rememberParallax(maxShift: Dp = 14.dp, enabled: Boolean = true): ParallaxState {
+fun rememberParallax(maxShift: Dp = 16.dp, enabled: Boolean = true): ParallaxState {
     val context = LocalContext.current
     val density = LocalDensity.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -56,8 +56,8 @@ fun rememberParallax(maxShift: Dp = 14.dp, enabled: Boolean = true): ParallaxSta
                 val gz = event.values.getOrNull(2) ?: 0f
                 val tx = (-gx / SensorManager.GRAVITY_EARTH).coerceIn(-1f, 1f) * maxPx
                 val ty = (gz / SensorManager.GRAVITY_EARTH).coerceIn(-1f, 1f) * maxPx
-                sx = sx * 0.88f + tx * 0.12f
-                sy = sy * 0.88f + ty * 0.12f
+                sx = sx * 0.84f + tx * 0.16f
+                sy = sy * 0.84f + ty * 0.16f
                 state.x = sx
                 state.y = sy
             }

@@ -20,9 +20,10 @@ object QuoteBank {
 
     fun load(context: Context): List<Quote> {
         cached?.let { return it }
-        val raw = context.assets.open("quotes.json").bufferedReader().use { it.readText() }
-        val list = runCatching { json.decodeFromString<List<Quote>>(raw) }.getOrDefault(emptyList())
-            .filter { it.text.isNotBlank() }
+        val list = runCatching {
+            context.assets.open("quotes.json").bufferedReader().use { it.readText() }
+                .let { json.decodeFromString<List<Quote>>(it) }
+        }.getOrDefault(emptyList()).filter { it.text.isNotBlank() }
         cached = list
         return list
     }

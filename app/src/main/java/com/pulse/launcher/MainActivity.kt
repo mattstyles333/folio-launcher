@@ -1,6 +1,8 @@
 package com.pulse.launcher
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -45,6 +47,10 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
+        }
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        if (Build.VERSION.SDK_INT >= 31) {
+            window.attributes = window.attributes.apply { preferredRefreshRate = 120f }
         }
 
         setContent {

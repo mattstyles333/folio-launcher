@@ -11,6 +11,9 @@
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature
+        android:name="android.hardware.sensor.accelerometer"
+        android:required="false" />
 
     <queries>
         <intent>
@@ -54,6 +57,7 @@
             android:excludeFromRecents="true"
             android:exported="true"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
             android:resumeWhilePausing="true"
             android:stateNotNeeded="true"
             android:theme="@style/Theme.Pulse"

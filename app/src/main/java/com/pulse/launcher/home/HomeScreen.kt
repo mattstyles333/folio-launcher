@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -275,10 +278,11 @@ fun HomeScreen(
                 onClockTap = { openSearch() },
                 onClockLongPress = onOpenSettings,
                 onSkipTrack = onSkipTrack,
+                haloSize = (maxWidth * 0.56f).coerceIn(196.dp, 224.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = maxHeight * 0.10f)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                    .padding(top = (maxHeight * 0.045f).coerceIn(18.dp, 32.dp))
                     .graphicsLayer {
                         alpha = 1f - open * 0.92f
                         translationY = -open * 18f
@@ -302,7 +306,8 @@ fun HomeScreen(
             onHeld = { jewelHeld = it },
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 4.dp, top = 72.dp)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End))
+                .padding(end = 6.dp)
                 .graphicsLayer { alpha = 1f - open * 0.55f },
         )
 
@@ -310,7 +315,9 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .navigationBarsPadding(),
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ExpandingDock(
@@ -407,8 +414,8 @@ fun HomeScreen(
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = 8.dp, start = 20.dp, end = 20.dp)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                    .padding(top = 10.dp, start = 20.dp, end = 20.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(VoidBlack.copy(alpha = 0.75f))
                     .clickable(onClick = onSilentHint)

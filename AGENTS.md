@@ -1,0 +1,55 @@
+# Pulse — notes for coding agents
+
+Sideloadable Android 12+ (API 31) home-screen launcher. Package `com.pulse.launcher`, label Pulse. Idle is a print. No ads, no feed, no account.
+
+## Layout target
+
+Primary device is a **Galaxy S23**: 6.1" 1080×2340 (19.5:9), ~425 ppi, centre punch-hole, 120 Hz AMOLED, gesture nav, rounded corners.
+
+- Use `WindowInsets.safeDrawing` (cutout + bars), not raw percentages of a 2400px emulator.
+- Clock sits just under the status/cutout band. Jewel is mid-right, inset from the curve.
+- Bing UHD fetch uses the real `DisplayMetrics` size (1080×2340 on S23), not a hardcoded 1920 height.
+- Portrait only. Prefer 120 Hz when the panel offers it.
+- Parallax is a few millimetres and must unregister on pause.
+
+## Build
+
+```bash
+export JAVA_HOME="${JAVA_HOME:-$(mise where java)}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+./gradlew testDebugUnitTest assembleDebug assembleRelease
+```
+
+JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/outputs/apk/release/app-release.apk`). Do not minify without re-checking kotlinx.serialization keep rules.
+
+## Architecture
+
+| Area | Where |
+|---|---|
+| Home composition | `home/HomeScreen.kt` |
+| Print + ringer grades | `home/WallpaperLayer.kt` (full colour / 50% sat / grey) |
+| Rail + pull-up grid | `home/Rail.kt`, `recents/ExpandingDock.kt` |
+| Ringer slider | `home/Jewel.kt` — preview on drag, commit on release |
+| Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
+| Bing prints | `data/BingClient.kt`, double-tap idle |
+| Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
+| Now playing / charge | `data/DeviceSignals.kt` |
+
+`HomeViewModel` is the only state owner. Prefs are a single JSON blob in DataStore (`PrefsStore`).
+
+## Do not add
+
+Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads.
+
+## Touch contracts
+
+- Swipe up on wallpaper/rail: expand grid (spring snap to rows).
+- Swipe down (idle): search.
+- Search pill: tap.
+- Double-tap print: next Bing + next quote.
+- Jewel: tap cycles, drag scrubs look live, long-press settings.
+- Clock tap: search. Clock long-press: settings.
+
+## Tests
+
+`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability. Run `testDebugUnitTest` before a push.

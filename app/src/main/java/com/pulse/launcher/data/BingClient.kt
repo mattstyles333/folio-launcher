@@ -16,19 +16,30 @@ class BingClient {
     @Volatile
     private var cacheKey: String? = null
 
-    fun imageAt(index: Int, locale: Locale = Locale.getDefault()): BingImage? {
-        val images = archive(locale)
+    fun imageAt(
+        index: Int,
+        locale: Locale = Locale.getDefault(),
+        width: Int = 1080,
+        height: Int = 2340,
+    ): BingImage? {
+        val images = archive(locale, width, height)
         if (images.isEmpty()) return null
         val i = index.floorMod(images.size)
         return images[i]
     }
 
-    fun archive(locale: Locale = Locale.getDefault()): List<BingImage> {
-        val key = LocalDate.now().toString() + market(locale)
+    fun archive(
+        locale: Locale = Locale.getDefault(),
+        width: Int = 1080,
+        height: Int = 2340,
+    ): List<BingImage> {
+        val w = width.coerceIn(720, 1440)
+        val h = height.coerceIn(1280, 3200)
+        val key = LocalDate.now().toString() + market(locale) + "${w}x$h"
         cache?.let { if (cacheKey == key) return it }
         val mkt = market(locale)
         val endpoint =
-            "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=$mkt&uhd=1&uhdwidth=1080&uhdheight=1920"
+            "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=$mkt&uhd=1&uhdwidth=$w&uhdheight=$h"
         val body = getBytes(endpoint, accept = "application/json") ?: return emptyList()
         val parsed = runCatching {
             json.decodeFromString<BingArchive>(body.decodeToString())

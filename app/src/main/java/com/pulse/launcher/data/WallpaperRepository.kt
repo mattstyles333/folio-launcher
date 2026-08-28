@@ -42,7 +42,12 @@ class WallpaperRepository(private val context: Context) {
 
     suspend fun importBing(index: Int): BingShot? = withContext(Dispatchers.IO) {
         runCatching {
-            val image = bing.imageAt(index) ?: return@runCatching null
+            val dm = context.resources.displayMetrics
+            val image = bing.imageAt(
+                index = index,
+                width = dm.widthPixels,
+                height = dm.heightPixels,
+            ) ?: return@runCatching null
             if (!bing.download(image, file)) return@runCatching null
             BingShot(
                 index = index,
@@ -86,10 +91,10 @@ class WallpaperRepository(private val context: Context) {
         val cropped = centerCrop(src, w, h)
         val accent = AccentExtractor.extract(cropped)
         val photo = cropped.copy(Bitmap.Config.ARGB_8888, false)
-        val blurred = atmosphereBlur(photo)
+        val image = photo.asImageBitmap()
         LoadedWallpaper(
-            photo = photo.asImageBitmap(),
-            blurred = blurred.asImageBitmap(),
+            photo = image,
+            blurred = image,
             accent = accent,
         )
     }
@@ -143,16 +148,6 @@ class WallpaperRepository(private val context: Context) {
         val x = ((scaledW - w) / 2).coerceAtLeast(0)
         val y = ((scaledH - h) / 2.4f).toInt().coerceAtLeast(0).coerceAtMost((scaledH - h).coerceAtLeast(0))
         return Bitmap.createBitmap(scaled, x, y, w.coerceAtMost(scaled.width), h.coerceAtMost(scaled.height))
-    }
-
-    private fun atmosphereBlur(src: Bitmap): Bitmap {
-        fun pass(b: Bitmap, factor: Int): Bitmap {
-            val w = (b.width / factor).coerceAtLeast(8)
-            val h = (b.height / factor).coerceAtLeast(8)
-            val small = Bitmap.createScaledBitmap(b, w, h, true)
-            return Bitmap.createScaledBitmap(small, b.width, b.height, true)
-        }
-        return pass(pass(pass(src, 14), 8), 5)
     }
 
     data class LoadedWallpaper(

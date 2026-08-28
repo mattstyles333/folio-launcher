@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pulse.launcher.ui.ClockDateStyle
@@ -47,6 +48,7 @@ fun ClockCluster(
     onClockTap: () -> Unit,
     onClockLongPress: () -> Unit,
     onSkipTrack: () -> Unit,
+    haloSize: Dp = 220.dp,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -56,7 +58,7 @@ fun ClockCluster(
                     ChargeHairline(
                         accent = accent,
                         fraction = charge,
-                        modifier = Modifier.size(236.dp),
+                        modifier = Modifier.size(haloSize),
                     )
                 }
                 ClockDisplay(
@@ -90,7 +92,7 @@ fun ClockCluster(
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 32.dp),
+                modifier = Modifier.padding(horizontal = 44.dp),
             )
             if (quoteAuthor.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
