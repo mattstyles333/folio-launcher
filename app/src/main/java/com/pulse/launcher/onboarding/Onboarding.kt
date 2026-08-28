@@ -32,12 +32,17 @@ fun Onboarding(
     step: OnboardingStep,
     accent: Color,
     systemWallpaperReadable: Boolean,
+    hasDndAccess: Boolean,
+    hasUsageAccess: Boolean,
     onSetDefault: () -> Unit,
     onSkipRole: () -> Unit,
     onPickPhoto: () -> Unit,
     onUseBing: () -> Unit,
     onUseSystem: () -> Unit,
     onSkipWallpaper: () -> Unit,
+    onOpenDnd: () -> Unit,
+    onOpenUsage: () -> Unit,
+    onSkipAccess: () -> Unit,
 ) {
     Box(
         Modifier
@@ -62,6 +67,7 @@ fun Onboarding(
                     text = when (step) {
                         OnboardingStep.Role -> "Idle is a print. Make it Home."
                         OnboardingStep.Wallpaper -> "Choose a print."
+                        OnboardingStep.Access -> "Two grants. Skip either — they're in Settings."
                     },
                     color = PrintInk.copy(alpha = 0.55f),
                     fontSize = 16.sp,
@@ -96,6 +102,28 @@ fun Onboarding(
                             "Skip",
                             color = PrintInk.copy(alpha = 0.45f),
                             modifier = Modifier.clickable(onClick = onSkipWallpaper),
+                            fontSize = 14.sp,
+                        )
+                    }
+                    OnboardingStep.Access -> {
+                        PrimaryButton(
+                            if (hasDndAccess) "Silent can mute" else "Let Silent actually mute",
+                            accent,
+                            onOpenDnd,
+                            filled = !hasDndAccess,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        PrimaryButton(
+                            if (hasUsageAccess) "Ranking from last 30 days" else "Rank apps from how you use them",
+                            accent.copy(alpha = 0.85f),
+                            onOpenUsage,
+                            filled = !hasUsageAccess,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            if (hasDndAccess && hasUsageAccess) "Continue" else "Skip",
+                            color = PrintInk.copy(alpha = 0.45f),
+                            modifier = Modifier.clickable(onClick = onSkipAccess),
                             fontSize = 14.sp,
                         )
                     }

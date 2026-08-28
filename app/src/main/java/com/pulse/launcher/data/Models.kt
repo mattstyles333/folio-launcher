@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 
 enum class RingerVisual { Sound, Vibrate, Silent }
 
-enum class OnboardingStep { Role, Wallpaper }
+enum class OnboardingStep { Role, Wallpaper, Access }
 
 data class LaunchableApp(
     val packageName: String,
@@ -43,6 +43,7 @@ data class HomeUiState(
     val needsDndAccess: Boolean = false,
     val isDefaultHome: Boolean = false,
     val hasUsageAccess: Boolean = false,
+    val hasDndAccess: Boolean = false,
     val systemWallpaperReadable: Boolean = false,
     val versionName: String = "1.0.0",
     val launches: Map<String, List<Long>> = emptyMap(),

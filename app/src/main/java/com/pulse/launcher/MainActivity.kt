@@ -117,6 +117,14 @@ class MainActivity : ComponentActivity() {
                             onSkipRole = { viewModel.skipRole() },
                             onSkipWallpaper = { viewModel.skipWallpaper() },
                             onUseSystemWallpaper = { viewModel.useSystemWallpaper() },
+                            onOpenDnd = { openDndAccess() },
+                            onOpenUsage = {
+                                startActivity(
+                                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            },
+                            onSkipAccess = { viewModel.skipAccess() },
                             onSilentHint = {
                                 viewModel.dismissSilentHint()
                                 openDndAccess()

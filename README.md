@@ -44,8 +44,8 @@ Quotes sit under the date — one short line a day, from an on-device bank. A ne
 |---|---|
 | Internet | Bing prints only. Everything else is local. |
 | Photo picker | Settings → Choose photo. No broad storage. |
-| Do Not Disturb | Optional. Silent still *looks* silent if you deny; tap the hint to mute for real. |
-| Usage access | Optional. Settings → Better ranking. |
+| Do Not Disturb | Optional. Asked at onboarding. Silent still *looks* silent if you deny. |
+| Usage access | Optional. Asked at onboarding, or Settings → Better ranking. Last 30 days of opens. |
 | Notification access | Optional. Settings → Now playing. |
 
 ## Build

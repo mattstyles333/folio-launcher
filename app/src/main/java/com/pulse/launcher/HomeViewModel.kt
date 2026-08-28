@@ -48,6 +48,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         ExtraState(
             isDefaultHome = RingerController.isDefaultHome(app),
             hasUsageAccess = RingerController.hasUsageAccess(app),
+            hasDndAccess = ringer.hasPolicyAccess(),
             systemWallpaperReadable = wallpaperRepo.systemWallpaperReadable(),
         ),
     )
@@ -125,6 +126,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         extra.value = extra.value.copy(
             isDefaultHome = RingerController.isDefaultHome(app),
             hasUsageAccess = granted,
+            hasDndAccess = ringer.hasPolicyAccess(),
             systemWallpaperReadable = wallpaperRepo.systemWallpaperReadable(),
             hasNowPlayingAccess = app.signals.hasNowPlayingAccess(),
         )
@@ -142,6 +144,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 latestApps,
                 force = granted && !wasGranted,
             )
+            if (!latestPrefs.accessOffered && ringer.hasPolicyAccess() && granted) {
+                prefsStore.update { finishOnboarding(it.copy(accessOffered = true)) }
+            }
         }
     }
 
@@ -251,6 +256,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun skipAccess() {
+        viewModelScope.launch {
+            prefsStore.update { finishOnboarding(it.copy(accessOffered = true)) }
+        }
+    }
+
     fun setWallpaper(uri: Uri) {
         viewModelScope.launch {
             if (wallpaperRepo.importFromUri(uri)) {
@@ -305,7 +316,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishOnboarding(prefs: Prefs): Prefs {
         val roleDone = prefs.skippedRole || RingerController.isDefaultHome(app)
         val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
-        return prefs.copy(onboardingComplete = roleDone && wallDone)
+        val accessDone = prefs.accessOffered || (ringer.hasPolicyAccess() && extra.value.hasUsageAccess)
+        return prefs.copy(
+            accessOffered = if (accessDone) true else prefs.accessOffered,
+            onboardingComplete = roleDone && wallDone && accessDone,
+        )
     }
 
     private suspend fun loadWallpaper() {
@@ -437,10 +452,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val roleDone = prefs.skippedRole || extraState.isDefaultHome
         val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
+        val accessDone = prefs.accessOffered || (extraState.hasDndAccess && extraState.hasUsageAccess)
         val onboarding = when {
-            prefs.onboardingComplete -> null
             !roleDone -> OnboardingStep.Role
             !wallDone -> OnboardingStep.Wallpaper
+            !accessDone -> OnboardingStep.Access
             else -> null
         }
 
@@ -460,6 +476,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             needsDndAccess = needsDnd,
             isDefaultHome = extraState.isDefaultHome,
             hasUsageAccess = extraState.hasUsageAccess,
+            hasDndAccess = extraState.hasDndAccess,
             systemWallpaperReadable = extraState.systemWallpaperReadable,
             versionName = BuildConfig.VERSION_NAME,
             wallpaperBusy = extraState.wallpaperBusy,
@@ -482,6 +499,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private data class ExtraState(
         val isDefaultHome: Boolean = false,
         val hasUsageAccess: Boolean = false,
+        val hasDndAccess: Boolean = false,
         val systemWallpaperReadable: Boolean = false,
         val usageTimestamps: Map<String, List<Long>> = emptyMap(),
         val wallpaperBusy: Boolean = false,

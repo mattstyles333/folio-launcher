@@ -29,6 +29,7 @@ data class Prefs(
     val skippedRole: Boolean = false,
     val wallpaperSet: Boolean = false,
     val skippedWallpaper: Boolean = false,
+    val accessOffered: Boolean = false,
     val slots: List<SlotPref> = List(4) { SlotPref() },
     val accent: Int = DEFAULT_ACCENT,
     val lastRailDay: Int = -1,

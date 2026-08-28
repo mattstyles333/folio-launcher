@@ -31,6 +31,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Rail + pull-up sheet | `home/Rail.kt`, `recents/ExpandingDock.kt` — two-stop sheet, LazyGrid of every app |
 | Ringer develop | Long-press print — `GradeReveal` circular clip in `home/WallpaperLayer.kt` |
 | Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
+| Onboarding | Role → print → DND + usage. Both grants skippable; now-playing stays in Settings. |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
 | Now playing / charge | `data/DeviceSignals.kt` |

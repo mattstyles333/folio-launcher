@@ -79,6 +79,9 @@ fun HomeScreen(
     onSkipRole: () -> Unit,
     onSkipWallpaper: () -> Unit,
     onUseSystemWallpaper: () -> Unit,
+    onOpenDnd: () -> Unit,
+    onOpenUsage: () -> Unit,
+    onSkipAccess: () -> Unit,
     onSilentHint: () -> Unit,
     onNextBing: () -> Unit,
     onSkipTrack: () -> Unit,
@@ -415,12 +418,17 @@ fun HomeScreen(
                 step = step,
                 accent = state.accent,
                 systemWallpaperReadable = state.systemWallpaperReadable,
+                hasDndAccess = state.hasDndAccess,
+                hasUsageAccess = state.hasUsageAccess,
                 onSetDefault = onSetDefault,
                 onSkipRole = onSkipRole,
                 onPickPhoto = onPickPhoto,
                 onUseBing = onNextBing,
                 onUseSystem = onUseSystemWallpaper,
                 onSkipWallpaper = onSkipWallpaper,
+                onOpenDnd = onOpenDnd,
+                onOpenUsage = onOpenUsage,
+                onSkipAccess = onSkipAccess,
             )
         }
 
