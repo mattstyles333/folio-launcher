@@ -12,6 +12,7 @@ import com.pulse.launcher.data.HomeUiState
 import com.pulse.launcher.data.LaunchableApp
 import com.pulse.launcher.data.OnboardingStep
 import com.pulse.launcher.data.Prefs
+import com.pulse.launcher.data.PulseBuzz
 import com.pulse.launcher.data.QuoteBank
 import com.pulse.launcher.data.RailSlot
 import com.pulse.launcher.data.Ranking
@@ -160,6 +161,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setRinger(visual: RingerVisual) {
         ringer.set(visual)
+        if (visual == RingerVisual.Vibrate) PulseBuzz.play(app)
         viewModelScope.launch {
             if (visual == RingerVisual.Silent && !ringer.hasPolicyAccess()) {
                 prefsStore.update { it.copy(silentHint = true) }

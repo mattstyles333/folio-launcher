@@ -59,6 +59,23 @@ class RankingTest {
     }
 
     @Test
+    fun drawer_recentFirstThenAlpha() {
+        val now = noon
+        val launches = mapOf(
+            "com.chat" to listOf(now - 1_000),
+            "com.maps" to listOf(now - 50_000),
+        )
+        val labeled = listOf(
+            "com.alpha" to "Alpha",
+            "com.chat" to "Chat",
+            "com.maps" to "Maps",
+            "com.rail" to "Phone",
+        )
+        val order = Ranking.orderDrawer(labeled, rail = setOf("com.rail"), launches, now)
+        assertEquals(listOf("com.chat", "com.maps", "com.alpha"), order)
+    }
+
+    @Test
     fun combinedLaunches_mergesDistinct() {
         val local = mapOf("a" to listOf(1L, 2L))
         val extra = mapOf("a" to listOf(2L, 3L), "b" to listOf(9L))

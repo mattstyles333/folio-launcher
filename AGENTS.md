@@ -28,7 +28,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 |---|---|
 | Home composition | `home/HomeScreen.kt` |
 | Print + ringer grades | `home/WallpaperLayer.kt` (full colour / 50% sat / grey) |
-| Rail + pull-up grid | `home/Rail.kt`, `recents/ExpandingDock.kt` |
+| Rail + pull-up sheet | `home/Rail.kt`, `recents/ExpandingDock.kt` — two-stop sheet, LazyGrid of every app |
 | Ringer develop | Long-press print — `GradeReveal` circular clip in `home/WallpaperLayer.kt` |
 | Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
@@ -43,11 +43,11 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: expand grid (spring snap to rows).
+- Swipe up on wallpaper/rail: open app sheet (spring to open/closed). Once open, the grid scrolls. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote.
-- Long-press print: cycle Sound → Vibrate → Silent with circular develop from the press. Hardware ringer still drives the look.
+- Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Clock tap: search. Clock long-press: settings.
 
 ## Tests

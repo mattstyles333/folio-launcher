@@ -1,13 +1,10 @@
 package com.pulse.launcher.home
 
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -46,7 +43,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -59,8 +55,6 @@ import com.pulse.launcher.data.RingerVisual
 import com.pulse.launcher.onboarding.Onboarding
 import com.pulse.launcher.recents.DockRowHeight
 import com.pulse.launcher.recents.ExpandingDock
-import com.pulse.launcher.recents.dockSnapPx
-import com.pulse.launcher.recents.visibleExtraRows
 import com.pulse.launcher.search.AppPicker
 import com.pulse.launcher.search.SearchOverlay
 import com.pulse.launcher.ui.PrintInk
@@ -92,7 +86,6 @@ fun HomeScreen(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
-    val context = LocalContext.current
     val pullAnim = remember { Animatable(0f) }
     var dragging by remember { mutableStateOf(false) }
     var rawPull by remember { mutableFloatStateOf(0f) }
@@ -105,6 +98,7 @@ fun HomeScreen(
     var revealOrigin by remember { mutableStateOf(Offset.Zero) }
     var revealTarget by remember { mutableStateOf<RingerVisual?>(null) }
     val revealProgress = remember { Animatable(0f) }
+    var sheetLocked by remember { mutableStateOf(false) }
 
     val look = lookOverride ?: state.mode
     val developing = revealTarget != null
@@ -130,51 +124,55 @@ fun HomeScreen(
         dragging = false
         revealTarget = null
         revealProgress.snapTo(0f)
-        pullAnim.animateTo(0f, settleSpring())
+        sheetLocked = false
+        pullAnim.animateTo(0f, sheetSpring())
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val rowPx = with(density) { DockRowHeight.toPx() }
         val railPkgs = remember(state.rail) { state.rail.mapNotNull { it.app?.packageName }.toSet() }
-        val extras = remember(state.reveal, state.recents, railPkgs) {
-            val recentFirst = state.recents
-                .map { it.app }
-                .filter { it.packageName !in railPkgs }
-            val seen = recentFirst.map { it.key }.toSet()
-            recentFirst + state.reveal.filter {
-                it.packageName !in railPkgs && it.key !in seen
-            }
+        val extras = remember(state.apps, railPkgs, launches) {
+            Ranking.drawer(state.apps, railPkgs, launches)
         }
-        val maxRows = ((extras.size + 3) / 4).coerceAtMost(6)
-        val maxPull = maxRows * rowPx
+        val maxSheetPx = with(density) { (maxHeight * 0.62f).toPx() }.coerceAtLeast(rowPx * 3.2f)
         val searchSlop = with(density) { 56.dp.toPx() }
 
-        fun settle(to: Float) {
+        fun settleSheet(from: Float = if (dragging) rawPull else pullAnim.value, velocityY: Float = 0f) {
             scope.launch {
-                val from = if (dragging) rawPull else pullAnim.value
                 dragging = false
-                pullAnim.snapTo(from)
-                pullAnim.animateTo(to.coerceIn(0f, maxPull), settleSpring())
-            }
-        }
-
-        var lastRows by remember { mutableIntStateOf(0) }
-        fun tickRows(px: Float) {
-            val rowsNow = visibleExtraRows(px, rowPx)
-            if (rowsNow != lastRows) {
-                lastRows = rowsNow
-                val code = if (Build.VERSION.SDK_INT >= 34) {
-                    HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+                val start = from.coerceAtLeast(0f)
+                pullAnim.snapTo(start)
+                val pullVel = -velocityY
+                val open = if (kotlin.math.abs(pullVel) > 1250f) {
+                    pullVel > 0f
                 } else {
-                    HapticFeedbackConstants.CLOCK_TICK
+                    start > maxSheetPx * 0.26f
                 }
-                view.performHapticFeedback(code)
+                val target = if (open) maxSheetPx else 0f
+                pullAnim.animateTo(target, sheetSpring())
+                sheetLocked = open
+                if (open) {
+                    val tick = if (Build.VERSION.SDK_INT >= 34) {
+                        HapticFeedbackConstants.GESTURE_START
+                    } else {
+                        HapticFeedbackConstants.KEYBOARD_TAP
+                    }
+                    view.performHapticFeedback(tick)
+                }
             }
         }
 
         val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0
 
-        fun collapse() = settle(0f)
+        fun collapse() {
+            val from = if (dragging) rawPull else pullAnim.value
+            dragging = false
+            sheetLocked = false
+            scope.launch {
+                pullAnim.snapTo(from)
+                pullAnim.animateTo(0f, sheetSpring())
+            }
+        }
 
         fun openSearch() {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -192,7 +190,7 @@ fun HomeScreen(
             }
         }
 
-        fun revealDrag(): Modifier = Modifier.pointerInput(gesturesEnabled, maxPull) {
+        fun revealDrag(): Modifier = Modifier.pointerInput(gesturesEnabled, maxSheetPx) {
             if (!gesturesEnabled) return@pointerInput
             var downAccum = 0f
             val tracker = VelocityTracker()
@@ -207,26 +205,23 @@ fun HomeScreen(
                     change.consume()
                     tracker.addPosition(change.uptimeMillis, change.position)
                     downAccum += dy
-                    rawPull = rubberBand(rawPull - dy, maxPull)
-                    tickRows(rawPull)
+                    rawPull = rubberBand(rawPull - dy, maxSheetPx)
                 },
                 onDragEnd = {
                     if (rawPull < 8f && downAccum > searchSlop) {
                         dragging = false
                         openSearch()
                     } else {
-                        val projected = (rawPull - tracker.calculateVelocity().y * 0.18f)
-                            .coerceIn(0f, maxPull)
-                        settle(dockSnapPx(projected, rowPx, maxRows))
+                        settleSheet(rawPull, tracker.calculateVelocity().y)
                     }
                 },
                 onDragCancel = {
-                    settle(dockSnapPx(rawPull.coerceIn(0f, maxPull), rowPx, maxRows))
+                    settleSheet(rawPull, 0f)
                 },
             )
         }
 
-        val open = if (maxPull <= 0f) 0f else (pullPx / (rowPx * 2f)).coerceIn(0f, 1f)
+        val open = if (maxSheetPx <= 0f) 0f else (pullPx / maxSheetPx).coerceIn(0f, 1f)
         val targetLook = revealTarget
         val iconSat = if (targetLook != null) {
             lerp(look.iconSaturation(), targetLook.iconSaturation(), revealProgress.value)
@@ -274,19 +269,20 @@ fun HomeScreen(
                             if (revealTarget != null || dragging) return@detectTapGestures
                             val heldPull = if (dragging) rawPull else pullAnim.value
                             if (heldPull > 8f) return@detectTapGestures
-                            val next = look.nextRinger()
+                            val current = look
+                            val next = current.nextRinger()
+                            lookOverride = current
                             revealOrigin = origin
                             revealTarget = next
                             flashLook = true
                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            if (next == RingerVisual.Vibrate) buzz(context)
+                            onSetRinger(next)
                             scope.launch {
                                 revealProgress.snapTo(0f)
                                 revealProgress.animateTo(1f, developSpec())
                                 lookOverride = next
                                 revealTarget = null
                                 revealProgress.snapTo(0f)
-                                onSetRinger(next)
                                 delay(1100)
                                 flashLook = false
                             }
@@ -338,9 +334,16 @@ fun HomeScreen(
         ) {
             ExpandingDock(
                 pullPx = pullPx,
+                maxSheetPx = maxSheetPx,
                 rail = state.rail,
                 extras = extras,
                 iconSaturation = iconSat,
+                scrollEnabled = sheetLocked,
+                onSheetPull = { next ->
+                    dragging = true
+                    rawPull = next
+                },
+                onSheetRelease = { velY -> settleSheet(velocityY = velY) },
                 onLaunch = {
                     onLaunch(it)
                     searchOpen = false
@@ -350,7 +353,7 @@ fun HomeScreen(
                 onReorder = onReorder,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(revealDrag()),
+                    .then(if (sheetLocked) Modifier else revealDrag()),
             )
             if (state.onboarding == null) {
                 Spacer(Modifier.height(8.dp))
@@ -455,9 +458,9 @@ private fun rubberBand(offset: Float, limit: Float): Float {
     return limit + extra * dim / (dim + extra)
 }
 
-private fun settleSpring() = spring<Float>(
-    dampingRatio = 0.90f,
-    stiffness = Spring.StiffnessMedium,
+private fun sheetSpring() = spring<Float>(
+    dampingRatio = 0.84f,
+    stiffness = 580f,
 )
 
 private fun developSpec() = tween<Float>(
@@ -483,9 +486,4 @@ private fun RingerVisual.label(): String = when (this) {
     RingerVisual.Silent -> "Silent"
 }
 
-private fun buzz(context: android.content.Context) {
-    runCatching {
-        val vibrator = context.getSystemService(Vibrator::class.java) ?: return
-        vibrator.vibrate(VibrationEffect.createOneShot(36, VibrationEffect.DEFAULT_AMPLITUDE))
-    }
-}
+

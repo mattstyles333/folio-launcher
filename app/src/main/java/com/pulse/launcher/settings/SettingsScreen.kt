@@ -85,7 +85,11 @@ fun SettingsScreen(
         SettingsRow("Reset pins", "Four slots fill from use") { onResetPins() }
         SettingsRow(
             "Better ranking",
-            if (state.hasUsageAccess) "Usage access on" else "Grant usage access",
+            if (state.hasUsageAccess) {
+                "Last 30 days of opens, including before Pulse"
+            } else {
+                "Without this, ranking is only apps you open from Pulse"
+            },
         ) {
             context.startActivity(
                 Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),

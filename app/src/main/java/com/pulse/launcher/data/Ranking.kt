@@ -129,6 +129,41 @@ object Ranking {
         }
     }
 
+    fun drawer(
+        apps: List<LaunchableApp>,
+        railPackages: Set<String>,
+        launches: Map<String, List<Long>>,
+        now: Long = System.currentTimeMillis(),
+    ): List<LaunchableApp> {
+        val order = orderDrawer(
+            labeled = apps.map { it.packageName to it.label },
+            rail = railPackages,
+            launches = launches,
+            now = now,
+        )
+        val byPkg = apps.groupBy { it.packageName }
+        return order.flatMap { pkg -> byPkg[pkg].orEmpty() }
+    }
+
+    fun orderDrawer(
+        labeled: List<Pair<String, String>>,
+        rail: Set<String>,
+        launches: Map<String, List<Long>>,
+        now: Long = System.currentTimeMillis(),
+    ): List<String> {
+        return labeled
+            .filter { it.first !in rail }
+            .distinctBy { it.first }
+            .sortedWith(
+                compareByDescending<Pair<String, String>> {
+                    launches[it.first].orEmpty().maxOrNull() ?: 0L
+                }.thenByDescending {
+                    score(launches[it.first].orEmpty(), now)
+                }.thenBy { it.second.lowercase() },
+            )
+            .map { it.first }
+    }
+
     fun combinedLaunches(
         local: Map<String, List<Long>>,
         extra: Map<String, List<Long>>,

@@ -28,8 +28,10 @@ class RingerController(private val context: Context) {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
+            val sys = readSystem()
+            if (overrideVisual != null && sys != overrideVisual) return
             overrideVisual = null
-            _visual.value = readSystem()
+            _visual.value = sys
         }
     }
 
@@ -83,58 +85,94 @@ class RingerController(private val context: Context) {
     }
 
     fun set(visual: RingerVisual) {
+        overrideVisual = visual
         _visual.value = visual
         apply(visual)
+        val sys = readSystem()
+        if (sys == visual) overrideVisual = null
     }
 
     private fun apply(visual: RingerVisual) {
         when (visual) {
             RingerVisual.Sound -> {
-                overrideVisual = null
-                if (hasPolicyAccess()) {
-                    runCatching { notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+                clearDnd()
+                setMode(AudioManager.RINGER_MODE_NORMAL)
+                restoreRingVolume()
+                if (readSystem() != RingerVisual.Sound) {
+                    restoreRingVolume()
+                    setMode(AudioManager.RINGER_MODE_NORMAL)
                 }
-                runCatching { audio.ringerMode = AudioManager.RINGER_MODE_NORMAL }
             }
             RingerVisual.Vibrate -> {
-                overrideVisual = null
-                if (hasPolicyAccess()) {
-                    runCatching { notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+                rememberRingVolume()
+                clearDnd()
+                setMode(AudioManager.RINGER_MODE_VIBRATE)
+                setRingVolume(0)
+                if (readSystem() != RingerVisual.Vibrate) {
+                    setRingVolume(0)
+                    setMode(AudioManager.RINGER_MODE_VIBRATE)
                 }
-                runCatching { audio.ringerMode = AudioManager.RINGER_MODE_VIBRATE }
             }
             RingerVisual.Silent -> {
+                rememberRingVolume()
                 val silenced = trySilent()
-                if (!silenced) {
-                    overrideVisual = RingerVisual.Silent
-                    _visual.value = RingerVisual.Silent
-                    if (!hasPolicyAccess()) {
-                        _needsDndAccess.value = true
-                    }
-                } else {
-                    overrideVisual = null
+                if (!silenced && !hasPolicyAccess()) {
+                    _needsDndAccess.value = true
                 }
-            }
-        }
-        if (overrideVisual == null) {
-            _visual.value = readSystem().let { sys ->
-                if (visual == RingerVisual.Silent && sys != RingerVisual.Silent) visual else sys
             }
         }
     }
 
+    private var lastRingVolume = 0
+
+    private fun ringVolume(): Int =
+        runCatching { audio.getStreamVolume(AudioManager.STREAM_RING) }.getOrDefault(0)
+
+    private fun maxRingVolume(): Int =
+        runCatching { audio.getStreamMaxVolume(AudioManager.STREAM_RING) }.getOrDefault(7)
+
+    private fun setRingVolume(volume: Int) {
+        runCatching {
+            audio.setStreamVolume(
+                AudioManager.STREAM_RING,
+                volume.coerceIn(0, maxRingVolume()),
+                0,
+            )
+        }
+    }
+
+    private fun rememberRingVolume() {
+        val volume = ringVolume()
+        if (volume > 0) lastRingVolume = volume
+    }
+
+    private fun restoreRingVolume() {
+        val fallback = (maxRingVolume() * 0.4f).toInt().coerceAtLeast(1)
+        val target = if (lastRingVolume > 0) lastRingVolume else fallback
+        if (ringVolume() == 0) setRingVolume(target)
+    }
+
+    private fun clearDnd() {
+        if (hasPolicyAccess()) {
+            runCatching { notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+        }
+    }
+
+    private fun setMode(mode: Int): Boolean {
+        return runCatching {
+            audio.ringerMode = mode
+            audio.ringerMode == mode
+        }.getOrDefault(false)
+    }
+
     private fun trySilent(): Boolean {
         if (hasPolicyAccess()) {
-            runCatching { audio.ringerMode = AudioManager.RINGER_MODE_SILENT }
+            setMode(AudioManager.RINGER_MODE_SILENT)
             runCatching { notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE) }
-            return readSystem() == RingerVisual.Silent ||
-                notifications.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE
+            return readSystem() == RingerVisual.Silent
         }
-        val modeSet = runCatching {
-            audio.ringerMode = AudioManager.RINGER_MODE_SILENT
+        return setMode(AudioManager.RINGER_MODE_SILENT) &&
             audio.ringerMode == AudioManager.RINGER_MODE_SILENT
-        }.getOrDefault(false)
-        return modeSet
     }
 
     fun hasPolicyAccess(): Boolean = notifications.isNotificationPolicyAccessGranted
@@ -146,7 +184,7 @@ class RingerController(private val context: Context) {
         return when (audio.ringerMode) {
             AudioManager.RINGER_MODE_SILENT -> RingerVisual.Silent
             AudioManager.RINGER_MODE_VIBRATE -> RingerVisual.Vibrate
-            else -> RingerVisual.Sound
+            else -> if (ringVolume() == 0) RingerVisual.Vibrate else RingerVisual.Sound
         }
     }
 
