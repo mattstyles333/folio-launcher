@@ -232,7 +232,7 @@ class DeviceSignals(private val context: Context) {
         artKey = key
         val src = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        artCache = src?.let { Bitmap.createScaledBitmap(it, 192, 192, true) }
+        artCache = src?.let { Bitmap.createScaledBitmap(it, 720, 720, true) }
         return artCache
     }
 

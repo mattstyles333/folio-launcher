@@ -37,4 +37,12 @@ class SheetTest {
     fun close_whenFlingDownEvenIfMostlyOpen() {
         assertFalse(sheetShouldOpen(900f, 1000f, velocityY = 1200f))
     }
+
+    @Test
+    fun page_opensOnSwipeRight() {
+        assertTrue(pageShouldOpen(40f, 1080f, velocityX = 1200f))
+        assertFalse(pageShouldOpen(40f, 1080f, velocityX = -1200f))
+        assertTrue(pageShouldOpen(300f, 1080f, velocityX = 0f))
+        assertFalse(pageShouldOpen(100f, 1080f, velocityX = 0f))
+    }
 }
