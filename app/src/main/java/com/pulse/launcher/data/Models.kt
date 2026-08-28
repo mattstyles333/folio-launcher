@@ -52,4 +52,6 @@ data class HomeUiState(
     val charge: Float = 0f,
     val nowPlaying: String = "",
     val hasNowPlayingAccess: Boolean = false,
+    val quote: String = "",
+    val quoteAuthor: String = "",
 )

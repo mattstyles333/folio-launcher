@@ -18,9 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,6 +39,8 @@ fun ClockCluster(
     charging: Boolean,
     charge: Float,
     nowPlaying: String,
+    quote: String,
+    quoteAuthor: String,
     lookName: String?,
     caption: String,
     captionBusy: Boolean,
@@ -70,6 +75,33 @@ fun ClockCluster(
                 color = accent.copy(alpha = 0.72f),
                 letterSpacing = 3.sp,
             )
+        } else if (quote.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "“$quote”",
+                style = ClockDateStyle.copy(
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Light,
+                    fontSize = 13.sp,
+                    letterSpacing = 0.2.sp,
+                    shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 1f), 10f),
+                ),
+                color = accent.copy(alpha = if (dimClock) 0.42f else 0.88f),
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 32.dp),
+            )
+            if (quoteAuthor.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = quoteAuthor,
+                    style = ClockDateStyle,
+                    color = accent.copy(alpha = if (dimClock) 0.28f else 0.45f),
+                    fontSize = 11.sp,
+                    letterSpacing = 1.2.sp,
+                )
+            }
         }
         if (nowPlaying.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))

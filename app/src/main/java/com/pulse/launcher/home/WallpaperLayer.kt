@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,7 @@ fun WallpaperLayer(
     blurred: ImageBitmap?,
     mode: RingerVisual,
     accent: Color,
+    parallax: ParallaxState? = null,
     modifier: Modifier = Modifier,
 ) {
     val resources = LocalContext.current.resources
@@ -55,18 +57,21 @@ fun WallpaperLayer(
                     accent = accent,
                     filter = null,
                     grain = grain,
+                    parallax = parallax,
                 )
                 RingerVisual.Vibrate -> GradedPrint(
                     photo = photo,
                     accent = accent,
                     filter = halfColor,
                     grain = null,
+                    parallax = parallax,
                 )
                 RingerVisual.Silent -> GradedPrint(
                     photo = photo,
                     accent = accent,
                     filter = blackWhite,
                     grain = null,
+                    parallax = parallax,
                 )
             }
         }
@@ -90,6 +95,7 @@ private fun GradedPrint(
     accent: Color,
     filter: ColorFilter?,
     grain: ImageBitmap?,
+    parallax: ParallaxState?,
 ) {
     Box(Modifier.fillMaxSize()) {
         Crossfade(targetState = photo, animationSpec = tween(520), label = "printPhoto") { current ->
@@ -97,7 +103,14 @@ private fun GradedPrint(
                 Image(
                     bitmap = current,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationX = parallax?.x ?: 0f
+                            translationY = parallax?.y ?: 0f
+                            scaleX = 1.08f
+                            scaleY = 1.08f
+                        },
                     contentScale = ContentScale.Crop,
                     colorFilter = filter,
                 )

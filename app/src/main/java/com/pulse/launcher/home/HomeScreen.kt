@@ -215,11 +215,15 @@ fun HomeScreen(
             RingerVisual.Silent -> 0f
         }
 
+        val parallax = rememberParallax(
+            enabled = gesturesEnabled && pullPx < 12f,
+        )
         WallpaperLayer(
             photo = state.wallpaper,
             blurred = state.blurredWallpaper,
             mode = look,
             accent = state.accent,
+            parallax = parallax,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -246,7 +250,7 @@ fun HomeScreen(
 
         if (!searchOpen &&
             state.onboarding == null &&
-            (state.showClock || state.nowPlaying.isNotEmpty() || state.wallpaperCaption.isNotEmpty() || jewelHeld)
+            (state.showClock || state.nowPlaying.isNotEmpty() || state.wallpaperCaption.isNotEmpty() || jewelHeld || state.quote.isNotEmpty())
         ) {
             ClockCluster(
                 showClock = state.showClock,
@@ -255,6 +259,8 @@ fun HomeScreen(
                 charging = state.charging,
                 charge = state.charge,
                 nowPlaying = state.nowPlaying,
+                quote = state.quote,
+                quoteAuthor = state.quoteAuthor,
                 lookName = if (jewelHeld || flashLook) {
                     when (look) {
                         RingerVisual.Sound -> "Sound"

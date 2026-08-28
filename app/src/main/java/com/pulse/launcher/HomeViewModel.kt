@@ -12,6 +12,7 @@ import com.pulse.launcher.data.HomeUiState
 import com.pulse.launcher.data.LaunchableApp
 import com.pulse.launcher.data.OnboardingStep
 import com.pulse.launcher.data.Prefs
+import com.pulse.launcher.data.QuoteBank
 import com.pulse.launcher.data.RailSlot
 import com.pulse.launcher.data.Ranking
 import com.pulse.launcher.data.RecentItem
@@ -274,7 +275,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val next = if (latestPrefs.bingIndex < 0) 0 else (latestPrefs.bingIndex + 1) % count
             val shot = wallpaperRepo.importBing(next)
             if (shot != null) {
-                prefsStore.update { finishOnboarding(it.copy(wallpaperSet = true, bingIndex = shot.index)) }
+                prefsStore.update {
+                    finishOnboarding(
+                        it.copy(
+                            wallpaperSet = true,
+                            bingIndex = shot.index,
+                            quoteSalt = it.quoteSalt + 1,
+                        ),
+                    )
+                }
                 loadWallpaper()
                 showCaption(shot.caption)
             } else {
@@ -418,6 +427,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
 
+        val quote = QuoteBank.pick(
+            QuoteBank.load(app),
+            QuoteBank.todayIndex(),
+            prefs.quoteSalt,
+        )
+
         val roleDone = prefs.skippedRole || extraState.isDefaultHome
         val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
         val onboarding = when {
@@ -451,6 +466,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             charge = extraState.charge,
             nowPlaying = extraState.nowPlaying,
             hasNowPlayingAccess = extraState.hasNowPlayingAccess,
+            quote = quote?.text.orEmpty(),
+            quoteAuthor = quote?.author.orEmpty(),
         )
     }
 

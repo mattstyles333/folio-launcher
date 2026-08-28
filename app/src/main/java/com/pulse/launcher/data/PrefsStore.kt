@@ -36,6 +36,7 @@ data class Prefs(
     val dismissedRecents: Map<String, Long> = emptyMap(),
     val silentHint: Boolean = false,
     val bingIndex: Int = -1,
+    val quoteSalt: Int = 0,
 )
 
 class PrefsStore(context: Context) {
