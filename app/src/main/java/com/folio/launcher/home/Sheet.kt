@@ -13,6 +13,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -58,16 +59,16 @@ fun Modifier.folioSheetPull(
     enabled: Boolean,
     pull: SheetPull,
     maxPx: Float,
-    searchSlop: Float,
     onGrab: () -> Unit,
     onSettle: (velocityY: Float) -> Unit,
-    onSwipeDownSearch: () -> Unit,
+    onSwipeDownShade: () -> Unit,
 ): Modifier = composed {
     val settle = rememberUpdatedState(onSettle)
-    val search = rememberUpdatedState(onSwipeDownSearch)
+    val shade = rememberUpdatedState(onSwipeDownShade)
     val grab = rememberUpdatedState(onGrab)
     val touchSlop = LocalViewConfiguration.current.touchSlop * 0.45f
-    pointerInput(enabled, maxPx, searchSlop) {
+    val shadeSlop = with(LocalDensity.current) { 56.dp.toPx() }
+    pointerInput(enabled, maxPx, shadeSlop) {
         if (!enabled) return@pointerInput
         val slop = touchSlop.coerceAtLeast(4.dp.toPx())
         val tracker = VelocityTracker()
@@ -79,6 +80,7 @@ fun Modifier.folioSheetPull(
             val originX = down.position.x
             val startPull = pull.px
             var dragging = false
+            var shading = false
             var totalDy = 0f
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
@@ -86,15 +88,19 @@ fun Modifier.folioSheetPull(
                 tracker.addPosition(change.uptimeMillis, change.position)
                 val dy = change.positionChange().y
                 totalDy += dy
-                if (!dragging) {
+                if (!dragging && !shading) {
                     val dx = change.position.x - originX
                     if (abs(totalDy) < slop && abs(dx) < slop) {
                         if (!change.pressed) break
                         continue
                     }
                     if (abs(dx) > abs(totalDy)) break
-                    dragging = true
-                    grab.value()
+                    if (startPull < 8f && totalDy > 0f) {
+                        shading = true
+                    } else {
+                        dragging = true
+                        grab.value()
+                    }
                 }
                 if (dragging) {
                     change.consume()
@@ -102,13 +108,9 @@ fun Modifier.folioSheetPull(
                 }
                 if (!change.pressed) {
                     if (dragging) {
-                        val velocityY = tracker.calculateVelocity().y
-                        if (pull.px < 8f && totalDy > searchSlop) {
-                            pull.px = 0f
-                            search.value()
-                        } else {
-                            settle.value(velocityY)
-                        }
+                        settle.value(tracker.calculateVelocity().y)
+                    } else if (shading && (change.position.y - originY) > shadeSlop) {
+                        shade.value()
                     }
                     break
                 }

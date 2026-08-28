@@ -106,6 +106,24 @@ class RankingTest {
     }
 
     @Test
+    fun rankForRail_skipsHidden() {
+        val now = noon
+        val apps = listOf(
+            "com.chat" to "Chat",
+            "com.hidden" to "Hidden",
+            "com.maps" to "Maps",
+        )
+        val order = Ranking.orderDrawer(
+            labeled = apps,
+            rail = emptySet(),
+            launches = mapOf("com.hidden" to listOf(now), "com.chat" to listOf(now - 1)),
+            now = now,
+            hide = setOf("com.hidden"),
+        )
+        assertEquals(listOf("com.chat", "com.maps"), order)
+    }
+
+    @Test
     fun drawer_hidesHiddenPackages() {
         val now = noon
         val order = Ranking.orderDrawer(

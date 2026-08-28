@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.RingerVisual
+import com.folio.launcher.data.StatusShade
 import com.folio.launcher.onboarding.Onboarding
 import com.folio.launcher.recents.DockRowHeight
 import com.folio.launcher.recents.ExpandingDock
@@ -87,14 +89,13 @@ fun HomeScreen(
     onSkipTrack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onHideApp: (LaunchableApp) -> Unit,
-    onUnhideApp: (LaunchableApp) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
+    val context = LocalContext.current
     val pull = remember { SheetPull() }
     var searchOpen by remember { mutableStateOf(false) }
-    var hiddenOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var pinSlot by remember { mutableIntStateOf(-1) }
     var lookOverride by remember { mutableStateOf<RingerVisual?>(null) }
@@ -128,7 +129,6 @@ fun HomeScreen(
         pull.cancelSettle()
         pull.locked = false
         pull.px = 0f
-        hiddenOpen = false
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -139,12 +139,6 @@ fun HomeScreen(
         }
         val paneHeight = maxHeight
         val maxSheetPx = with(density) { (paneHeight * 0.62f).toPx() }.coerceAtLeast(rowPx * 3.2f)
-        val searchSlop = with(density) { 56.dp.toPx() }
-        val hiddenApps = remember(state.apps, state.hiddenPackages) {
-            state.apps.filter { it.packageName in state.hiddenPackages }
-                .distinctBy { it.packageName }
-                .sortedBy { it.label.lowercase() }
-        }
 
         fun grabSheet() {
             pull.cancelSettle()
@@ -178,18 +172,14 @@ fun HomeScreen(
             }
         }
 
-        val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0 && !hiddenOpen
+        val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0
         fun sheetDrag(): Modifier = Modifier.folioSheetPull(
             enabled = gesturesEnabled,
             pull = pull,
             maxPx = maxSheetPx,
-            searchSlop = searchSlop,
             onGrab = { grabSheet() },
             onSettle = { settleSheet(it) },
-            onSwipeDownSearch = {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                searchOpen = true
-            },
+            onSwipeDownShade = { StatusShade.expand(context) },
         )
 
         fun collapse() {
@@ -209,10 +199,9 @@ fun HomeScreen(
             searchOpen = true
         }
 
-        BackHandler(enabled = searchOpen || hiddenOpen || pull.locked || pinSlot >= 0) {
+        BackHandler(enabled = searchOpen || pull.locked || pinSlot >= 0) {
             when {
                 pinSlot >= 0 -> pinSlot = -1
-                hiddenOpen -> hiddenOpen = false
                 searchOpen -> {
                     searchOpen = false
                     query = ""
@@ -309,7 +298,7 @@ fun HomeScreen(
                 lookName = if (developing || flashLook) namedLook.label() else null,
                 caption = state.wallpaperCaption,
                 captionBusy = state.wallpaperBusy,
-                onClockTap = { openSearch() },
+                onClockTap = { },
                 onClockLongPress = onOpenSettings,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -356,10 +345,7 @@ fun HomeScreen(
                     .padding(bottom = 64.dp)
                     .then(if (pull.locked) Modifier else sheetDrag()),
             )
-            if (state.nowPlaying.isNotEmpty() &&
-                state.onboarding == null &&
-                !searchOpen
-            ) {
+            if (state.onboarding == null && !searchOpen) {
                 val namedLook = targetLook ?: look
                 PlaybackStrip(
                     playing = state.musicPlaying,
@@ -382,12 +368,6 @@ fun HomeScreen(
             if (state.onboarding == null) {
                 SearchButton(
                     onClick = { if (!searchOpen && pinSlot < 0) openSearch() },
-                    onLongPress = {
-                        if (hiddenApps.isNotEmpty()) {
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            hiddenOpen = true
-                        }
-                    },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 12.dp)
@@ -443,21 +423,6 @@ fun HomeScreen(
             )
         }
 
-        if (hiddenOpen) {
-            AppPicker(
-                title = "Hidden",
-                placeholder = "Hidden app",
-                apps = hiddenApps,
-                launches = launches,
-                accent = state.accent,
-                onPick = { app ->
-                    onUnhideApp(app)
-                    if (hiddenApps.size <= 1) hiddenOpen = false
-                },
-                onDismiss = { hiddenOpen = false },
-            )
-        }
-
         val onboardStep = state.onboarding
         var lastOnboard by remember { mutableStateOf(onboardStep) }
         SideEffect {
@@ -495,16 +460,13 @@ fun HomeScreen(
                 state.mode == RingerVisual.Silent &&
                 state.onboarding == null &&
                 !searchOpen &&
-                !hiddenOpen &&
                 !pull.locked ->
                 "Tap to let Silent mute the ringer." to onSilentHint
             state.mediaHint &&
                 state.onboarding == null &&
                 !searchOpen &&
-                !hiddenOpen &&
-                !pull.locked &&
-                state.nowPlaying.isEmpty() ->
-                "Tap to show Spotify on the print." to onMediaHint
+                !pull.locked ->
+                "Tap so Folio can see what’s playing." to onMediaHint
             else -> null
         }
         hint?.let { (text, action) ->

@@ -41,6 +41,7 @@ fun Rail(
     onLaunch: (LaunchableApp) -> Unit,
     onPinRequest: (Int) -> Unit,
     onReorder: (Int, Int) -> Unit,
+    onHide: (LaunchableApp) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var widthPx by remember { mutableIntStateOf(0) }
@@ -72,6 +73,7 @@ fun Rail(
                         scaleX = if (isDragging) 1.08f else 1f
                         scaleY = if (isDragging) 1.08f else 1f
                     }
+                    .then(if (app != null) Modifier.swipeAwayToHide(app.key) { onHide(app) } else Modifier)
                     .pointerInput(app?.key) {
                         detectTapGestures(onTap = { app?.let(onLaunch) })
                     }

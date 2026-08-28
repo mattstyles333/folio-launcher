@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +20,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.HomeUiState
+import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.search.AppPicker
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
 
@@ -40,13 +47,20 @@ fun SettingsScreen(
     onShowClock: (Boolean) -> Unit,
     onResetPins: () -> Unit,
     onSetDefault: () -> Unit,
+    onUnhideApp: (LaunchableApp) -> Unit,
 ) {
     val context = LocalContext.current
-    BackHandler(onBack = onBack)
+    var hiddenOpen by remember { mutableStateOf(false) }
+    val hiddenApps = remember(state.apps, state.hiddenPackages) {
+        state.apps.filter { it.packageName in state.hiddenPackages }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
+    }
+    BackHandler(enabled = !hiddenOpen, onBack = onBack)
+    Box(Modifier.fillMaxSize().background(VoidBlack)) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(VoidBlack)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 24.dp, vertical = 28.dp),
@@ -84,6 +98,14 @@ fun SettingsScreen(
         }
         SettingsRow("Reset pins", "Four slots fill from use") { onResetPins() }
         SettingsRow(
+            "Hidden apps",
+            if (hiddenApps.isEmpty()) {
+                "Swipe an app right on the home screen to hide it"
+            } else {
+                "${hiddenApps.size} hidden. Tap one to unhide."
+            },
+        ) { hiddenOpen = true }
+        SettingsRow(
             "Better ranking",
             if (state.hasUsageAccess) {
                 "Last 30 days of opens, including before Folio"
@@ -98,9 +120,9 @@ fun SettingsScreen(
         SettingsRow(
             "Now playing",
             if (state.hasNowPlayingAccess) {
-                "Previous, play, next above the four icons. Long-press play opens Spotify."
+                "Previous, play, next above the four icons. Play starts Spotify."
             } else {
-                "Allow notification access so Folio can show Spotify controls"
+                "Allow notification access so Folio can see what’s playing"
             },
         ) {
             context.startActivity(
@@ -125,6 +147,22 @@ fun SettingsScreen(
             modifier = Modifier.clickable(onClick = onBack),
             fontSize = 14.sp,
         )
+    }
+    if (hiddenOpen) {
+        AppPicker(
+            title = "Hidden",
+            placeholder = "Unhide",
+            empty = "Nothing hidden. Swipe an app right on the home screen.",
+            apps = hiddenApps,
+            launches = state.launches,
+            accent = state.accent,
+            onPick = { app ->
+                onUnhideApp(app)
+                if (hiddenApps.size <= 1) hiddenOpen = false
+            },
+            onDismiss = { hiddenOpen = false },
+        )
+    }
     }
 }
 

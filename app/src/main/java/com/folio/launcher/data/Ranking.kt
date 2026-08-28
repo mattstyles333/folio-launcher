@@ -147,6 +147,7 @@ object Ranking {
             rail = railPackages,
             launches = launches,
             now = now,
+            hide = hidden,
         )
         val byPkg = visible.groupBy { it.packageName }
         return order.flatMap { pkg -> byPkg[pkg].orEmpty() }

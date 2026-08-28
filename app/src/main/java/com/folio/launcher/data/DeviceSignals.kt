@@ -102,17 +102,14 @@ class DeviceSignals(private val context: Context) {
 
     fun previous() = transportOrKey(MediaController.TransportControls::skipToPrevious, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
 
-    fun playPause() {
+    fun playPause(host: Context = app) {
         val controls = controller?.transportControls
-        if (controls != null) {
-            if (controller?.playbackState?.state == PlaybackState.STATE_PLAYING) {
-                controls.pause()
-            } else {
-                controls.play()
-            }
+        val state = controller?.playbackState?.state
+        if (controls != null && playingOrPaused(state)) {
+            if (state == PlaybackState.STATE_PLAYING) controls.pause() else controls.play()
             return
         }
-        dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        startSpotify(host)
     }
 
     fun seek(fraction: Float) {
@@ -134,6 +131,26 @@ class DeviceSignals(private val context: Context) {
             ?: _now.value.packageName.takeIf { it.isNotBlank() }
             ?: SPOTIFY_PACKAGE
         return launchPlayer(host, pkg)
+    }
+
+    private fun startSpotify(host: Context) {
+        dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+        sendMediaButton(host, KeyEvent.KEYCODE_MEDIA_PLAY)
+        if (!launchPlayer(host, SPOTIFY_PACKAGE)) {
+            dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        }
+    }
+
+    private fun sendMediaButton(host: Context, code: Int) {
+        fun fire(action: Int) {
+            val intent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                `package` = SPOTIFY_PACKAGE
+                putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(action, code))
+            }
+            runCatching { host.sendBroadcast(intent) }
+        }
+        fire(KeyEvent.ACTION_DOWN)
+        fire(KeyEvent.ACTION_UP)
     }
 
     private fun launchPlayer(host: Context, pkg: String): Boolean {

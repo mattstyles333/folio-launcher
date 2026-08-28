@@ -219,11 +219,10 @@ class MainActivity : ComponentActivity() {
                             },
                             onNextBing = { viewModel.nextBingPrint() },
                             onPreviousTrack = { viewModel.previousTrack() },
-                            onPlayPause = { viewModel.playPause() },
+                            onPlayPause = { viewModel.playPause(this@MainActivity) },
                             onSkipTrack = { viewModel.skipTrack() },
                             onOpenPlayer = { viewModel.openPlayer(this@MainActivity) },
                             onHideApp = { viewModel.hideApp(it) },
-                            onUnhideApp = { viewModel.unhideApp(it) },
                         )
                     }
                     composable("settings") {
@@ -235,6 +234,7 @@ class MainActivity : ComponentActivity() {
                             onShowClock = { viewModel.setShowClock(it) },
                             onResetPins = { viewModel.resetPins() },
                             onSetDefault = { openHomeRole() },
+                            onUnhideApp = { viewModel.unhideApp(it) },
                         )
                     }
                 }

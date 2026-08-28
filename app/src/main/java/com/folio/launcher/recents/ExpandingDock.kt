@@ -41,6 +41,7 @@ import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.RailSlot
 import com.folio.launcher.home.Rail
 import com.folio.launcher.home.SheetPull
+import com.folio.launcher.home.swipeAwayToHide
 import com.folio.launcher.ui.AppIcon
 import com.folio.launcher.ui.PrintInk
 import kotlin.math.roundToInt
@@ -108,6 +109,7 @@ fun ExpandingDock(
                 onLaunch = onLaunch,
                 onPinRequest = onPinRequest,
                 onReorder = onReorder,
+                onHide = onHide,
                 modifier = Modifier.fillMaxWidth(),
             )
             Box(
@@ -167,11 +169,9 @@ private fun DrawerCell(
         modifier = Modifier
             .fillMaxWidth()
             .height(DockRowHeight)
+            .swipeAwayToHide(app.key) { onHide(app) }
             .pointerInput(app.key) {
-                detectTapGestures(
-                    onTap = { onLaunch(app) },
-                    onLongPress = { onHide(app) },
-                )
+                detectTapGestures(onTap = { onLaunch(app) })
             }
             .padding(horizontal = 2.dp, vertical = 4.dp),
     ) {

@@ -131,8 +131,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         app.signals.previous()
     }
 
-    fun playPause() {
-        app.signals.playPause()
+    fun playPause(host: Context) {
+        app.signals.playPause(host)
     }
 
     fun seekTrack(fraction: Float) {
@@ -143,10 +143,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         app.signals.openSession(host)
     }
 
-    fun hideApp(app: LaunchableApp) {
+    fun hideApp(target: LaunchableApp) {
         viewModelScope.launch {
-            prefsStore.update {
-                it.copy(hiddenPackages = (it.hiddenPackages + app.packageName).distinct())
+            prefsStore.update { prefs ->
+                prefs.copy(
+                    hiddenPackages = (prefs.hiddenPackages + target.packageName).distinct(),
+                    slots = prefs.slots.map { slot ->
+                        if (slot.packageName == target.packageName) SlotPref() else slot
+                    },
+                )
             }
         }
     }
@@ -429,7 +434,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val stale = currentSlots.any { slot ->
             slot.packageName != null && (
                 appsRepo.find(slot.packageName, slot.activityName, apps) == null ||
-                    (!slot.pinned && slot.packageName in prefs.hiddenPackages)
+                    slot.packageName in prefs.hiddenPackages
             )
         }
         if (!force && !stale && prefs.lastRailDay == today && currentSlots.all { it.packageName != null }) return

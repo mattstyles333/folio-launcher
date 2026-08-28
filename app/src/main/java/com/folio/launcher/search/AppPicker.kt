@@ -38,6 +38,7 @@ import com.folio.launcher.ui.PrintInk
 fun AppPicker(
     title: String = "Pin",
     placeholder: String = "App",
+    empty: String = "No apps",
     apps: List<LaunchableApp>,
     launches: Map<String, List<Long>> = emptyMap(),
     accent: Color,
@@ -84,9 +85,13 @@ fun AppPicker(
             Spacer(Modifier.height(8.dp))
             Box(Modifier.fillMaxWidth().height(1.dp).background(accent.copy(alpha = 0.4f)))
             Spacer(Modifier.height(12.dp))
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(results, key = { it.key }) { app ->
-                    SearchRow(app, onPick)
+            if (results.isEmpty()) {
+                Text(empty, color = PrintInk.copy(alpha = 0.4f), fontSize = 15.sp)
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(results, key = { it.key }) { app ->
+                        SearchRow(app, onPick)
+                    }
                 }
             }
         }

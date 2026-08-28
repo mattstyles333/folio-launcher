@@ -44,16 +44,16 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. Other home screens are hidden from the grid, recents, and unpinned rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
-- Long-press a drawer icon: hide that package from the grid. Long-press Search: list of hidden apps; tap to unhide. Search still finds hidden apps.
-- Swipe down (idle): search.
-- Search pill: tap. Long-press Search: hidden apps.
-- Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing on home is prev / play / next above the rail — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause; long-press opens Spotify. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
+- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. Other home screens are hidden from the grid, recents, and the rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
+- Swipe an icon right (rail or drawer) to hide that package from the home screen. Settings → Hidden apps to unhide. Search still finds hidden apps.
+- Swipe down (idle): Android notification shade, not search.
+- Search pill: tap. No search gesture.
+- Double-tap print: next Bing + next quote.
+- Now playing on home is prev / play / next above the rail, always visible — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause, or to start Spotify if nothing is playing; long-press opens Spotify. Prefer Spotify if several sessions are active.
+- Clock tap does nothing. Clock long-press → Settings → Choose photo for a local print.
 - Plug in: hairline oval around the clock. At 100% the oval is closed.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
-- Clock tap: search. Clock long-press: settings.
 
 ## Tests
 
