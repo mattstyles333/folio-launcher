@@ -106,6 +106,19 @@ class RankingTest {
     }
 
     @Test
+    fun drawer_hidesHiddenPackages() {
+        val now = noon
+        val order = Ranking.orderDrawer(
+            labeled = listOf("com.chat" to "Chat", "com.hidden" to "Hidden"),
+            rail = emptySet(),
+            launches = emptyMap(),
+            now = now,
+            hide = setOf("com.hidden"),
+        )
+        assertEquals(listOf("com.chat"), order)
+    }
+
+    @Test
     fun combinedLaunches_mergesDistinct() {
         val local = mapOf("a" to listOf(1L, 2L))
         val extra = mapOf("a" to listOf(2L, 3L), "b" to listOf(9L))

@@ -98,7 +98,7 @@ fun SettingsScreen(
         SettingsRow(
             "Now playing",
             if (state.hasNowPlayingAccess) {
-                "Previous, play, next above the four icons. Swipe right or long-press play for Spotify’s widget."
+                "Previous, play, next above the four icons. Long-press play opens Spotify."
             } else {
                 "Allow notification access so Folio can show Spotify controls"
             },

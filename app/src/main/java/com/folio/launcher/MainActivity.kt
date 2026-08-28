@@ -1,6 +1,5 @@
 package com.folio.launcher
 
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Build
@@ -38,16 +37,6 @@ import kotlinx.coroutines.flow.collectLatest
 class MainActivity : ComponentActivity() {
     private val viewModel: HomeViewModel by viewModels()
 
-    override fun onStart() {
-        super.onStart()
-        (application as FolioApp).spotifyWidget.start()
-    }
-
-    override fun onStop() {
-        (application as FolioApp).spotifyWidget.stop()
-        super.onStop()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
@@ -81,10 +70,6 @@ class MainActivity : ComponentActivity() {
                 val roleLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
                 ) { viewModel.refreshSystemState() }
-
-                val widgetBindLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult(),
-                ) { viewModel.onSpotifyWidgetBindResult(it.resultCode == Activity.RESULT_OK) }
 
                 var accessWalk by remember { mutableIntStateOf(0) }
 
@@ -237,10 +222,8 @@ class MainActivity : ComponentActivity() {
                             onPlayPause = { viewModel.playPause() },
                             onSkipTrack = { viewModel.skipTrack() },
                             onOpenPlayer = { viewModel.openPlayer(this@MainActivity) },
-                            onSeekTrack = { viewModel.seekTrack(it) },
-                            onEnsureSpotifyWidget = {
-                                viewModel.ensureSpotifyWidget()?.let { widgetBindLauncher.launch(it) }
-                            },
+                            onHideApp = { viewModel.hideApp(it) },
+                            onUnhideApp = { viewModel.unhideApp(it) },
                         )
                     }
                     composable("settings") {

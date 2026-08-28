@@ -63,6 +63,5 @@ data class HomeUiState(
     val hasNowPlayingAccess: Boolean = false,
     val quote: String = "",
     val quoteAuthor: String = "",
-    val spotifyWidgetId: Int = 0,
-    val spotifyWidgetAvailable: Boolean = false,
+    val hiddenPackages: Set<String> = emptySet(),
 )

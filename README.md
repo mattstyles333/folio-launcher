@@ -30,13 +30,13 @@ adb shell cmd role add-role-holder android.app.role.HOME com.folio.launcher
 | Gesture | What |
 |---|---|
 | Tap Search / swipe down / tap clock | Spotlight |
-| Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. |
-| Swipe right | Spotify’s Now Playing widget. Swipe left or Back to return. |
+| Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. Long-press an icon to hide it. |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline oval around the clock fills with charge. Closed at 100%. |
-| Music (optional) | Previous / play / next above the four icons. Tap play to pause; swipe right or long-press play for Spotify’s widget on the print. |
+| Music (optional) | Previous / play / next above the four icons. Tap play to pause; long-press play opens Spotify. |
+| Long-press Search | Hidden apps. Tap one to unhide. |
 
 Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
 

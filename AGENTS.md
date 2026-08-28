@@ -34,22 +34,22 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Onboarding | Role → Bing auto-fetch → one Allow walk (DND, usage, then notification access for Spotify). All skippable. |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
-| Now playing / charge | `data/DeviceSignals.kt`, `home/PlaybackStrip.kt`. Swipe-right page hosts Spotify’s own AppWidget (`SpotifyWidgetBinder`). Charge hairline is a full oval around the clock. |
+| Now playing / charge | `data/DeviceSignals.kt`, `home/PlaybackStrip.kt`. Charge hairline is a full oval around the clock. |
 
 `HomeViewModel` is the only state owner. Prefs are a single JSON blob in DataStore (`PrefsStore`).
 
 ## Do not add
 
-General widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads. Spotify’s Now Playing AppWidget on the swipe-right page is the exception.
+Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads.
 
 ## Touch contracts
 
 - Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. Other home screens are hidden from the grid, recents, and unpinned rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
-- Swipe right: same Bing/print as home, Spotify’s Now Playing widget in the middle half (`NowPlayingPage` + `SpotifyWidgetBinder`). Home translates X. Swipe left or Back closes. Long-press play opens the same page. First open may ask to bind that widget. Do not start a page swipe while the app sheet is open, or a sheet swipe while the player page is open.
+- Long-press a drawer icon: hide that package from the grid. Long-press Search: list of hidden apps; tap to unhide. Search still finds hidden apps.
 - Swipe down (idle): search.
-- Search pill: tap.
+- Search pill: tap. Long-press Search: hidden apps.
 - Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing on home is prev / play / next above the rail — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause; long-press opens the player page. The side page is the home print plus Spotify’s widget in the middle half. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
+- Now playing on home is prev / play / next above the rail — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause; long-press opens Spotify. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
 - Plug in: hairline oval around the clock. At 100% the oval is closed.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.

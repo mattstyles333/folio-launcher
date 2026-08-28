@@ -1,7 +1,6 @@
 package com.folio.launcher.recents
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +29,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +59,7 @@ fun ExpandingDock(
     onLaunch: (LaunchableApp) -> Unit,
     onPinRequest: (Int) -> Unit,
     onReorder: (Int, Int) -> Unit,
+    onHide: (LaunchableApp) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val gridState = rememberLazyGridState()
@@ -128,6 +129,7 @@ fun ExpandingDock(
                                 app = app,
                                 iconSaturation = iconSaturation,
                                 onLaunch = onLaunch,
+                                onHide = onHide,
                             )
                         }
                     }
@@ -158,18 +160,19 @@ private fun DrawerCell(
     app: LaunchableApp,
     iconSaturation: Float,
     onLaunch: (LaunchableApp) -> Unit,
+    onHide: (LaunchableApp) -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
             .height(DockRowHeight)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = { onLaunch(app) },
-            )
+            .pointerInput(app.key) {
+                detectTapGestures(
+                    onTap = { onLaunch(app) },
+                    onLongPress = { onHide(app) },
+                )
+            }
             .padding(horizontal = 2.dp, vertical = 4.dp),
     ) {
         AppIcon(

@@ -39,7 +39,7 @@ data class Prefs(
     val mediaHintDismissed: Boolean = false,
     val bingIndex: Int = -1,
     val quoteSalt: Int = 0,
-    val spotifyWidgetId: Int = 0,
+    val hiddenPackages: List<String> = emptyList(),
 )
 
 class PrefsStore(context: Context) {

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
@@ -44,11 +43,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
-import kotlin.math.roundToInt
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.Ranking
@@ -89,15 +86,15 @@ fun HomeScreen(
     onPlayPause: () -> Unit,
     onSkipTrack: () -> Unit,
     onOpenPlayer: () -> Unit,
-    onSeekTrack: (Float) -> Unit,
-    onEnsureSpotifyWidget: () -> Unit,
+    onHideApp: (LaunchableApp) -> Unit,
+    onUnhideApp: (LaunchableApp) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
     val pull = remember { SheetPull() }
-    val page = remember { SheetPull() }
     var searchOpen by remember { mutableStateOf(false) }
+    var hiddenOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var pinSlot by remember { mutableIntStateOf(-1) }
     var lookOverride by remember { mutableStateOf<RingerVisual?>(null) }
@@ -131,31 +128,27 @@ fun HomeScreen(
         pull.cancelSettle()
         pull.locked = false
         pull.px = 0f
-        page.cancelSettle()
-        page.locked = false
-        page.px = 0f
+        hiddenOpen = false
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val rowPx = with(density) { DockRowHeight.toPx() }
         val railPkgs = remember(state.rail) { state.rail.mapNotNull { it.app?.packageName }.toSet() }
-        val extras = remember(state.apps, railPkgs, launches) {
-            Ranking.drawer(state.apps, railPkgs, launches)
+        val extras = remember(state.apps, railPkgs, launches, state.hiddenPackages) {
+            Ranking.drawer(state.apps, railPkgs, launches, hidden = state.hiddenPackages)
         }
-        val paneWidth = maxWidth
         val paneHeight = maxHeight
         val maxSheetPx = with(density) { (paneHeight * 0.62f).toPx() }.coerceAtLeast(rowPx * 3.2f)
-        val maxPagePx = with(density) { paneWidth.toPx() }.coerceAtLeast(1f)
         val searchSlop = with(density) { 56.dp.toPx() }
+        val hiddenApps = remember(state.apps, state.hiddenPackages) {
+            state.apps.filter { it.packageName in state.hiddenPackages }
+                .distinctBy { it.packageName }
+                .sortedBy { it.label.lowercase() }
+        }
 
         fun grabSheet() {
             pull.cancelSettle()
             pull.locked = false
-        }
-
-        fun grabPage() {
-            page.cancelSettle()
-            page.locked = false
         }
 
         fun settleSheet(velocityY: Float = 0f) {
@@ -185,45 +178,14 @@ fun HomeScreen(
             }
         }
 
-        fun settlePage(velocityX: Float = 0f) {
-            page.cancelSettle()
-            page.settleJob = scope.launch {
-                val start = page.px
-                val open = pageShouldOpen(start, maxPagePx, velocityX)
-                val target = if (open) maxPagePx else 0f
-                animate(
-                    initialValue = start,
-                    targetValue = target,
-                    initialVelocity = velocityX,
-                    animationSpec = sheetSpring(),
-                ) { value, _ ->
-                    page.px = value
-                }
-                page.px = target
-                page.locked = open
-                if (open) {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                }
-            }
-        }
-
-        fun openPlayerPage() {
-            grabPage()
-            settlePage(1800f)
-        }
-
-        val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0
-        fun homeDrag(): Modifier = Modifier.folioHomeGestures(
+        val gesturesEnabled = state.onboarding == null && !searchOpen && pinSlot < 0 && !hiddenOpen
+        fun sheetDrag(): Modifier = Modifier.folioSheetPull(
             enabled = gesturesEnabled,
-            sheet = pull,
-            page = page,
-            maxSheetPx = maxSheetPx,
-            maxPagePx = maxPagePx,
+            pull = pull,
+            maxPx = maxSheetPx,
             searchSlop = searchSlop,
-            onGrabSheet = { grabSheet() },
-            onSettleSheet = { settleSheet(it) },
-            onGrabPage = { grabPage() },
-            onSettlePage = { settlePage(it) },
+            onGrab = { grabSheet() },
+            onSettle = { settleSheet(it) },
             onSwipeDownSearch = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 searchOpen = true
@@ -247,16 +209,13 @@ fun HomeScreen(
             searchOpen = true
         }
 
-        BackHandler(enabled = searchOpen || pull.locked || page.locked || pinSlot >= 0) {
+        BackHandler(enabled = searchOpen || hiddenOpen || pull.locked || pinSlot >= 0) {
             when {
                 pinSlot >= 0 -> pinSlot = -1
+                hiddenOpen -> hiddenOpen = false
                 searchOpen -> {
                     searchOpen = false
                     query = ""
-                }
-                page.locked -> {
-                    grabPage()
-                    settlePage(-1800f)
                 }
                 else -> collapse()
             }
@@ -270,32 +229,9 @@ fun HomeScreen(
         }
 
         val parallax = rememberParallax(
-            enabled = gesturesEnabled && !developing && !page.locked,
+            enabled = gesturesEnabled && !developing,
         )
         val namedLook = targetLook ?: look
-        val wantWidget = page.locked || page.px > maxPagePx * 0.12f
-        LaunchedEffect(wantWidget) {
-            if (wantWidget) onEnsureSpotifyWidget()
-        }
-        NowPlayingPage(
-            photo = state.wallpaper,
-            blurred = state.blurredWallpaper,
-            mode = look,
-            accent = state.accent,
-            widgetId = state.spotifyWidgetId,
-            widgetAvailable = state.spotifyWidgetAvailable,
-            onBindWidget = onEnsureSpotifyWidget,
-            onOpenApp = onOpenPlayer,
-            modifier = Modifier
-                .fillMaxSize()
-                .offset { IntOffset((page.px - maxPagePx).roundToInt(), 0) }
-                .then(homeDrag()),
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .offset { IntOffset(page.px.roundToInt(), 0) },
-        ) {
         WallpaperLayer(
             photo = state.wallpaper,
             blurred = state.blurredWallpaper,
@@ -325,7 +261,7 @@ fun HomeScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(homeDrag())
+                .then(sheetDrag())
                 .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
@@ -335,7 +271,7 @@ fun HomeScreen(
                         },
                         onLongPress = { origin ->
                             if (revealTarget != null) return@detectTapGestures
-                            if (pull.px > 8f || page.px > 8f) return@detectTapGestures
+                            if (pull.px > 8f) return@detectTapGestures
                             val current = look
                             val next = current.nextRinger()
                             lookOverride = current
@@ -410,11 +346,15 @@ fun HomeScreen(
                 },
                 onPinRequest = { pinSlot = it },
                 onReorder = onReorder,
+                onHide = { app ->
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    onHideApp(app)
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(bottom = 64.dp)
-                    .then(if (pull.locked) Modifier else homeDrag()),
+                    .then(if (pull.locked) Modifier else sheetDrag()),
             )
             if (state.nowPlaying.isNotEmpty() &&
                 state.onboarding == null &&
@@ -427,7 +367,7 @@ fun HomeScreen(
                     onPrevious = onPreviousTrack,
                     onPlayPause = onPlayPause,
                     onNext = onSkipTrack,
-                    onOpen = { openPlayerPage() },
+                    onOpen = onOpenPlayer,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -442,6 +382,12 @@ fun HomeScreen(
             if (state.onboarding == null) {
                 SearchButton(
                     onClick = { if (!searchOpen && pinSlot < 0) openSearch() },
+                    onLongPress = {
+                        if (hiddenApps.isNotEmpty()) {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            hiddenOpen = true
+                        }
+                    },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 12.dp)
@@ -452,12 +398,11 @@ fun HomeScreen(
                 )
             }
         }
-        }
 
-        val results = remember(query, state.apps, launches, state.rail, state.recents) {
+        val results = remember(query, state.apps, launches, state.rail, state.recents, state.hiddenPackages) {
             if (query.isBlank()) {
                 Ranking.suggest(
-                    apps = state.apps,
+                    apps = state.apps.filter { it.packageName !in state.hiddenPackages },
                     rail = state.rail.mapNotNull { it.app },
                     recents = state.recents.map { it.app },
                     launches = launches,
@@ -486,6 +431,7 @@ fun HomeScreen(
 
         if (pinSlot >= 0) {
             AppPicker(
+                title = "Pin",
                 apps = state.apps,
                 launches = launches,
                 accent = state.accent,
@@ -494,6 +440,21 @@ fun HomeScreen(
                     pinSlot = -1
                 },
                 onDismiss = { pinSlot = -1 },
+            )
+        }
+
+        if (hiddenOpen) {
+            AppPicker(
+                title = "Hidden",
+                placeholder = "Hidden app",
+                apps = hiddenApps,
+                launches = launches,
+                accent = state.accent,
+                onPick = { app ->
+                    onUnhideApp(app)
+                    if (hiddenApps.size <= 1) hiddenOpen = false
+                },
+                onDismiss = { hiddenOpen = false },
             )
         }
 
@@ -534,14 +495,14 @@ fun HomeScreen(
                 state.mode == RingerVisual.Silent &&
                 state.onboarding == null &&
                 !searchOpen &&
-                !pull.locked &&
-                !page.locked ->
+                !hiddenOpen &&
+                !pull.locked ->
                 "Tap to let Silent mute the ringer." to onSilentHint
             state.mediaHint &&
                 state.onboarding == null &&
                 !searchOpen &&
+                !hiddenOpen &&
                 !pull.locked &&
-                !page.locked &&
                 state.nowPlaying.isEmpty() ->
                 "Tap to show Spotify on the print." to onMediaHint
             else -> null

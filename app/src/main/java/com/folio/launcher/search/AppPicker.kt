@@ -36,6 +36,8 @@ import com.folio.launcher.ui.PrintInk
 
 @Composable
 fun AppPicker(
+    title: String = "Pin",
+    placeholder: String = "App",
     apps: List<LaunchableApp>,
     launches: Map<String, List<Long>> = emptyMap(),
     accent: Color,
@@ -59,7 +61,7 @@ fun AppPicker(
             .padding(horizontal = 22.dp, vertical = 18.dp),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Text("Pin", color = PrintInk.copy(alpha = 0.5f), fontSize = 13.sp)
+            Text(title, color = PrintInk.copy(alpha = 0.5f), fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
             BasicTextField(
                 value = query,
@@ -73,7 +75,7 @@ fun AppPicker(
                 decorationBox = { inner ->
                     Box {
                         if (query.isEmpty()) {
-                            Text("App", color = PrintInk.copy(alpha = 0.32f), fontSize = 20.sp)
+                            Text(placeholder, color = PrintInk.copy(alpha = 0.32f), fontSize = 20.sp)
                         }
                         inner()
                     }

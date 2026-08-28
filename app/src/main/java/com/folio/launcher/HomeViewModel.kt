@@ -2,7 +2,6 @@ package com.folio.launcher
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import android.graphics.Rect
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
@@ -144,28 +143,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         app.signals.openSession(host)
     }
 
-    fun ensureSpotifyWidget(): Intent? {
-        val binder = app.spotifyWidget
-        val info = binder.provider() ?: return null
-        var id = latestPrefs.spotifyWidgetId
-        if (id != 0 && binder.infoFor(id) != null) return null
-        if (id != 0) binder.delete(id)
-        id = binder.allocate()
-        latestPrefs = latestPrefs.copy(spotifyWidgetId = id)
-        viewModelScope.launch { prefsStore.update { it.copy(spotifyWidgetId = id) } }
-        if (binder.bindIfAllowed(id, info)) return null
-        return binder.bindIntent(id, info)
+    fun hideApp(app: LaunchableApp) {
+        viewModelScope.launch {
+            prefsStore.update {
+                it.copy(hiddenPackages = (it.hiddenPackages + app.packageName).distinct())
+            }
+        }
     }
 
-    fun onSpotifyWidgetBindResult(ok: Boolean) {
-        val id = latestPrefs.spotifyWidgetId
-        if (ok && id != 0 && app.spotifyWidget.infoFor(id) != null) {
-            extra.value = extra.value.copy(widgetRev = extra.value.widgetRev + 1)
-            return
+    fun unhideApp(app: LaunchableApp) {
+        viewModelScope.launch {
+            prefsStore.update {
+                it.copy(hiddenPackages = it.hiddenPackages.filterNot { pkg -> pkg == app.packageName })
+            }
         }
-        if (id != 0) app.spotifyWidget.delete(id)
-        latestPrefs = latestPrefs.copy(spotifyWidgetId = 0)
-        viewModelScope.launch { prefsStore.update { it.copy(spotifyWidgetId = 0) } }
     }
 
     fun requestIdle() {
@@ -436,14 +427,23 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val today = LocalDate.now(ZoneId.systemDefault()).toEpochDay().toInt()
         val currentSlots = (prefs.slots + List(4) { SlotPref() }).take(4)
         val stale = currentSlots.any { slot ->
-            slot.packageName != null && appsRepo.find(slot.packageName, slot.activityName, apps) == null
+            slot.packageName != null && (
+                appsRepo.find(slot.packageName, slot.activityName, apps) == null ||
+                    (!slot.pinned && slot.packageName in prefs.hiddenPackages)
+            )
         }
         if (!force && !stale && prefs.lastRailDay == today && currentSlots.all { it.packageName != null }) return
         railJobRunning = true
         try {
             val launches = Ranking.combinedLaunches(usage.launches, extra.value.usageTimestamps)
             val defaults = DefaultApps.pick(apps, app.packageManager)
-            val ranked = Ranking.rankForRail(apps, launches, prefs.firstSeen, defaults)
+            val ranked = Ranking.rankForRail(
+                apps,
+                launches,
+                prefs.firstSeen,
+                defaults,
+                hidden = prefs.hiddenPackages.toSet(),
+            )
             val used = mutableSetOf<String>()
             val next = MutableList(4) { SlotPref() }
             for (i in 0..3) {
@@ -497,7 +497,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .sortedByDescending { it.value }
             .mapNotNull { (pkg, t) ->
                 val item = appsRepo.find(pkg, null, apps) ?: return@mapNotNull null
-                if (item.isHome) return@mapNotNull null
+                if (item.isHome || item.packageName in prefs.hiddenPackages) return@mapNotNull null
                 RecentItem(item, t)
             }
             .distinctBy { it.app.packageName }
@@ -506,7 +506,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val recentsPkgs = recents.map { it.app.packageName }.toSet()
         val reveal = apps
-            .filter { !it.isHome && it.packageName !in recentsPkgs }
+            .filter { !it.isHome && it.packageName !in recentsPkgs && it.packageName !in prefs.hiddenPackages }
             .sortedWith(
                 compareByDescending<LaunchableApp> {
                     Ranking.score(launches[it.packageName].orEmpty(), now)
@@ -571,8 +571,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             hasNowPlayingAccess = extraState.hasNowPlayingAccess,
             quote = quote?.text.orEmpty(),
             quoteAuthor = quote?.author.orEmpty(),
-            spotifyWidgetId = prefs.spotifyWidgetId.takeIf { app.spotifyWidget.infoFor(it) != null } ?: 0,
-            spotifyWidgetAvailable = app.spotifyWidget.provider() != null,
+            hiddenPackages = prefs.hiddenPackages.toSet(),
         )
     }
 
@@ -601,7 +600,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val musicDurationMs: Long = 0L,
         val nowPlayingPackage: String = "",
         val hasNowPlayingAccess: Boolean = false,
-        val widgetRev: Int = 0,
     )
 
     companion object {

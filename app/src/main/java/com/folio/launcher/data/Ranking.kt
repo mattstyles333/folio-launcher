@@ -112,10 +112,13 @@ object Ranking {
         launches: Map<String, List<Long>>,
         firstSeen: Map<String, Long>,
         defaults: List<LaunchableApp>,
+        hidden: Set<String> = emptySet(),
         now: Long = System.currentTimeMillis(),
     ): List<LaunchableApp> {
         val eligible = apps.filter {
-            !it.isHome && isEligible(it.packageName, firstSeen, launches, now)
+            !it.isHome &&
+                it.packageName !in hidden &&
+                isEligible(it.packageName, firstSeen, launches, now)
         }
         val scored = eligible.map { it to score(launches[it.packageName].orEmpty(), now) }
         val anyUsage = scored.any { it.second > 0 }
@@ -135,9 +138,10 @@ object Ranking {
         apps: List<LaunchableApp>,
         railPackages: Set<String>,
         launches: Map<String, List<Long>>,
+        hidden: Set<String> = emptySet(),
         now: Long = System.currentTimeMillis(),
     ): List<LaunchableApp> {
-        val visible = apps.filter { !it.isHome }
+        val visible = apps.filter { !it.isHome && it.packageName !in hidden }
         val order = orderDrawer(
             labeled = visible.map { it.packageName to it.label },
             rail = railPackages,
