@@ -57,9 +57,9 @@ fun ClockDisplay(
     val timeAlpha = if (dim) 0.40f else 0.94f
     val dateAlpha = if (dim) 0.26f else 0.72f
     val shadow = Shadow(
-        color = Color.Black.copy(alpha = if (dim) 0.25f else 0.55f),
-        offset = Offset(0f, 1.5f),
-        blurRadius = 12f,
+        color = Color.Black.copy(alpha = if (dim) 0.35f else 0.70f),
+        offset = Offset(0f, 1.2f),
+        blurRadius = 2.4f,
     )
     Column(
         modifier

@@ -84,7 +84,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     init {
         appsRepo.start()
         ringer.start()
-        viewModelScope.launch { loadWallpaper() }
+        viewModelScope.launch {
+            loadWallpaper()
+            ensureFirstPrint()
+        }
         viewModelScope.launch {
             combine(prefsStore.data, usageStore.data, appsRepo.apps) { p, u, a -> Triple(p, u, a) }
                 .collect { (prefs, usage, apps) ->
@@ -321,6 +324,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             accessOffered = if (accessDone) true else prefs.accessOffered,
             onboardingComplete = roleDone && wallDone && accessDone,
         )
+    }
+
+    private suspend fun ensureFirstPrint() {
+        if (wallpaperRepo.exists() || extra.value.wallpaperBusy) return
+        extra.value = extra.value.copy(wallpaperBusy = true)
+        val shot = wallpaperRepo.importBing(0)
+        if (shot != null) {
+            prefsStore.update {
+                finishOnboarding(it.copy(wallpaperSet = true, bingIndex = shot.index))
+            }
+            loadWallpaper()
+        }
+        extra.value = extra.value.copy(wallpaperBusy = false)
     }
 
     private suspend fun loadWallpaper() {

@@ -3,6 +3,8 @@ package com.pulse.launcher.search
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -64,8 +66,8 @@ fun SearchOverlay(
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(tween(200)),
-        exit = fadeOut(tween(160)),
+        enter = fadeIn(tween(180)) + slideInVertically(tween(280)) { -it / 14 },
+        exit = fadeOut(tween(140)) + slideOutVertically(tween(180)) { -it / 18 },
     ) {
         val focus = remember { FocusRequester() }
         LaunchedEffect(visible) {

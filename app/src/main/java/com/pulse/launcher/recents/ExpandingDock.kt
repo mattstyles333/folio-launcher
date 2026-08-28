@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -61,12 +61,10 @@ fun ExpandingDock(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val rowPx = with(density) { DockRowHeight.toPx() }
     val railPx = with(density) { RailHeight.toPx() }
     val extraPx = pullPx.coerceAtLeast(0f)
     val viewportPx = railPx + extraPx
     val gridState = rememberLazyGridState()
-    val enter = (extraPx / (rowPx * 0.9f)).coerceIn(0f, 1f)
 
     LaunchedEffect(scrollEnabled) {
         if (!scrollEnabled && extraPx < 8f) {
@@ -110,37 +108,35 @@ fun ExpandingDock(
             .clipToBounds()
             .then(if (scrollEnabled) Modifier.nestedScroll(nested) else Modifier),
     ) {
-        Column(Modifier.fillMaxWidth()) {
-            Rail(
-                slots = rail,
-                iconSaturation = iconSaturation,
-                onLaunch = onLaunch,
-                onPinRequest = onPinRequest,
-                onReorder = onReorder,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (extraPx > 0.5f && extras.isNotEmpty()) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    state = gridState,
-                    userScrollEnabled = scrollEnabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(with(density) { extraPx.toDp() })
-                        .graphicsLayer {
-                            alpha = 0.22f + 0.78f * enter
-                            translationY = (1f - enter) * 16f
-                        },
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    items(extras, key = { it.key }) { app ->
-                        DrawerCell(
-                            app = app,
-                            iconSaturation = iconSaturation,
-                            onLaunch = onLaunch,
-                        )
-                    }
+        Rail(
+            slots = rail,
+            iconSaturation = iconSaturation,
+            onLaunch = onLaunch,
+            onPinRequest = onPinRequest,
+            onReorder = onReorder,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+        )
+        if (extraPx > 0.5f && extras.isNotEmpty() && maxSheetPx > 1f) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                state = gridState,
+                userScrollEnabled = scrollEnabled,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = RailHeight)
+                    .fillMaxWidth()
+                    .requiredHeight(with(density) { maxSheetPx.toDp() }),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                items(extras, key = { it.key }) { app ->
+                    DrawerCell(
+                        app = app,
+                        iconSaturation = iconSaturation,
+                        onLaunch = onLaunch,
+                    )
                 }
             }
         }

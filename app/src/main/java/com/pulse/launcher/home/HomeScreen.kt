@@ -3,10 +3,13 @@ package com.pulse.launcher.home
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -28,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,7 +84,6 @@ fun HomeScreen(
     onSkipWallpaper: () -> Unit,
     onUseSystemWallpaper: () -> Unit,
     onOpenDnd: () -> Unit,
-    onOpenUsage: () -> Unit,
     onSkipAccess: () -> Unit,
     onSilentHint: () -> Unit,
     onNextBing: () -> Unit,
@@ -146,13 +149,17 @@ fun HomeScreen(
                 val start = from.coerceAtLeast(0f)
                 pullAnim.snapTo(start)
                 val pullVel = -velocityY
-                val open = if (kotlin.math.abs(pullVel) > 1250f) {
+                val open = if (kotlin.math.abs(pullVel) > 900f) {
                     pullVel > 0f
                 } else {
-                    start > maxSheetPx * 0.26f
+                    start > maxSheetPx * 0.22f
                 }
                 val target = if (open) maxSheetPx else 0f
-                pullAnim.animateTo(target, sheetSpring())
+                pullAnim.animateTo(
+                    targetValue = target,
+                    animationSpec = sheetSpring(),
+                    initialVelocity = pullVel,
+                )
                 sheetLocked = open
                 if (open) {
                     val tick = if (Build.VERSION.SDK_INT >= 34) {
@@ -319,10 +326,16 @@ fun HomeScreen(
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(top = (maxHeight * 0.045f).coerceIn(18.dp, 32.dp))
-                    .graphicsLayer {
-                        alpha = 1f - open * 0.92f
-                        translationY = -open * 18f
-                    },
+                    .then(
+                        if (open > 0.01f) {
+                            Modifier.graphicsLayer {
+                                alpha = 1f - open * 0.92f
+                                translationY = -open * 18f
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         }
 
@@ -413,23 +426,35 @@ fun HomeScreen(
             )
         }
 
-        state.onboarding?.let { step ->
-            Onboarding(
-                step = step,
-                accent = state.accent,
-                systemWallpaperReadable = state.systemWallpaperReadable,
-                hasDndAccess = state.hasDndAccess,
-                hasUsageAccess = state.hasUsageAccess,
-                onSetDefault = onSetDefault,
-                onSkipRole = onSkipRole,
-                onPickPhoto = onPickPhoto,
-                onUseBing = onNextBing,
-                onUseSystem = onUseSystemWallpaper,
-                onSkipWallpaper = onSkipWallpaper,
-                onOpenDnd = onOpenDnd,
-                onOpenUsage = onOpenUsage,
-                onSkipAccess = onSkipAccess,
-            )
+        val onboardStep = state.onboarding
+        var lastOnboard by remember { mutableStateOf(onboardStep) }
+        SideEffect {
+            if (onboardStep != null) lastOnboard = onboardStep
+        }
+        AnimatedVisibility(
+            visible = onboardStep != null,
+            enter = fadeIn(tween(280)),
+            exit = fadeOut(tween(340)),
+        ) {
+            val step = onboardStep ?: lastOnboard
+            if (step != null) {
+                Onboarding(
+                    step = step,
+                    accent = state.accent,
+                    systemWallpaperReadable = state.systemWallpaperReadable,
+                    hasDndAccess = state.hasDndAccess,
+                    hasUsageAccess = state.hasUsageAccess,
+                    wallpaperBusy = state.wallpaperBusy,
+                    onSetDefault = onSetDefault,
+                    onSkipRole = onSkipRole,
+                    onPickPhoto = onPickPhoto,
+                    onUseBing = onNextBing,
+                    onUseSystem = onUseSystemWallpaper,
+                    onSkipWallpaper = onSkipWallpaper,
+                    onAllowAccess = onOpenDnd,
+                    onSkipAccess = onSkipAccess,
+                )
+            }
         }
 
         if (state.silentHint &&
@@ -467,8 +492,9 @@ private fun rubberBand(offset: Float, limit: Float): Float {
 }
 
 private fun sheetSpring() = spring<Float>(
-    dampingRatio = 0.84f,
-    stiffness = 580f,
+    dampingRatio = 0.86f,
+    stiffness = 380f,
+    visibilityThreshold = 0.4f,
 )
 
 private fun developSpec() = tween<Float>(

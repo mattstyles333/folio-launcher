@@ -31,7 +31,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Rail + pull-up sheet | `home/Rail.kt`, `recents/ExpandingDock.kt` — two-stop sheet, LazyGrid of every app |
 | Ringer develop | Long-press print — `GradeReveal` circular clip in `home/WallpaperLayer.kt` |
 | Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
-| Onboarding | Role → print → DND + usage. Both grants skippable; now-playing stays in Settings. |
+| Onboarding | Role → Bing auto-fetch → one Allow walk (DND then usage). Both skippable; now-playing stays in Settings. |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
 | Now playing / charge | `data/DeviceSignals.kt` |
@@ -44,11 +44,12 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: open app sheet (spring to open/closed). Once open, the grid scrolls. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
+- Swipe up on wallpaper/rail: open app sheet (spring, fling velocity kept). Once open, the grid scrolls. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
+- Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
 - Clock tap: search. Clock long-press: settings.
 
 ## Tests

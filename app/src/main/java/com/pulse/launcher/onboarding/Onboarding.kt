@@ -1,5 +1,10 @@
 package com.pulse.launcher.onboarding
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pulse.launcher.data.OnboardingStep
@@ -34,20 +40,20 @@ fun Onboarding(
     systemWallpaperReadable: Boolean,
     hasDndAccess: Boolean,
     hasUsageAccess: Boolean,
+    wallpaperBusy: Boolean = false,
     onSetDefault: () -> Unit,
     onSkipRole: () -> Unit,
     onPickPhoto: () -> Unit,
     onUseBing: () -> Unit,
     onUseSystem: () -> Unit,
     onSkipWallpaper: () -> Unit,
-    onOpenDnd: () -> Unit,
-    onOpenUsage: () -> Unit,
+    onAllowAccess: () -> Unit,
     onSkipAccess: () -> Unit,
 ) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(VoidBlack.copy(alpha = 0.88f))
+            .background(VoidBlack.copy(alpha = 0.72f))
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 28.dp, vertical = 36.dp),
@@ -63,74 +69,118 @@ fun Onboarding(
                     letterSpacing = 2.sp,
                 )
                 Spacer(Modifier.height(10.dp))
-                Text(
-                    text = when (step) {
-                        OnboardingStep.Role -> "Idle is a print. Make it Home."
-                        OnboardingStep.Wallpaper -> "Choose a print."
-                        OnboardingStep.Access -> "Two grants. Skip either — they're in Settings."
-                    },
-                    color = PrintInk.copy(alpha = 0.55f),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Light,
-                )
+                AnimatedContent(
+                    targetState = step,
+                    transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(160)) },
+                    label = "onboardCopy",
+                ) { current ->
+                    Text(
+                        text = when (current) {
+                            OnboardingStep.Role -> "Idle is a print. Make it Home."
+                            OnboardingStep.Wallpaper ->
+                                if (wallpaperBusy) "Today's print is on the way." else "Choose a print."
+                            OnboardingStep.Access ->
+                                "Find Pulse in the next list, switch it on, press Back. We'll do this twice."
+                        },
+                        color = PrintInk.copy(alpha = 0.58f),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Light,
+                    )
+                }
             }
-            Column(
-                Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                when (step) {
-                    OnboardingStep.Role -> {
-                        PrimaryButton("Set as default launcher", accent, onSetDefault)
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            "Skip",
-                            color = PrintInk.copy(alpha = 0.45f),
-                            modifier = Modifier.clickable(onClick = onSkipRole),
-                            fontSize = 14.sp,
-                        )
-                    }
-                    OnboardingStep.Wallpaper -> {
-                        PrimaryButton("Today's Bing print", accent, onUseBing)
-                        Spacer(Modifier.height(12.dp))
-                        PrimaryButton("Pick a photo", accent.copy(alpha = 0.85f), onPickPhoto, filled = false)
-                        if (systemWallpaperReadable) {
-                            Spacer(Modifier.height(12.dp))
-                            PrimaryButton("Use current wallpaper", accent.copy(alpha = 0.85f), onUseSystem, filled = false)
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(140)) },
+                label = "onboardActions",
+                modifier = Modifier.fillMaxWidth(),
+            ) { current ->
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    when (current) {
+                        OnboardingStep.Role -> {
+                            PrimaryButton("Set as Home", accent, onSetDefault)
+                            Spacer(Modifier.height(14.dp))
+                            Text(
+                                "Skip",
+                                color = PrintInk.copy(alpha = 0.45f),
+                                modifier = Modifier.clickable(onClick = onSkipRole),
+                                fontSize = 14.sp,
+                            )
                         }
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            "Skip",
-                            color = PrintInk.copy(alpha = 0.45f),
-                            modifier = Modifier.clickable(onClick = onSkipWallpaper),
-                            fontSize = 14.sp,
-                        )
-                    }
-                    OnboardingStep.Access -> {
-                        PrimaryButton(
-                            if (hasDndAccess) "Silent can mute" else "Let Silent actually mute",
-                            accent,
-                            onOpenDnd,
-                            filled = !hasDndAccess,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        PrimaryButton(
-                            if (hasUsageAccess) "Ranking from last 30 days" else "Rank apps from how you use them",
-                            accent.copy(alpha = 0.85f),
-                            onOpenUsage,
-                            filled = !hasUsageAccess,
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            if (hasDndAccess && hasUsageAccess) "Continue" else "Skip",
-                            color = PrintInk.copy(alpha = 0.45f),
-                            modifier = Modifier.clickable(onClick = onSkipAccess),
-                            fontSize = 14.sp,
-                        )
+                        OnboardingStep.Wallpaper -> {
+                            if (wallpaperBusy) {
+                                Text(
+                                    "This only takes a moment.",
+                                    color = PrintInk.copy(alpha = 0.42f),
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(18.dp))
+                                Text(
+                                    "Skip",
+                                    color = PrintInk.copy(alpha = 0.45f),
+                                    modifier = Modifier.clickable(onClick = onSkipWallpaper),
+                                    fontSize = 14.sp,
+                                )
+                            } else {
+                                PrimaryButton("Today's Bing print", accent, onUseBing)
+                                Spacer(Modifier.height(12.dp))
+                                PrimaryButton("Pick a photo", accent.copy(alpha = 0.85f), onPickPhoto, filled = false)
+                                if (systemWallpaperReadable) {
+                                    Spacer(Modifier.height(12.dp))
+                                    PrimaryButton("Use current wallpaper", accent.copy(alpha = 0.85f), onUseSystem, filled = false)
+                                }
+                                Spacer(Modifier.height(14.dp))
+                                Text(
+                                    "Skip",
+                                    color = PrintInk.copy(alpha = 0.45f),
+                                    modifier = Modifier.clickable(onClick = onSkipWallpaper),
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        }
+                        OnboardingStep.Access -> {
+                            val both = hasDndAccess && hasUsageAccess
+                            PrimaryButton(
+                                when {
+                                    both -> "Continue"
+                                    hasDndAccess -> "Rank apps from how you use them"
+                                    hasUsageAccess -> "Let Silent actually mute"
+                                    else -> "Allow"
+                                },
+                                accent,
+                                onClick = if (both) onSkipAccess else onAllowAccess,
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                accessStatus(hasDndAccess, hasUsageAccess),
+                                color = PrintInk.copy(alpha = 0.38f),
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                            if (!both) {
+                                Spacer(Modifier.height(14.dp))
+                                Text(
+                                    "Skip",
+                                    color = PrintInk.copy(alpha = 0.45f),
+                                    modifier = Modifier.clickable(onClick = onSkipAccess),
+                                    fontSize = 14.sp,
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+private fun accessStatus(dnd: Boolean, usage: Boolean): String {
+    val mute = if (dnd) "Silent can mute" else "Silent needs Do Not Disturb"
+    val rank = if (usage) "Ranking uses the last 30 days" else "Ranking starts from Pulse until usage access"
+    return "$mute. $rank."
 }
 
 @Composable

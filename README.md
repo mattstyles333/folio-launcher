@@ -30,7 +30,7 @@ adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 | Gesture | What |
 |---|---|
 | Tap Search / swipe down / tap clock | Spotlight |
-| Drag the four icons up | App sheet — recent / most used first, then A–Z. Scroll for everything. |
+| Drag the four icons up | App sheet — springs open, then scrolls. Recent / most used first, then A–Z. |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Plug in | Hairline around the clock fills with charge |
@@ -40,12 +40,14 @@ Quotes sit under the date — one short line a day, from an on-device bank. A ne
 
 ## Permissions
 
+First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow** walks Do Not Disturb and usage access (find Pulse, switch on, Back — twice). Skip either; both stay in Settings.
+
 | Access | When |
 |---|---|
 | Internet | Bing prints only. Everything else is local. |
 | Photo picker | Settings → Choose photo. No broad storage. |
-| Do Not Disturb | Optional. Asked at onboarding. Silent still *looks* silent if you deny. |
-| Usage access | Optional. Asked at onboarding, or Settings → Better ranking. Last 30 days of opens. |
+| Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny. |
+| Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Last 30 days of opens. |
 | Notification access | Optional. Settings → Now playing. |
 
 ## Build

@@ -22,8 +22,6 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -31,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pulse.launcher.ui.ClockDateStyle
 import com.pulse.launcher.ui.PrintInk
+import com.pulse.launcher.ui.QuoteAuthorStyle
+import com.pulse.launcher.ui.QuoteStyle
 
 @Composable
 fun ClockCluster(
@@ -81,27 +81,31 @@ fun ClockCluster(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "“$quote”",
-                style = ClockDateStyle.copy(
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = FontWeight.Light,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.2.sp,
-                    shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 1f), 10f),
+                style = QuoteStyle.copy(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.72f),
+                        offset = Offset(0f, 1f),
+                        blurRadius = 0.8f,
+                    ),
                 ),
-                color = accent.copy(alpha = if (dimClock) 0.42f else 0.88f),
+                color = accent.copy(alpha = if (dimClock) 0.52f else 0.94f),
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 44.dp),
+                modifier = Modifier.padding(horizontal = 40.dp),
             )
             if (quoteAuthor.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(5.dp))
                 Text(
                     text = quoteAuthor,
-                    style = ClockDateStyle,
-                    color = accent.copy(alpha = if (dimClock) 0.28f else 0.45f),
-                    fontSize = 11.sp,
-                    letterSpacing = 1.2.sp,
+                    style = QuoteAuthorStyle.copy(
+                        shadow = Shadow(
+                            color = Color.Black.copy(alpha = 0.70f),
+                            offset = Offset(0f, 1f),
+                            blurRadius = 0.8f,
+                        ),
+                    ),
+                    color = accent.copy(alpha = if (dimClock) 0.36f else 0.58f),
                 )
             }
         }

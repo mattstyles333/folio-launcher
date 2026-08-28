@@ -71,16 +71,70 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.StartActivityForResult(),
                 ) { viewModel.refreshSystemState() }
 
+                var accessWalk by remember { mutableIntStateOf(0) }
+
+                val usageLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult(),
+                ) {
+                    viewModel.refreshSystemState()
+                    viewModel.skipAccess()
+                    accessWalk = 0
+                }
+
                 val dndLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
-                ) { viewModel.onDndAccessReturned() }
+                ) {
+                    viewModel.onDndAccessReturned()
+                    viewModel.refreshSystemState()
+                    if (accessWalk == 1) {
+                        if (state.hasUsageAccess) {
+                            viewModel.skipAccess()
+                            accessWalk = 0
+                        } else {
+                            accessWalk = 2
+                            usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                        }
+                    }
+                }
 
                 LaunchedEffect(state.needsDndAccess) {
                     if (state.needsDndAccess) viewModel.consumeDndRequest()
                 }
 
+                LaunchedEffect(state.hasDndAccess, state.hasUsageAccess, state.onboarding) {
+                    if (state.onboarding == null) accessWalk = 0
+                    if (state.onboarding != null &&
+                        state.hasDndAccess &&
+                        state.hasUsageAccess
+                    ) {
+                        viewModel.skipAccess()
+                        accessWalk = 0
+                    }
+                }
+
                 fun openDndAccess() {
                     dndLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                }
+
+                fun openUsageAccess() {
+                    usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                }
+
+                fun startAccessWalk() {
+                    when {
+                        state.hasDndAccess && state.hasUsageAccess -> {
+                            viewModel.skipAccess()
+                            accessWalk = 0
+                        }
+                        !state.hasDndAccess -> {
+                            accessWalk = 1
+                            openDndAccess()
+                        }
+                        else -> {
+                            accessWalk = 2
+                            openUsageAccess()
+                        }
+                    }
                 }
 
                 fun openPhotoPicker() {
@@ -117,13 +171,7 @@ class MainActivity : ComponentActivity() {
                             onSkipRole = { viewModel.skipRole() },
                             onSkipWallpaper = { viewModel.skipWallpaper() },
                             onUseSystemWallpaper = { viewModel.useSystemWallpaper() },
-                            onOpenDnd = { openDndAccess() },
-                            onOpenUsage = {
-                                startActivity(
-                                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
-                            },
+                            onOpenDnd = { startAccessWalk() },
                             onSkipAccess = { viewModel.skipAccess() },
                             onSilentHint = {
                                 viewModel.dismissSilentHint()
