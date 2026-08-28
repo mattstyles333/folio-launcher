@@ -15,6 +15,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,9 +29,13 @@ data class ChargeState(
 
 data class NowPlaying(
     val line: String = "",
+    val title: String = "",
+    val artist: String = "",
     val playing: Boolean = false,
     val packageName: String = "",
     val art: Bitmap? = null,
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
 )
 
 class DeviceSignals(private val context: Context) {
@@ -107,6 +112,13 @@ class DeviceSignals(private val context: Context) {
             return
         }
         dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+    }
+
+    fun seek(fraction: Float) {
+        val dur = controller?.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        if (dur <= 0L) return
+        val ms = (dur * fraction.coerceIn(0f, 1f)).toLong()
+        controller?.transportControls?.seekTo(ms)
     }
 
     private fun transportOrKey(
@@ -195,12 +207,24 @@ class DeviceSignals(private val context: Context) {
             artCache = null
             null
         }
+        val duration = meta?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        val position = c?.playbackState?.let { playbackPosition(it) } ?: 0L
         _now.value = NowPlaying(
             line = if (active) line else "",
+            title = if (active) title else "",
+            artist = if (active) artist else "",
             playing = state == PlaybackState.STATE_PLAYING,
             packageName = if (active) pkg else "",
             art = art,
+            positionMs = if (active) position else 0L,
+            durationMs = if (active) duration else 0L,
         )
+    }
+
+    private fun playbackPosition(state: PlaybackState): Long {
+        if (state.state != PlaybackState.STATE_PLAYING) return state.position.coerceAtLeast(0L)
+        val delta = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
+        return (state.position + (delta * state.playbackSpeed).toLong()).coerceAtLeast(0L)
     }
 
     private fun albumArt(meta: MediaMetadata?, key: String): Bitmap? {
@@ -208,7 +232,7 @@ class DeviceSignals(private val context: Context) {
         artKey = key
         val src = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        artCache = src?.let { Bitmap.createScaledBitmap(it, 96, 96, true) }
+        artCache = src?.let { Bitmap.createScaledBitmap(it, 192, 192, true) }
         return artCache
     }
 

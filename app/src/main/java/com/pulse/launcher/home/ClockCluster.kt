@@ -39,8 +39,12 @@ fun ClockCluster(
     charging: Boolean,
     charge: Float,
     nowPlaying: String,
+    musicTitle: String,
+    musicArtist: String,
     musicPlaying: Boolean,
     musicArt: ImageBitmap?,
+    musicPositionMs: Long,
+    musicDurationMs: Long,
     quote: String,
     quoteAuthor: String,
     lookName: String?,
@@ -52,6 +56,7 @@ fun ClockCluster(
     onPlayPause: () -> Unit,
     onSkipTrack: () -> Unit,
     onOpenPlayer: () -> Unit,
+    onSeekTrack: (Float) -> Unit,
     haloSize: Dp = 220.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -117,14 +122,19 @@ fun ClockCluster(
             Spacer(Modifier.height(10.dp))
             PlaybackStrip(
                 line = nowPlaying,
+                title = musicTitle,
+                artist = musicArtist,
                 playing = musicPlaying,
                 art = musicArt,
+                positionMs = musicPositionMs,
+                durationMs = musicDurationMs,
                 accent = accent,
                 dim = dimClock,
                 onPrevious = onPreviousTrack,
                 onPlayPause = onPlayPause,
                 onNext = onSkipTrack,
                 onOpen = onOpenPlayer,
+                onSeek = onSeekTrack,
             )
         } else if (lookName == null && caption.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))

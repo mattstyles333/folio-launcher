@@ -104,8 +104,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         charging = charge.charging,
                         charge = charge.fraction,
                         nowPlaying = now.line,
+                        musicTitle = now.title,
+                        musicArtist = now.artist,
                         musicPlaying = now.playing,
                         musicArt = now.art?.asImageBitmap(),
+                        musicPositionMs = now.positionMs,
+                        musicDurationMs = now.durationMs,
                         nowPlayingPackage = now.packageName,
                         hasNowPlayingAccess = app.signals.hasNowPlayingAccess(),
                     )
@@ -129,6 +133,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playPause() {
         app.signals.playPause()
+    }
+
+    fun seekTrack(fraction: Float) {
+        app.signals.seek(fraction)
     }
 
     fun openPlayer() {
@@ -532,8 +540,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             charging = extraState.charging,
             charge = extraState.charge,
             nowPlaying = extraState.nowPlaying,
+            musicTitle = extraState.musicTitle,
+            musicArtist = extraState.musicArtist,
             musicPlaying = extraState.musicPlaying,
             musicArt = extraState.musicArt,
+            musicPositionMs = extraState.musicPositionMs,
+            musicDurationMs = extraState.musicDurationMs,
             hasNowPlayingAccess = extraState.hasNowPlayingAccess,
             quote = quote?.text.orEmpty(),
             quoteAuthor = quote?.author.orEmpty(),
@@ -557,8 +569,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val charging: Boolean = false,
         val charge: Float = 0f,
         val nowPlaying: String = "",
+        val musicTitle: String = "",
+        val musicArtist: String = "",
         val musicPlaying: Boolean = false,
         val musicArt: ImageBitmap? = null,
+        val musicPositionMs: Long = 0L,
+        val musicDurationMs: Long = 0L,
         val nowPlayingPackage: String = "",
         val hasNowPlayingAccess: Boolean = false,
     )
