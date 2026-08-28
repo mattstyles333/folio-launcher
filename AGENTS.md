@@ -34,22 +34,22 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Onboarding | Role → Bing auto-fetch → one Allow walk (DND, usage, then notification access for Spotify). All skippable. |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
-| Now playing / charge | `data/DeviceSignals.kt`, `home/PlaybackStrip.kt`, `home/NowPlayingPage.kt`. Charge hairline is a full oval around the clock. |
+| Now playing / charge | `data/DeviceSignals.kt`, `home/PlaybackStrip.kt`. Swipe-right page hosts Spotify’s own AppWidget (`SpotifyWidgetBinder`). Charge hairline is a full oval around the clock. |
 
 `HomeViewModel` is the only state owner. Prefs are a single JSON blob in DataStore (`PrefsStore`).
 
 ## Do not add
 
-Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads.
+General widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads. Spotify’s Now Playing AppWidget on the swipe-right page is the exception.
 
 ## Touch contracts
 
 - Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps except other home screens (search still finds them); recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
-- Swipe right: full-screen now-playing page (`NowPlayingPage`, `page` SheetPull). Home translates X. Swipe left or Back closes. Long-press the rail art opens the same page. Do not start a page swipe while the app sheet is open, or a sheet swipe while the player page is open.
+- Swipe right: page for Spotify’s own Now Playing widget (`NowPlayingPage` + `SpotifyWidgetBinder`). Home translates X. Swipe left or Back closes. Long-press the rail art opens the same page. First open may ask to bind that widget. Do not start a page swipe while the app sheet is open, or a sheet swipe while the player page is open.
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing on home is prev / album-art / next above the rail. Skip glyphs are thin strokes in PrintInk with a hard shadow so they read on the print. Tap art to play-pause; long-press opens the player page. “Open Spotify” uses the session’s `sessionActivity`, then `spotify:`. Prefer Spotify if several sessions are active. Idle chip until notification access is granted. Do not host Spotify’s AppWidget.
+- Now playing on home is prev / album-art / next above the rail. Skip glyphs are thin strokes in PrintInk with a hard shadow so they read on the print. Tap art to play-pause; long-press opens the player page. The side page is Spotify’s widget, not Folio chrome. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
 - Plug in: hairline oval around the clock. At 100% the oval is closed.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.

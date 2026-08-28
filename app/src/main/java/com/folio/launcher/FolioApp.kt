@@ -6,6 +6,7 @@ import com.folio.launcher.data.PrefsStore
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.UsageStore
 import com.folio.launcher.data.DeviceSignals
+import com.folio.launcher.data.SpotifyWidgetBinder
 import com.folio.launcher.data.WallpaperRepository
 
 class FolioApp : Application() {
@@ -21,6 +22,8 @@ class FolioApp : Application() {
         private set
     lateinit var signals: DeviceSignals
         private set
+    lateinit var spotifyWidget: SpotifyWidgetBinder
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -31,5 +34,6 @@ class FolioApp : Application() {
         wallpaper = WallpaperRepository(this)
         signals = DeviceSignals(this)
         signals.start()
+        spotifyWidget = SpotifyWidgetBinder(this)
     }
 }

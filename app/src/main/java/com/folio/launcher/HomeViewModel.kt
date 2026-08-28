@@ -144,6 +144,30 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         app.signals.openSession(host)
     }
 
+    fun ensureSpotifyWidget(): Intent? {
+        val binder = app.spotifyWidget
+        val info = binder.provider() ?: return null
+        var id = latestPrefs.spotifyWidgetId
+        if (id != 0 && binder.infoFor(id) != null) return null
+        if (id != 0) binder.delete(id)
+        id = binder.allocate()
+        latestPrefs = latestPrefs.copy(spotifyWidgetId = id)
+        viewModelScope.launch { prefsStore.update { it.copy(spotifyWidgetId = id) } }
+        if (binder.bindIfAllowed(id, info)) return null
+        return binder.bindIntent(id, info)
+    }
+
+    fun onSpotifyWidgetBindResult(ok: Boolean) {
+        val id = latestPrefs.spotifyWidgetId
+        if (ok && id != 0 && app.spotifyWidget.infoFor(id) != null) {
+            extra.value = extra.value.copy(widgetRev = extra.value.widgetRev + 1)
+            return
+        }
+        if (id != 0) app.spotifyWidget.delete(id)
+        latestPrefs = latestPrefs.copy(spotifyWidgetId = 0)
+        viewModelScope.launch { prefsStore.update { it.copy(spotifyWidgetId = 0) } }
+    }
+
     fun requestIdle() {
         _idleTick.tryEmit(Unit)
     }
@@ -546,6 +570,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             hasNowPlayingAccess = extraState.hasNowPlayingAccess,
             quote = quote?.text.orEmpty(),
             quoteAuthor = quote?.author.orEmpty(),
+            spotifyWidgetId = prefs.spotifyWidgetId.takeIf { app.spotifyWidget.infoFor(it) != null } ?: 0,
+            spotifyWidgetAvailable = app.spotifyWidget.provider() != null,
         )
     }
 
@@ -574,6 +600,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val musicDurationMs: Long = 0L,
         val nowPlayingPackage: String = "",
         val hasNowPlayingAccess: Boolean = false,
+        val widgetRev: Int = 0,
     )
 
     companion object {

@@ -90,6 +90,7 @@ fun HomeScreen(
     onSkipTrack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onSeekTrack: (Float) -> Unit,
+    onEnsureSpotifyWidget: () -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -272,22 +273,17 @@ fun HomeScreen(
             enabled = gesturesEnabled && !developing && !page.locked,
         )
         val namedLook = targetLook ?: look
+        val wantWidget = page.locked || page.px > maxPagePx * 0.12f
+        LaunchedEffect(wantWidget) {
+            if (wantWidget) onEnsureSpotifyWidget()
+        }
         NowPlayingPage(
-            line = state.nowPlaying,
-            title = state.musicTitle,
-            artist = state.musicArtist,
-            playing = state.musicPlaying,
             art = state.musicArt,
-            positionMs = state.musicPositionMs,
-            durationMs = state.musicDurationMs,
-            hasAccess = state.hasNowPlayingAccess,
             accent = state.accent,
-            onPrevious = onPreviousTrack,
-            onPlayPause = onPlayPause,
-            onNext = onSkipTrack,
-            onSeek = onSeekTrack,
+            widgetId = state.spotifyWidgetId,
+            widgetAvailable = state.spotifyWidgetAvailable,
+            onBindWidget = onEnsureSpotifyWidget,
             onOpenApp = onOpenPlayer,
-            onAllowAccess = onMediaHint,
             modifier = Modifier
                 .fillMaxSize()
                 .offset { IntOffset((page.px - maxPagePx).roundToInt(), 0) }
