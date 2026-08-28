@@ -1,0 +1,148 @@
+package com.pulse.launcher
+
+import android.content.Intent
+import android.os.Bundle
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.pulse.launcher.data.RingerController
+import com.pulse.launcher.home.HomeScreen
+import com.pulse.launcher.settings.SettingsScreen
+import com.pulse.launcher.ui.PulseTheme
+import kotlinx.coroutines.flow.collectLatest
+
+class MainActivity : ComponentActivity() {
+    private val viewModel: HomeViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+
+        setContent {
+            PulseTheme {
+                val state by viewModel.state.collectAsStateWithLifecycle()
+                val nav = rememberNavController()
+                var idleEpoch by remember { mutableIntStateOf(0) }
+
+                LaunchedEffect(Unit) {
+                    viewModel.idleTick.collectLatest { idleEpoch++ }
+                }
+
+                val pickPhoto = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickVisualMedia(),
+                ) { uri -> uri?.let { viewModel.setWallpaper(it) } }
+
+                val roleLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult(),
+                ) { viewModel.refreshSystemState() }
+
+                val dndLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult(),
+                ) { viewModel.onDndAccessReturned() }
+
+                LaunchedEffect(state.needsDndAccess) {
+                    if (state.needsDndAccess) viewModel.consumeDndRequest()
+                }
+
+                fun openDndAccess() {
+                    dndLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                }
+
+                fun openPhotoPicker() {
+                    pickPhoto.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                }
+
+                fun openHomeRole() {
+                    roleLauncher.launch(RingerController.roleIntent(this@MainActivity))
+                }
+
+                NavHost(
+                    navController = nav,
+                    startDestination = "home",
+                    modifier = Modifier.fillMaxSize(),
+                    enterTransition = { fadeIn(tween(220)) },
+                    exitTransition = { fadeOut(tween(180)) },
+                ) {
+                    composable("home") {
+                        HomeScreen(
+                            state = state,
+                            idleEpoch = idleEpoch,
+                            launches = state.launches,
+                            onLaunch = { viewModel.launch(it) },
+                            onDismissRecent = { viewModel.dismissRecent(it) },
+                            onPin = { slot, app -> viewModel.pin(slot, app) },
+                            onReorder = { from, to -> viewModel.reorderRail(from, to) },
+                            onCycleRinger = { viewModel.cycleRinger() },
+                            onSetRinger = { viewModel.setRinger(it) },
+                            onOpenSettings = { nav.navigate("settings") },
+                            onPickPhoto = { openPhotoPicker() },
+                            onSetDefault = { openHomeRole() },
+                            onSkipRole = { viewModel.skipRole() },
+                            onSkipWallpaper = { viewModel.skipWallpaper() },
+                            onUseSystemWallpaper = { viewModel.useSystemWallpaper() },
+                            onSilentHint = {
+                                viewModel.dismissSilentHint()
+                                openDndAccess()
+                            },
+                            onNextBing = { viewModel.nextBingPrint() },
+                            onSkipTrack = { viewModel.skipTrack() },
+                        )
+                    }
+                    composable("settings") {
+                        SettingsScreen(
+                            state = state,
+                            onBack = { nav.popBackStack() },
+                            onPickPhoto = { openPhotoPicker() },
+                            onNextBing = { viewModel.nextBingPrint() },
+                            onShowClock = { viewModel.setShowClock(it) },
+                            onResetPins = { viewModel.resetPins() },
+                            onSetDefault = { openHomeRole() },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        viewModel.requestIdle()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshSystemState()
+    }
+}
