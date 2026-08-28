@@ -13,6 +13,8 @@ demo/
 *.iml
 *.jks
 *.keystore
+*.p12
+*.credentials
 keystore.properties
 .kotlin/
 local.properties

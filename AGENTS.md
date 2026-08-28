@@ -20,7 +20,7 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 ./gradlew testDebugUnitTest assembleDebug assembleRelease
 ```
 
-JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/outputs/apk/release/app-release.apk`). Do not minify without re-checking kotlinx.serialization keep rules.
+JDK 17, compile/target SDK 35. Release is signed with the Folio release key (`keystore.properties` locally, GitHub Actions secrets in CI). Output: `app/build/outputs/apk/release/app-release.apk`. Do not minify without re-checking kotlinx.serialization keep rules. Never commit `keystore.properties` or the `.keystore`.
 
 ## Architecture
 
@@ -61,12 +61,14 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Ship
 
-The S23 is installed from **GitHub Releases**, not from a local `adb` on this machine. After any change meant to be felt on the phone:
+The S23 is installed from **GitHub Releases**, not from a local `adb` on this machine. Do not `gh release create` by hand. After any change meant to be felt on the phone, bump `versionCode` / `versionName` in `app/build.gradle.kts`, then:
 
 ```bash
-./gradlew testDebugUnitTest assembleRelease
 git add -A && git commit && git push origin main
-gh release create vX.Y.Z --target main --title "X.Y.Z" app/build/outputs/apk/release/app-release.apk
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-Bump `versionCode` / `versionName` in `app/build.gradle.kts` for each of those. Release is debug-signed for sideload.
+The tag must match `versionName` (`v1.2.8` ↔ `1.2.8`). Actions runs tests, signs `folio-X.Y.Z.apk` with the release key, and publishes the GitHub Release plus a SHA-256. Local `assembleRelease` needs `keystore.properties` (see `keystore.properties.example`).
+
+v1.2.7 and earlier were debug-signed. The first release-keyed APK will not overlay those installs — uninstall Folio on the phone, then install from the new Release and set Home again.

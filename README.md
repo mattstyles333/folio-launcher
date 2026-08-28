@@ -10,6 +10,18 @@ Requires Android 12 (API 31)+.
 
 ## Install
 
+Sideload from [GitHub Releases](https://github.com/mattstyles333/folio-launcher/releases). The APK is `folio-X.Y.Z.apk`, signed with the Folio release key.
+
+Certificate SHA-256:
+
+```
+C3:BD:A2:A1:0C:A2:66:0B:D2:36:42:06:39:94:3A:A7:7F:02:16:C4:71:84:EE:E7:A5:67:44:13:95:31:74:B4
+```
+
+[Obtainium](https://github.com/ImranR98/Obtainium) can watch that same repo and apply later updates. Builds **v1.2.7 and earlier** used the debug key — uninstall those before installing 1.2.8+, then press Home and pick **Folio**.
+
+From source:
+
 ```bash
 export JAVA_HOME="${JAVA_HOME:-$(mise where java 2>/dev/null)}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
@@ -17,13 +29,7 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-Release is **debug-signed** for sideload (not Play). Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
-
-Press Home and pick **Folio**, or:
-
-```bash
-adb shell cmd role add-role-holder android.app.role.HOME com.folio.launcher
-```
+`assembleRelease` needs `keystore.properties` (copy `keystore.properties.example`). Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Use
 
