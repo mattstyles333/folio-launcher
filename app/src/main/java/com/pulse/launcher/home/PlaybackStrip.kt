@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -37,7 +38,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -71,19 +71,23 @@ fun PlaybackStrip(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val ink = accent.copy(alpha = if (dim) 0.48f else 0.94f)
-    val muted = accent.copy(alpha = if (dim) 0.34f else 0.58f)
+    val ink = accent.copy(alpha = if (dim) 0.62f else 0.94f)
+    val muted = accent.copy(alpha = if (dim) 0.42f else 0.62f)
     val titleCopy = title.ifBlank { line }
-    val shadow = Shadow(Color.Black.copy(alpha = 0.72f), Offset(0f, 1f), 0.8f)
+    val plate = RoundedCornerShape(20.dp)
     fun tap(action: () -> Unit) {
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         action()
     }
     Column(
         modifier
-            .widthIn(max = 340.dp)
+            .widthIn(max = 360.dp)
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 20.dp)
+            .clip(plate)
+            .background(Color.Black.copy(alpha = if (dim) 0.48f else 0.58f))
+            .border(1.dp, Color.White.copy(alpha = 0.16f), plate)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
@@ -96,43 +100,38 @@ fun PlaybackStrip(
                     onClick = { tap(onOpen) },
                 ),
         ) {
-            val artShape = RoundedCornerShape(11.dp)
+            val artShape = RoundedCornerShape(10.dp)
             if (art != null) {
                 Image(
                     bitmap = art,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(58.dp)
-                        .clip(artShape)
-                        .border(0.6.dp, Color.White.copy(alpha = 0.22f), artShape),
+                        .size(52.dp)
+                        .clip(artShape),
                 )
             } else {
                 Box(
                     Modifier
-                        .size(58.dp)
+                        .size(52.dp)
                         .clip(artShape)
-                        .border(0.6.dp, Color.White.copy(alpha = 0.16f), artShape),
+                        .background(Color.White.copy(alpha = 0.06f)),
                 )
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = titleCopy,
-                    style = QuoteStyle.copy(
-                        fontSize = 17.sp,
-                        lineHeight = 22.sp,
-                        shadow = shadow,
-                    ),
+                    style = QuoteStyle.copy(fontSize = 16.sp, lineHeight = 20.sp),
                     color = ink,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (artist.isNotEmpty()) {
-                    Spacer(Modifier.height(3.dp))
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         text = artist,
-                        style = QuoteAuthorStyle.copy(shadow = shadow, letterSpacing = 0.6.sp),
+                        style = QuoteAuthorStyle.copy(letterSpacing = 0.5.sp),
                         color = muted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -140,18 +139,18 @@ fun PlaybackStrip(
                 }
             }
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MediaButton(36.dp, onClick = { tap(onPrevious) }) { prevGlyph(ink) }
+            MediaButton(34.dp, onClick = { tap(onPrevious) }) { prevGlyph(ink) }
             PlayPauseButton(playing = playing, color = ink, onClick = { tap(onPlayPause) })
-            MediaButton(36.dp, onClick = { tap(onNext) }) { nextGlyph(ink) }
+            MediaButton(34.dp, onClick = { tap(onNext) }) { nextGlyph(ink) }
         }
         if (durationMs > 1_000L) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             ProgressHairline(
                 playing = playing,
                 positionMs = positionMs,

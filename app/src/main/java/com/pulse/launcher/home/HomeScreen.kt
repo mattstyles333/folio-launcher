@@ -285,7 +285,7 @@ fun HomeScreen(
 
         if (!searchOpen &&
             state.onboarding == null &&
-            (state.showClock || state.nowPlaying.isNotEmpty() || state.wallpaperCaption.isNotEmpty() || developing || flashLook || state.quote.isNotEmpty())
+            (state.showClock || state.wallpaperCaption.isNotEmpty() || developing || flashLook || state.quote.isNotEmpty())
         ) {
             val namedLook = targetLook ?: look
             ClockCluster(
@@ -294,13 +294,6 @@ fun HomeScreen(
                 dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
                 charging = state.charging,
                 charge = state.charge,
-                nowPlaying = state.nowPlaying,
-                musicTitle = state.musicTitle,
-                musicArtist = state.musicArtist,
-                musicPlaying = state.musicPlaying,
-                musicArt = state.musicArt,
-                musicPositionMs = state.musicPositionMs,
-                musicDurationMs = state.musicDurationMs,
                 quote = state.quote,
                 quoteAuthor = state.quoteAuthor,
                 lookName = if (developing || flashLook) namedLook.label() else null,
@@ -308,11 +301,6 @@ fun HomeScreen(
                 captionBusy = state.wallpaperBusy,
                 onClockTap = { openSearch() },
                 onClockLongPress = onOpenSettings,
-                onPreviousTrack = onPreviousTrack,
-                onPlayPause = onPlayPause,
-                onSkipTrack = onSkipTrack,
-                onOpenPlayer = onOpenPlayer,
-                onSeekTrack = onSeekTrack,
                 haloSize = (maxWidth * 0.56f).coerceIn(196.dp, 224.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -355,6 +343,37 @@ fun HomeScreen(
                     .padding(bottom = 64.dp)
                     .then(if (pull.locked) Modifier else sheetDrag()),
             )
+            if (state.nowPlaying.isNotEmpty() &&
+                state.onboarding == null &&
+                !searchOpen
+            ) {
+                val namedLook = targetLook ?: look
+                PlaybackStrip(
+                    line = state.nowPlaying,
+                    title = state.musicTitle,
+                    artist = state.musicArtist,
+                    playing = state.musicPlaying,
+                    art = state.musicArt,
+                    positionMs = state.musicPositionMs,
+                    durationMs = state.musicDurationMs,
+                    accent = state.accent,
+                    dim = namedLook == RingerVisual.Silent,
+                    onPrevious = onPreviousTrack,
+                    onPlayPause = onPlayPause,
+                    onNext = onSkipTrack,
+                    onOpen = onOpenPlayer,
+                    onSeek = onSeekTrack,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 156.dp)
+                        .graphicsLayer {
+                            val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
+                            alpha = 1f - open * 0.95f
+                            translationY = open * 28f
+                        },
+                )
+            }
             if (state.onboarding == null) {
                 SearchButton(
                     onClick = { if (!searchOpen && pinSlot < 0) openSearch() },

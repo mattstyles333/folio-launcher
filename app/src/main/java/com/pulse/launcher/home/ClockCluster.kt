@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -38,13 +37,6 @@ fun ClockCluster(
     dimClock: Boolean,
     charging: Boolean,
     charge: Float,
-    nowPlaying: String,
-    musicTitle: String,
-    musicArtist: String,
-    musicPlaying: Boolean,
-    musicArt: ImageBitmap?,
-    musicPositionMs: Long,
-    musicDurationMs: Long,
     quote: String,
     quoteAuthor: String,
     lookName: String?,
@@ -52,11 +44,6 @@ fun ClockCluster(
     captionBusy: Boolean,
     onClockTap: () -> Unit,
     onClockLongPress: () -> Unit,
-    onPreviousTrack: () -> Unit,
-    onPlayPause: () -> Unit,
-    onSkipTrack: () -> Unit,
-    onOpenPlayer: () -> Unit,
-    onSeekTrack: (Float) -> Unit,
     haloSize: Dp = 220.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -118,25 +105,7 @@ fun ClockCluster(
                 )
             }
         }
-        if (nowPlaying.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            PlaybackStrip(
-                line = nowPlaying,
-                title = musicTitle,
-                artist = musicArtist,
-                playing = musicPlaying,
-                art = musicArt,
-                positionMs = musicPositionMs,
-                durationMs = musicDurationMs,
-                accent = accent,
-                dim = dimClock,
-                onPrevious = onPreviousTrack,
-                onPlayPause = onPlayPause,
-                onNext = onSkipTrack,
-                onOpen = onOpenPlayer,
-                onSeek = onSeekTrack,
-            )
-        } else if (lookName == null && caption.isNotEmpty()) {
+        if (lookName == null && caption.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
             Text(
                 text = caption,

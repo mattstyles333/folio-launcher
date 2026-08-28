@@ -48,7 +48,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing: square album art, serif title, artist, circled play/pause, prev/next, progress hairline. Art/title opens the player. Prefer a Spotify session if several are active. Idle chip "Tap to show Spotify on the print" until granted or dismissed.
+- Now playing sits in a bordered plate above the rail, not under the quote. Fade it as the app sheet opens. Art/title opens the player. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
 - Clock tap: search. Clock long-press: settings.

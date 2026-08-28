@@ -35,7 +35,7 @@ adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline around the clock fills with charge |
-| Music (optional) | Album art, title, previous / play / next, and a progress hairline under the clock. Tap the art or title to open Spotify. |
+| Music (optional) | A bordered plate above the four icons: album art, title, controls, progress. Tap art or title to open Spotify. |
 
 Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
 
