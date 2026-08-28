@@ -87,7 +87,7 @@ class AppRepository(private val context: Context) {
                     user = info.user,
                     label = label,
                     icon = icon,
-                    isHome = cn.packageName in homes,
+                    isHome = HomeApps.isHome(cn.packageName, homes),
                 )
             }.distinctBy { it.key }
                 .sortedBy { it.label.lowercase() }
@@ -95,12 +95,28 @@ class AppRepository(private val context: Context) {
     }
 
     private fun homePackages(): Set<String> {
+        val out = HashSet<String>()
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        return runCatching {
+        fun query(flags: Int) {
+            @Suppress("DEPRECATION")
+            runCatching {
+                context.packageManager.queryIntentActivities(intent, flags)
+            }.getOrNull().orEmpty().forEach { info ->
+                info.activityInfo?.packageName?.let(out::add)
+            }
+        }
+        query(PackageManager.MATCH_DEFAULT_ONLY)
+        query(0)
+        query(PackageManager.MATCH_ALL)
+        runCatching {
             context.packageManager
-                .queryIntentActivities(intent, PackageManager.MATCH_ALL)
-                .mapTo(HashSet()) { it.activityInfo.packageName }
-        }.getOrDefault(emptySet())
+                .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                ?.activityInfo
+                ?.packageName
+                ?.let(out::add)
+        }
+        out.remove(ownPackage)
+        return out
     }
 
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {

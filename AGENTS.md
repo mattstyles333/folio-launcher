@@ -44,7 +44,7 @@ General widget host, icon packs, news/feed, accounts, network beyond Bing wallpa
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps except other home screens (search still finds them); recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
+- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. Other home screens are hidden from the grid, recents, and unpinned rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
 - Swipe right: same Bing/print as home, Spotify’s Now Playing widget in the middle half (`NowPlayingPage` + `SpotifyWidgetBinder`). Home translates X. Swipe left or Back closes. Long-press play opens the same page. First open may ask to bind that widget. Do not start a page swipe while the app sheet is open, or a sheet swipe while the player page is open.
 - Swipe down (idle): search.
 - Search pill: tap.

@@ -76,6 +76,18 @@ class RankingTest {
     }
 
     @Test
+    fun homeApps_detectsOneUiAndNova() {
+        assertTrue(HomeApps.packageLooksLikeLauncher("com.sec.android.app.launcher"))
+        assertTrue(HomeApps.packageLooksLikeLauncher("com.teslacoilsw.launcher"))
+        assertTrue(HomeApps.packageLooksLikeLauncher("bitpit.launcher"))
+        assertFalse(HomeApps.packageLooksLikeLauncher("com.spotify.music"))
+        assertFalse(HomeApps.packageLooksLikeLauncher("com.android.chrome"))
+        assertTrue(HomeApps.isHome("com.sec.android.app.launcher", emptySet()))
+        assertTrue(HomeApps.isHome("com.other", setOf("com.other")))
+        assertFalse(HomeApps.isHome("com.spotify.music", emptySet()))
+    }
+
+    @Test
     fun drawer_hidesOtherHomes() {
         val now = noon
         val launches = mapOf("com.sec.android.app.launcher" to listOf(now))

@@ -114,7 +114,9 @@ object Ranking {
         defaults: List<LaunchableApp>,
         now: Long = System.currentTimeMillis(),
     ): List<LaunchableApp> {
-        val eligible = apps.filter { isEligible(it.packageName, firstSeen, launches, now) }
+        val eligible = apps.filter {
+            !it.isHome && isEligible(it.packageName, firstSeen, launches, now)
+        }
         val scored = eligible.map { it to score(launches[it.packageName].orEmpty(), now) }
         val anyUsage = scored.any { it.second > 0 }
         return if (anyUsage) {

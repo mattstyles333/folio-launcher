@@ -497,6 +497,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .sortedByDescending { it.value }
             .mapNotNull { (pkg, t) ->
                 val item = appsRepo.find(pkg, null, apps) ?: return@mapNotNull null
+                if (item.isHome) return@mapNotNull null
                 RecentItem(item, t)
             }
             .distinctBy { it.app.packageName }
@@ -505,7 +506,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val recentsPkgs = recents.map { it.app.packageName }.toSet()
         val reveal = apps
-            .filter { it.packageName !in recentsPkgs }
+            .filter { !it.isHome && it.packageName !in recentsPkgs }
             .sortedWith(
                 compareByDescending<LaunchableApp> {
                     Ranking.score(launches[it.packageName].orEmpty(), now)
