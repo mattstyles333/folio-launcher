@@ -168,7 +168,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 latestApps,
                 force = granted && !wasGranted,
             )
-            if (!latestPrefs.accessOffered && ringer.hasPolicyAccess() && granted) {
+            val media = extra.value.hasNowPlayingAccess
+            if (media && !latestPrefs.mediaHintDismissed) {
+                prefsStore.update { it.copy(mediaHintDismissed = true) }
+            }
+            if (!latestPrefs.accessOffered && ringer.hasPolicyAccess() && granted && media) {
                 prefsStore.update { finishOnboarding(it.copy(accessOffered = true)) }
             }
         }
@@ -186,6 +190,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissSilentHint() {
         viewModelScope.launch { prefsStore.update { it.copy(silentHint = false) } }
+    }
+
+    fun dismissMediaHint() {
+        viewModelScope.launch { prefsStore.update { it.copy(mediaHintDismissed = true) } }
     }
 
     fun setRinger(visual: RingerVisual) {
@@ -340,7 +348,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishOnboarding(prefs: Prefs): Prefs {
         val roleDone = prefs.skippedRole || RingerController.isDefaultHome(app)
         val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
-        val accessDone = prefs.accessOffered || (ringer.hasPolicyAccess() && extra.value.hasUsageAccess)
+        val accessDone = prefs.accessOffered ||
+            (ringer.hasPolicyAccess() && extra.value.hasUsageAccess && extra.value.hasNowPlayingAccess)
         return prefs.copy(
             accessOffered = if (accessDone) true else prefs.accessOffered,
             onboardingComplete = roleDone && wallDone && accessDone,
@@ -489,7 +498,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val roleDone = prefs.skippedRole || extraState.isDefaultHome
         val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
-        val accessDone = prefs.accessOffered || (extraState.hasDndAccess && extraState.hasUsageAccess)
+        val accessDone = prefs.accessOffered ||
+            (extraState.hasDndAccess && extraState.hasUsageAccess && extraState.hasNowPlayingAccess)
         val onboarding = when {
             !roleDone -> OnboardingStep.Role
             !wallDone -> OnboardingStep.Wallpaper
@@ -510,6 +520,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             launches = launches,
             onboarding = onboarding,
             silentHint = prefs.silentHint,
+            mediaHint = !extraState.hasNowPlayingAccess && !prefs.mediaHintDismissed,
             needsDndAccess = needsDnd,
             isDefaultHome = extraState.isDefaultHome,
             hasUsageAccess = extraState.hasUsageAccess,

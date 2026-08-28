@@ -80,6 +80,7 @@ fun HomeScreen(
     onOpenDnd: () -> Unit,
     onSkipAccess: () -> Unit,
     onSilentHint: () -> Unit,
+    onMediaHint: () -> Unit,
     onNextBing: () -> Unit,
     onPreviousTrack: () -> Unit,
     onPlayPause: () -> Unit,
@@ -422,6 +423,7 @@ fun HomeScreen(
                     systemWallpaperReadable = state.systemWallpaperReadable,
                     hasDndAccess = state.hasDndAccess,
                     hasUsageAccess = state.hasUsageAccess,
+                    hasNowPlayingAccess = state.hasNowPlayingAccess,
                     wallpaperBusy = state.wallpaperBusy,
                     onSetDefault = onSetDefault,
                     onSkipRole = onSkipRole,
@@ -435,12 +437,22 @@ fun HomeScreen(
             }
         }
 
-        if (state.silentHint &&
-            state.mode == RingerVisual.Silent &&
-            state.onboarding == null &&
-            !searchOpen &&
-            !pull.locked
-        ) {
+        val hint = when {
+            state.silentHint &&
+                state.mode == RingerVisual.Silent &&
+                state.onboarding == null &&
+                !searchOpen &&
+                !pull.locked ->
+                "Tap to let Silent mute the ringer." to onSilentHint
+            state.mediaHint &&
+                state.onboarding == null &&
+                !searchOpen &&
+                !pull.locked &&
+                state.nowPlaying.isEmpty() ->
+                "Tap to show Spotify on the print." to onMediaHint
+            else -> null
+        }
+        hint?.let { (text, action) ->
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
@@ -448,11 +460,11 @@ fun HomeScreen(
                     .padding(top = 10.dp, start = 20.dp, end = 20.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(VoidBlack.copy(alpha = 0.75f))
-                    .clickable(onClick = onSilentHint)
+                    .clickable(onClick = action)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Text(
-                    "Tap to let Silent mute the ringer.",
+                    text,
                     color = PrintInk.copy(alpha = 0.7f),
                     fontSize = 12.sp,
                 )

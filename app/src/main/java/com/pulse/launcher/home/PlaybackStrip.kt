@@ -74,7 +74,7 @@ fun PlaybackStrip(
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(22.dp)
+                        .size(36.dp)
                         .clip(CircleShape),
                 )
                 Spacer(Modifier.size(8.dp))

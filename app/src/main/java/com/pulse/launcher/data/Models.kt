@@ -40,6 +40,7 @@ data class HomeUiState(
     val accent: Color = Color(0xFFC4B8A8),
     val onboarding: OnboardingStep? = null,
     val silentHint: Boolean = false,
+    val mediaHint: Boolean = false,
     val needsDndAccess: Boolean = false,
     val isDefaultHome: Boolean = false,
     val hasUsageAccess: Boolean = false,

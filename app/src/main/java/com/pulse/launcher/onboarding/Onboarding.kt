@@ -40,6 +40,7 @@ fun Onboarding(
     systemWallpaperReadable: Boolean,
     hasDndAccess: Boolean,
     hasUsageAccess: Boolean,
+    hasNowPlayingAccess: Boolean = false,
     wallpaperBusy: Boolean = false,
     onSetDefault: () -> Unit,
     onSkipRole: () -> Unit,
@@ -80,7 +81,7 @@ fun Onboarding(
                             OnboardingStep.Wallpaper ->
                                 if (wallpaperBusy) "Today's print is on the way." else "Choose a print."
                             OnboardingStep.Access ->
-                                "Find Pulse in the next list, switch it on, press Back. We'll do this twice."
+                                "Find Pulse in the next list, switch it on, press Back. Silent, ranking, then Spotify."
                         },
                         color = PrintInk.copy(alpha = 0.58f),
                         fontSize = 16.sp,
@@ -142,25 +143,26 @@ fun Onboarding(
                             }
                         }
                         OnboardingStep.Access -> {
-                            val both = hasDndAccess && hasUsageAccess
+                            val all = hasDndAccess && hasUsageAccess && hasNowPlayingAccess
                             PrimaryButton(
                                 when {
-                                    both -> "Continue"
-                                    hasDndAccess -> "Rank apps from how you use them"
-                                    hasUsageAccess -> "Let Silent actually mute"
-                                    else -> "Allow"
+                                    all -> "Continue"
+                                    !hasDndAccess -> "Let Silent actually mute"
+                                    !hasUsageAccess -> "Rank apps from how you use them"
+                                    !hasNowPlayingAccess -> "Show Spotify on the print"
+                                    else -> "Continue"
                                 },
                                 accent,
-                                onClick = if (both) onSkipAccess else onAllowAccess,
+                                onClick = if (all) onSkipAccess else onAllowAccess,
                             )
                             Spacer(Modifier.height(10.dp))
                             Text(
-                                accessStatus(hasDndAccess, hasUsageAccess),
+                                accessStatus(hasDndAccess, hasUsageAccess, hasNowPlayingAccess),
                                 color = PrintInk.copy(alpha = 0.38f),
                                 fontSize = 13.sp,
                                 textAlign = TextAlign.Center,
                             )
-                            if (!both) {
+                            if (!all) {
                                 Spacer(Modifier.height(14.dp))
                                 Text(
                                     "Skip",
@@ -177,10 +179,11 @@ fun Onboarding(
     }
 }
 
-private fun accessStatus(dnd: Boolean, usage: Boolean): String {
+private fun accessStatus(dnd: Boolean, usage: Boolean, media: Boolean): String {
     val mute = if (dnd) "Silent can mute" else "Silent needs Do Not Disturb"
     val rank = if (usage) "Ranking uses the last 30 days" else "Ranking starts from Pulse until usage access"
-    return "$mute. $rank."
+    val spotify = if (media) "Spotify can sit on the print" else "Spotify needs notification access"
+    return "$mute. $rank. $spotify."
 }
 
 @Composable

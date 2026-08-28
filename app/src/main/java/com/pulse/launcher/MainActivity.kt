@@ -73,12 +73,27 @@ class MainActivity : ComponentActivity() {
 
                 var accessWalk by remember { mutableIntStateOf(0) }
 
-                val usageLauncher = rememberLauncherForActivityResult(
+                val mediaLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
                 ) {
                     viewModel.refreshSystemState()
                     viewModel.skipAccess()
                     accessWalk = 0
+                }
+
+                val usageLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult(),
+                ) {
+                    viewModel.refreshSystemState()
+                    if (accessWalk == 2) {
+                        if (state.hasNowPlayingAccess) {
+                            viewModel.skipAccess()
+                            accessWalk = 0
+                        } else {
+                            accessWalk = 3
+                            mediaLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        }
+                    }
                 }
 
                 val dndLauncher = rememberLauncherForActivityResult(
@@ -87,12 +102,19 @@ class MainActivity : ComponentActivity() {
                     viewModel.onDndAccessReturned()
                     viewModel.refreshSystemState()
                     if (accessWalk == 1) {
-                        if (state.hasUsageAccess) {
-                            viewModel.skipAccess()
-                            accessWalk = 0
-                        } else {
-                            accessWalk = 2
-                            usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                        when {
+                            !state.hasUsageAccess -> {
+                                accessWalk = 2
+                                usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            }
+                            !state.hasNowPlayingAccess -> {
+                                accessWalk = 3
+                                mediaLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                            }
+                            else -> {
+                                viewModel.skipAccess()
+                                accessWalk = 0
+                            }
                         }
                     }
                 }
@@ -101,11 +123,17 @@ class MainActivity : ComponentActivity() {
                     if (state.needsDndAccess) viewModel.consumeDndRequest()
                 }
 
-                LaunchedEffect(state.hasDndAccess, state.hasUsageAccess, state.onboarding) {
+                LaunchedEffect(
+                    state.hasDndAccess,
+                    state.hasUsageAccess,
+                    state.hasNowPlayingAccess,
+                    state.onboarding,
+                ) {
                     if (state.onboarding == null) accessWalk = 0
                     if (state.onboarding != null &&
                         state.hasDndAccess &&
-                        state.hasUsageAccess
+                        state.hasUsageAccess &&
+                        state.hasNowPlayingAccess
                     ) {
                         viewModel.skipAccess()
                         accessWalk = 0
@@ -120,9 +148,13 @@ class MainActivity : ComponentActivity() {
                     usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 }
 
+                fun openMediaAccess() {
+                    mediaLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+
                 fun startAccessWalk() {
                     when {
-                        state.hasDndAccess && state.hasUsageAccess -> {
+                        state.hasDndAccess && state.hasUsageAccess && state.hasNowPlayingAccess -> {
                             viewModel.skipAccess()
                             accessWalk = 0
                         }
@@ -130,9 +162,13 @@ class MainActivity : ComponentActivity() {
                             accessWalk = 1
                             openDndAccess()
                         }
-                        else -> {
+                        !state.hasUsageAccess -> {
                             accessWalk = 2
                             openUsageAccess()
+                        }
+                        else -> {
+                            accessWalk = 3
+                            openMediaAccess()
                         }
                     }
                 }
@@ -176,6 +212,10 @@ class MainActivity : ComponentActivity() {
                             onSilentHint = {
                                 viewModel.dismissSilentHint()
                                 openDndAccess()
+                            },
+                            onMediaHint = {
+                                viewModel.dismissMediaHint()
+                                openMediaAccess()
                             },
                             onNextBing = { viewModel.nextBingPrint() },
                             onPreviousTrack = { viewModel.previousTrack() },

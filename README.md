@@ -41,7 +41,7 @@ Quotes sit under the date — one short line a day, from an on-device bank. A ne
 
 ## Permissions
 
-First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow** walks Do Not Disturb and usage access (find Pulse, switch on, Back — twice). Skip either; both stay in Settings.
+First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow** walks Do Not Disturb, usage access, and notification access for Spotify (find Pulse, switch on, Back). Skip any; they stay in Settings.
 
 | Access | When |
 |---|---|

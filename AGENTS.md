@@ -31,7 +31,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Rail + pull-up sheet | `home/Rail.kt`, `home/Sheet.kt`, `recents/ExpandingDock.kt` — finger-tracked sheet, LazyGrid of every app |
 | Ringer develop | Long-press print — `GradeReveal` circular clip in `home/WallpaperLayer.kt` |
 | Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
-| Onboarding | Role → Bing auto-fetch → one Allow walk (DND then usage). Both skippable; now-playing stays in Settings. |
+| Onboarding | Role → Bing auto-fetch → one Allow walk (DND, usage, then notification access for Spotify). All skippable. |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
 | Now playing / charge | `data/DeviceSignals.kt` |
@@ -48,7 +48,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing: previous / play-pause / next under the clock when notification access is on. Title opens the player. Prefer a Spotify session if several are active.
+- Now playing: previous / play-pause / next under the clock when notification access is on. Title opens the player. Prefer a Spotify session if several are active. Idle chip "Tap to show Spotify on the print" until granted or dismissed.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
 - Clock tap: search. Clock long-press: settings.
