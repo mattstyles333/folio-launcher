@@ -34,7 +34,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Onboarding | Role → Bing auto-fetch → one Allow walk (DND, usage, then notification access for Spotify). All skippable. |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
-| Now playing / charge | `data/DeviceSignals.kt` |
+| Now playing / charge | `data/DeviceSignals.kt`, `home/PlaybackStrip.kt` — prev / art / next above the rail |
 
 `HomeViewModel` is the only state owner. Prefs are a single JSON blob in DataStore (`PrefsStore`).
 
@@ -45,11 +45,10 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 ## Touch contracts
 
 - Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. All launchable apps; recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Pulse.
-- Swipe right: full-screen now-playing page (`NowPlayingPage`, `page` SheetPull). Home translates X. Swipe left or Back closes. Mini plate above the rail opens the same page. Do not start a page swipe while the app sheet is open, or a sheet swipe while the player page is open.
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing sits in a bordered plate above the rail, not under the quote. Fade it as the app sheet opens. Art/title opens the player. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
+- Now playing on home is only prev / album-art / next above the rail. Tap art to play-pause; long-press opens Spotify. No title, no full-screen page. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
 - Clock tap: search. Clock long-press: settings.

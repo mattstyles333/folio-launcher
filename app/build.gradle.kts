@@ -13,8 +13,8 @@ android {
         applicationId = "com.pulse.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.1.7"
+        versionCode = 10
+        versionName = "1.1.8"
     }
 
     buildTypes {

@@ -31,12 +31,11 @@ adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 |---|---|
 | Tap Search / swipe down / tap clock | Spotlight |
 | Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. |
-| Swipe right | Full-screen player. Album art is the print. Swipe left or Back to return. |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline around the clock fills with charge |
-| Music (optional) | Mini plate above the four icons; tap it or swipe right for the full-screen player. “Open Spotify” on that page. |
+| Music (optional) | Previous / album art / next above the four icons. Tap art to play or pause; long-press opens Spotify. |
 
 Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
 

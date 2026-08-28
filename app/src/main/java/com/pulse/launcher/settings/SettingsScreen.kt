@@ -98,7 +98,7 @@ fun SettingsScreen(
         SettingsRow(
             "Now playing",
             if (state.hasNowPlayingAccess) {
-                "Spotify under the clock — previous, play, next. Tap the title to open the app."
+                "Previous, album art, next above the four icons. Long-press the art to open Spotify."
             } else {
                 "Allow notification access so Pulse can show Spotify controls"
             },
