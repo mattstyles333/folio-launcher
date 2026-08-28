@@ -139,7 +139,7 @@ fun NowPlayingPage(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PageButton(48.dp, onClick = { tap(onPrevious) }) { prevGlyph(ink) }
+                    PageButton(56.dp, onClick = { tap(onPrevious) }) { prevGlyph(ink) }
                     Box(
                         Modifier
                             .size(74.dp)
@@ -153,14 +153,14 @@ fun NowPlayingPage(
                     ) {
                         Canvas(Modifier.fillMaxSize()) {
                             drawCircle(
-                                color = ink.copy(alpha = 0.92f),
-                                radius = size.minDimension / 2f - 1.6.dp.toPx(),
-                                style = Stroke(width = 1.6.dp.toPx()),
+                                color = ink.copy(alpha = 0.94f),
+                                radius = size.minDimension / 2f - 2.2.dp.toPx(),
+                                style = Stroke(width = 2.2.dp.toPx()),
                             )
                             if (playing) pauseGlyph(ink) else playGlyph(ink)
                         }
                     }
-                    PageButton(48.dp, onClick = { tap(onNext) }) { nextGlyph(ink) }
+                    PageButton(56.dp, onClick = { tap(onNext) }) { nextGlyph(ink) }
                 }
                 if (durationMs > 1_000L) {
                     Spacer(Modifier.height(22.dp))
@@ -178,13 +178,15 @@ fun NowPlayingPage(
                 Spacer(Modifier.height(18.dp))
                 Text(
                     "Open Spotify",
-                    style = ClockDateStyle.copy(letterSpacing = 1.6.sp, fontSize = 12.sp),
-                    color = accent.copy(alpha = 0.72f),
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { tap(onOpenApp) },
-                    ),
+                    style = ClockDateStyle.copy(letterSpacing = 1.6.sp, fontSize = 13.sp),
+                    color = accent.copy(alpha = 0.92f),
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { tap(onOpenApp) },
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                 )
             }
         } else {

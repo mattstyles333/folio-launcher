@@ -221,7 +221,7 @@ class MainActivity : ComponentActivity() {
                             onPreviousTrack = { viewModel.previousTrack() },
                             onPlayPause = { viewModel.playPause() },
                             onSkipTrack = { viewModel.skipTrack() },
-                            onOpenPlayer = { viewModel.openPlayer() },
+                            onOpenPlayer = { viewModel.openPlayer(this@MainActivity) },
                             onSeekTrack = { viewModel.seekTrack(it) },
                         )
                     }

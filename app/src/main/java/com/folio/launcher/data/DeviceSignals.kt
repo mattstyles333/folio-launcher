@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaMetadata
@@ -119,6 +120,36 @@ class DeviceSignals(private val context: Context) {
         if (dur <= 0L) return
         val ms = (dur * fraction.coerceIn(0f, 1f)).toLong()
         controller?.transportControls?.seekTo(ms)
+    }
+
+    fun openSession(host: Context = app): Boolean {
+        val sent = controller?.sessionActivity?.let { pi ->
+            runCatching {
+                pi.send()
+                true
+            }.getOrDefault(false)
+        } ?: false
+        if (sent) return true
+        val pkg = controller?.packageName?.takeIf { it.isNotBlank() }
+            ?: _now.value.packageName.takeIf { it.isNotBlank() }
+            ?: SPOTIFY_PACKAGE
+        return launchPlayer(host, pkg)
+    }
+
+    private fun launchPlayer(host: Context, pkg: String): Boolean {
+        val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+        if (pkg.contains("spotify", ignoreCase = true) || pkg == SPOTIFY_PACKAGE) {
+            val spotify = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:")).apply {
+                addFlags(flags)
+                `package` = SPOTIFY_PACKAGE
+            }
+            if (spotify.resolveActivity(host.packageManager) != null) {
+                val ok = runCatching { host.startActivity(spotify); true }.getOrDefault(false)
+                if (ok) return true
+            }
+        }
+        val launch = host.packageManager.getLaunchIntentForPackage(pkg)?.addFlags(flags) ?: return false
+        return runCatching { host.startActivity(launch); true }.getOrDefault(false)
     }
 
     private fun transportOrKey(
@@ -249,6 +280,8 @@ class DeviceSignals(private val context: Context) {
     }
 
     companion object {
+        private const val SPOTIFY_PACKAGE = "com.spotify.music"
+
         private fun playingOrPaused(state: Int?): Boolean {
             return state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_PAUSED
         }

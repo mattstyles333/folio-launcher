@@ -24,17 +24,22 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import com.folio.launcher.ui.PrintInk
 
 @Composable
 fun PlaybackStrip(
     playing: Boolean,
     art: ImageBitmap?,
-    accent: Color,
+    @Suppress("UNUSED_PARAMETER") accent: Color,
     dim: Boolean,
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
@@ -43,7 +48,8 @@ fun PlaybackStrip(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val ink = accent.copy(alpha = if (dim) 0.55f else 0.92f)
+    val skipInk = PrintInk.copy(alpha = if (dim) 0.78f else 1f)
+    val playInk = PrintInk.copy(alpha = if (dim) 0.88f else 1f)
     fun tap(action: () -> Unit) {
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         action()
@@ -53,15 +59,15 @@ fun PlaybackStrip(
         horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SkipButton(onClick = { tap(onPrevious) }) { prevGlyph(ink) }
+        SkipButton(onClick = { tap(onPrevious) }) { prevGlyph(skipInk) }
         ArtButton(
             playing = playing,
             art = art,
-            ink = ink,
+            ink = playInk,
             onPlayPause = { tap(onPlayPause) },
             onOpen = { tap(onOpen) },
         )
-        SkipButton(onClick = { tap(onNext) }) { nextGlyph(ink) }
+        SkipButton(onClick = { tap(onNext) }) { nextGlyph(skipInk) }
     }
 }
 
@@ -97,8 +103,8 @@ private fun ArtButton(
             Box(Modifier.size(52.dp).background(Color.White.copy(alpha = 0.10f)))
         }
         if (!playing) {
-            Box(Modifier.size(52.dp).background(Color.Black.copy(alpha = 0.38f)))
-            Canvas(Modifier.size(22.dp)) { playGlyph(ink) }
+            Box(Modifier.size(52.dp).background(Color.Black.copy(alpha = 0.42f)))
+            Canvas(Modifier.size(26.dp)) { playGlyph(ink) }
         }
     }
 }
@@ -110,7 +116,7 @@ private fun SkipButton(
 ) {
     Canvas(
         Modifier
-            .size(40.dp)
+            .size(48.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -123,54 +129,70 @@ internal fun DrawScope.playGlyph(color: Color) {
     val path = Path().apply {
         val cx = size.width * 0.54f
         val cy = size.height * 0.5f
-        val h = size.height * 0.32f
-        moveTo(cx - h * 0.42f, cy - h)
-        lineTo(cx + h * 0.72f, cy)
-        lineTo(cx - h * 0.42f, cy + h)
+        val h = size.height * 0.30f
+        moveTo(cx - h * 0.46f, cy - h)
+        lineTo(cx + h * 0.78f, cy)
+        lineTo(cx - h * 0.46f, cy + h)
         close()
     }
-    drawPath(path, color)
+    strokeGlyph(color, path)
 }
 
 internal fun DrawScope.pauseGlyph(color: Color) {
-    val w = size.width * 0.07f
-    val h = size.height * 0.32f
+    val w = size.width * 0.09f
+    val h = size.height * 0.36f
     val y = (size.height - h) / 2f
     val r = CornerRadius(w / 2f, w / 2f)
-    drawRoundRect(color, Offset(size.width * 0.36f, y), Size(w, h), r)
-    drawRoundRect(color, Offset(size.width * 0.57f, y), Size(w, h), r)
+    val left = Offset(size.width * 0.34f, y)
+    val right = Offset(size.width * 0.57f, y)
+    val bar = Size(w, h)
+    val dy = 1.2.dp.toPx()
+    val shadow = Color.Black.copy(alpha = 0.72f)
+    translate(0f, dy) {
+        drawRoundRect(shadow, left, bar, r)
+        drawRoundRect(shadow, right, bar, r)
+    }
+    drawRoundRect(color, left, bar, r)
+    drawRoundRect(color, right, bar, r)
 }
 
 internal fun DrawScope.prevGlyph(color: Color) {
-    val bar = size.width * 0.07f
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(size.width * 0.22f, size.height * 0.30f),
-        size = Size(bar, size.height * 0.40f),
-        cornerRadius = CornerRadius(bar / 2f, bar / 2f),
-    )
+    val top = size.height * 0.26f
+    val bot = size.height * 0.74f
+    val mid = size.height * 0.5f
     val path = Path().apply {
-        moveTo(size.width * 0.78f, size.height * 0.26f)
-        lineTo(size.width * 0.34f, size.height * 0.5f)
-        lineTo(size.width * 0.78f, size.height * 0.74f)
-        close()
+        moveTo(size.width * 0.30f, top)
+        lineTo(size.width * 0.30f, bot)
+        moveTo(size.width * 0.78f, top)
+        lineTo(size.width * 0.40f, mid)
+        lineTo(size.width * 0.78f, bot)
     }
-    drawPath(path, color)
+    strokeGlyph(color, path)
 }
 
 internal fun DrawScope.nextGlyph(color: Color) {
-    val bar = size.width * 0.07f
+    val top = size.height * 0.26f
+    val bot = size.height * 0.74f
+    val mid = size.height * 0.5f
     val path = Path().apply {
-        moveTo(size.width * 0.22f, size.height * 0.26f)
-        lineTo(size.width * 0.66f, size.height * 0.5f)
-        lineTo(size.width * 0.22f, size.height * 0.74f)
-        close()
+        moveTo(size.width * 0.22f, top)
+        lineTo(size.width * 0.60f, mid)
+        lineTo(size.width * 0.22f, bot)
+        moveTo(size.width * 0.70f, top)
+        lineTo(size.width * 0.70f, bot)
     }
-    drawPath(path, color)
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(size.width * 0.71f, size.height * 0.30f),
-        size = Size(bar, size.height * 0.40f),
-        cornerRadius = CornerRadius(bar / 2f, bar / 2f),
+    strokeGlyph(color, path)
+}
+
+private fun DrawScope.strokeGlyph(color: Color, path: Path) {
+    val stroke = Stroke(
+        width = 2.4.dp.toPx(),
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round,
     )
+    val dy = 1.2.dp.toPx()
+    translate(0f, dy) {
+        drawPath(path, Color.Black.copy(alpha = 0.72f), style = stroke)
+    }
+    drawPath(path, color, style = stroke)
 }

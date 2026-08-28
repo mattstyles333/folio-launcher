@@ -1,6 +1,7 @@
 package com.folio.launcher
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.graphics.Rect
 import android.net.Uri
@@ -139,12 +140,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         app.signals.seek(fraction)
     }
 
-    fun openPlayer() {
-        val pkg = extra.value.nowPlayingPackage.ifEmpty { return }
-        val intent = app.packageManager.getLaunchIntentForPackage(pkg)
-            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            ?: return
-        runCatching { app.startActivity(intent) }
+    fun openPlayer(host: Context) {
+        app.signals.openSession(host)
     }
 
     fun requestIdle() {

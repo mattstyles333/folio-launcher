@@ -49,7 +49,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote. Clock long-press → Settings → Choose photo for a local print.
-- Now playing on home is prev / album-art / next above the rail. Tap art to play-pause; long-press opens the player page. “Open Spotify” lives on that page. Prefer Spotify if several sessions are active. Idle chip until notification access is granted.
+- Now playing on home is prev / album-art / next above the rail. Skip glyphs are thin strokes in PrintInk with a hard shadow so they read on the print. Tap art to play-pause; long-press opens the player page. “Open Spotify” uses the session’s `sessionActivity`, then `spotify:`. Prefer Spotify if several sessions are active. Idle chip until notification access is granted. Do not host Spotify’s AppWidget.
 - Plug in: hairline oval around the clock. At 100% the oval is closed.
 - Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
 - Quotes sit under the date: 16sp serif, hard drop shadow (no blur). Clock cluster is not rasterized while idle.
