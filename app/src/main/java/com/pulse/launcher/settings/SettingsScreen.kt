@@ -60,7 +60,7 @@ fun SettingsScreen(
         )
         Spacer(Modifier.height(28.dp))
         SettingsRow("Choose photo", "Replace the print") { onPickPhoto() }
-        SettingsRow("Bing print", "Double-tap the wallpaper for the next one") { onNextBing() }
+        SettingsRow("Bing print", "Double-tap the print for the next one") { onNextBing() }
         Row(
             Modifier
                 .fillMaxWidth()

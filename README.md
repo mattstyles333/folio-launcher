@@ -32,7 +32,7 @@ adb shell cmd role add-role-holder android.app.role.HOME com.pulse.launcher
 | Tap Search / swipe down / tap clock | Spotlight |
 | Drag the four icons up | More apps |
 | Double-tap the print | Next Bing photograph + next quote |
-| Jewel on the right | Sound / Vibrate / Silent. Drag to scrub, tap to cycle. Long-press for settings. |
+| Long-press the print | Cycle Sound → Vibrate → Silent. The next grade develops out from your finger. |
 | Plug in | Hairline around the clock fills with charge |
 | Music (optional) | Song under the date; tap to skip |
 

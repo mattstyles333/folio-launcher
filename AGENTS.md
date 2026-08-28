@@ -7,7 +7,7 @@ Sideloadable Android 12+ (API 31) home-screen launcher. Package `com.pulse.launc
 Primary device is a **Galaxy S23**: 6.1" 1080×2340 (19.5:9), ~425 ppi, centre punch-hole, 120 Hz AMOLED, gesture nav, rounded corners.
 
 - Use `WindowInsets.safeDrawing` (cutout + bars), not raw percentages of a 2400px emulator.
-- Clock sits just under the status/cutout band. Jewel is mid-right, inset from the curve.
+- Clock sits just under the status/cutout band. Idle has no ringer chrome — long-press the print.
 - Bing UHD fetch uses the real `DisplayMetrics` size (1080×2340 on S23), not a hardcoded 1920 height.
 - Portrait only. Prefer 120 Hz when the panel offers it.
 - Parallax is a few millimetres and must unregister on pause.
@@ -29,7 +29,7 @@ JDK 17, compile/target SDK 35. Release is debug-signed for sideload (`app/build/
 | Home composition | `home/HomeScreen.kt` |
 | Print + ringer grades | `home/WallpaperLayer.kt` (full colour / 50% sat / grey) |
 | Rail + pull-up grid | `home/Rail.kt`, `recents/ExpandingDock.kt` |
-| Ringer slider | `home/Jewel.kt` — preview on drag, commit on release |
+| Ringer develop | Long-press print — `GradeReveal` circular clip in `home/WallpaperLayer.kt` |
 | Search | `search/SearchOverlay.kt` — Spotlight field, empty = suggestions |
 | Bing prints | `data/BingClient.kt`, double-tap idle |
 | Quotes | `assets/quotes.json` + `data/QuoteBank.kt` — one line per day, salt++ on Bing |
@@ -47,7 +47,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe down (idle): search.
 - Search pill: tap.
 - Double-tap print: next Bing + next quote.
-- Jewel: tap cycles, drag scrubs look live, long-press settings.
+- Long-press print: cycle Sound → Vibrate → Silent with circular develop from the press. Hardware ringer still drives the look.
 - Clock tap: search. Clock long-press: settings.
 
 ## Tests

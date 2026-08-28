@@ -1,11 +1,15 @@
 package com.pulse.launcher.home
 
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -37,14 +41,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import com.pulse.launcher.data.HomeUiState
 import com.pulse.launcher.data.LaunchableApp
 import com.pulse.launcher.data.Ranking
@@ -85,6 +92,7 @@ fun HomeScreen(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val view = LocalView.current
+    val context = LocalContext.current
     val pullAnim = remember { Animatable(0f) }
     var dragging by remember { mutableStateOf(false) }
     var rawPull by remember { mutableFloatStateOf(0f) }
@@ -92,16 +100,21 @@ fun HomeScreen(
     var query by remember { mutableStateOf("") }
     var pinSlot by remember { mutableIntStateOf(-1) }
     var lookOverride by remember { mutableStateOf<RingerVisual?>(null) }
-    var jewelHeld by remember { mutableStateOf(false) }
     var flashLook by remember { mutableStateOf(false) }
     var lookReady by remember { mutableStateOf(false) }
+    var revealOrigin by remember { mutableStateOf(Offset.Zero) }
+    var revealTarget by remember { mutableStateOf<RingerVisual?>(null) }
+    val revealProgress = remember { Animatable(0f) }
 
     val look = lookOverride ?: state.mode
+    val developing = revealTarget != null
     LaunchedEffect(state.mode) {
+        if (lookOverride == state.mode) lookOverride = null
         if (!lookReady) {
             lookReady = true
             return@LaunchedEffect
         }
+        if (developing) return@LaunchedEffect
         flashLook = true
         delay(1100)
         flashLook = false
@@ -115,6 +128,8 @@ fun HomeScreen(
         query = ""
         pinSlot = -1
         dragging = false
+        revealTarget = null
+        revealProgress.snapTo(0f)
         pullAnim.animateTo(0f, settleSpring())
     }
 
@@ -212,14 +227,15 @@ fun HomeScreen(
         }
 
         val open = if (maxPull <= 0f) 0f else (pullPx / (rowPx * 2f)).coerceIn(0f, 1f)
-        val iconSat = when (look) {
-            RingerVisual.Sound -> 1f
-            RingerVisual.Vibrate -> 0.5f
-            RingerVisual.Silent -> 0f
+        val targetLook = revealTarget
+        val iconSat = if (targetLook != null) {
+            lerp(look.iconSaturation(), targetLook.iconSaturation(), revealProgress.value)
+        } else {
+            look.iconSaturation()
         }
 
         val parallax = rememberParallax(
-            enabled = gesturesEnabled && pullPx < 12f,
+            enabled = gesturesEnabled && pullPx < 12f && !developing,
         )
         WallpaperLayer(
             photo = state.wallpaper,
@@ -227,6 +243,13 @@ fun HomeScreen(
             mode = look,
             accent = state.accent,
             parallax = parallax,
+            reveal = targetLook?.let {
+                GradeReveal(
+                    origin = revealOrigin,
+                    progress = revealProgress.value,
+                    target = it,
+                )
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -240,12 +263,33 @@ fun HomeScreen(
             Modifier
                 .fillMaxSize()
                 .then(revealDrag())
-                .pointerInput(gesturesEnabled) {
+                .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
                         onDoubleTap = {
                             view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                             onNextBing()
+                        },
+                        onLongPress = { origin ->
+                            if (revealTarget != null || dragging) return@detectTapGestures
+                            val heldPull = if (dragging) rawPull else pullAnim.value
+                            if (heldPull > 8f) return@detectTapGestures
+                            val next = look.nextRinger()
+                            revealOrigin = origin
+                            revealTarget = next
+                            flashLook = true
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            if (next == RingerVisual.Vibrate) buzz(context)
+                            scope.launch {
+                                revealProgress.snapTo(0f)
+                                revealProgress.animateTo(1f, developSpec())
+                                lookOverride = next
+                                revealTarget = null
+                                revealProgress.snapTo(0f)
+                                onSetRinger(next)
+                                delay(1100)
+                                flashLook = false
+                            }
                         },
                     )
                 },
@@ -253,26 +297,19 @@ fun HomeScreen(
 
         if (!searchOpen &&
             state.onboarding == null &&
-            (state.showClock || state.nowPlaying.isNotEmpty() || state.wallpaperCaption.isNotEmpty() || jewelHeld || state.quote.isNotEmpty())
+            (state.showClock || state.nowPlaying.isNotEmpty() || state.wallpaperCaption.isNotEmpty() || developing || flashLook || state.quote.isNotEmpty())
         ) {
+            val namedLook = targetLook ?: look
             ClockCluster(
                 showClock = state.showClock,
                 accent = state.accent,
-                dimClock = look == RingerVisual.Silent,
+                dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
                 charging = state.charging,
                 charge = state.charge,
                 nowPlaying = state.nowPlaying,
                 quote = state.quote,
                 quoteAuthor = state.quoteAuthor,
-                lookName = if (jewelHeld || flashLook) {
-                    when (look) {
-                        RingerVisual.Sound -> "Sound"
-                        RingerVisual.Vibrate -> "Vibrate"
-                        RingerVisual.Silent -> "Silent"
-                    }
-                } else {
-                    null
-                },
+                lookName = if (developing || flashLook) namedLook.label() else null,
                 caption = state.wallpaperCaption,
                 captionBusy = state.wallpaperBusy,
                 onClockTap = { openSearch() },
@@ -289,27 +326,6 @@ fun HomeScreen(
                     },
             )
         }
-
-        Jewel(
-            mode = look,
-            accent = state.accent,
-            onPreview = { lookOverride = it },
-            onSelect = {
-                lookOverride = null
-                onSetRinger(it)
-            },
-            onCycle = {
-                lookOverride = null
-                onCycleRinger()
-            },
-            onLongPress = onOpenSettings,
-            onHeld = { jewelHeld = it },
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End))
-                .padding(end = 6.dp)
-                .graphicsLayer { alpha = 1f - open * 0.55f },
-        )
 
         Column(
             modifier = Modifier
@@ -443,3 +459,33 @@ private fun settleSpring() = spring<Float>(
     dampingRatio = 0.90f,
     stiffness = Spring.StiffnessMedium,
 )
+
+private fun developSpec() = tween<Float>(
+    durationMillis = 580,
+    easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f),
+)
+
+private fun RingerVisual.nextRinger(): RingerVisual = when (this) {
+    RingerVisual.Sound -> RingerVisual.Vibrate
+    RingerVisual.Vibrate -> RingerVisual.Silent
+    RingerVisual.Silent -> RingerVisual.Sound
+}
+
+private fun RingerVisual.iconSaturation(): Float = when (this) {
+    RingerVisual.Sound -> 1f
+    RingerVisual.Vibrate -> 0.5f
+    RingerVisual.Silent -> 0f
+}
+
+private fun RingerVisual.label(): String = when (this) {
+    RingerVisual.Sound -> "Sound"
+    RingerVisual.Vibrate -> "Vibrate"
+    RingerVisual.Silent -> "Silent"
+}
+
+private fun buzz(context: android.content.Context) {
+    runCatching {
+        val vibrator = context.getSystemService(Vibrator::class.java) ?: return
+        vibrator.vibrate(VibrationEffect.createOneShot(36, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+}
