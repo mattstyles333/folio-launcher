@@ -13,8 +13,8 @@ android {
         applicationId = "com.folio.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.2.4"
+        versionCode = 16
+        versionName = "1.2.5"
     }
 
     buildTypes {

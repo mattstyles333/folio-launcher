@@ -2,16 +2,16 @@ package com.folio.launcher.home
 
 import android.view.HapticFeedbackConstants
 import android.widget.FrameLayout
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,10 +21,8 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
@@ -32,14 +30,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.folio.launcher.FolioApp
+import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.ui.ClockDateStyle
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.QuoteStyle
-import com.folio.launcher.ui.VoidBlack
 
 @Composable
 fun NowPlayingPage(
-    art: ImageBitmap?,
+    photo: ImageBitmap?,
+    blurred: ImageBitmap?,
+    mode: RingerVisual,
     accent: Color,
     widgetId: Int,
     widgetAvailable: Boolean,
@@ -52,30 +52,14 @@ fun NowPlayingPage(
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         action()
     }
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(VoidBlack),
-    ) {
-        if (art != null) {
-            Image(
-                bitmap = art,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.42f),
-                            0.5f to Color.Black.copy(alpha = 0.38f),
-                            1f to Color.Black.copy(alpha = 0.72f),
-                        ),
-                    ),
-            )
-        }
+    Box(modifier.fillMaxSize()) {
+        WallpaperLayer(
+            photo = photo,
+            blurred = blurred,
+            mode = mode,
+            accent = accent,
+            modifier = Modifier.fillMaxSize(),
+        )
         if (widgetId != 0) {
             key(widgetId) {
                 SpotifyWidgetCard(
@@ -83,9 +67,8 @@ fun NowPlayingPage(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .navigationBarsPadding()
-                        .statusBarsPadding(),
+                        .fillMaxHeight(0.5f)
+                        .padding(horizontal = 16.dp),
                 )
             }
         } else {
@@ -137,12 +120,15 @@ private fun SpotifyWidgetCard(
     modifier: Modifier = Modifier,
 ) {
     val app = LocalContext.current.applicationContext as FolioApp
-    AndroidView(
-        factory = { ctx ->
-            app.spotifyWidget.createView(ctx, widgetId) ?: FrameLayout(ctx)
-        },
-        modifier = modifier
-            .clip(RoundedCornerShape(22.dp))
-            .height(188.dp),
-    )
+    BoxWithConstraints(modifier) {
+        val widthPx = constraints.maxWidth
+        val heightPx = constraints.maxHeight
+        AndroidView(
+            factory = { ctx ->
+                app.spotifyWidget.createView(ctx, widgetId, widthPx, heightPx)
+                    ?: FrameLayout(ctx)
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
 }

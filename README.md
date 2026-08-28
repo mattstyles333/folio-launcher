@@ -36,7 +36,7 @@ adb shell cmd role add-role-holder android.app.role.HOME com.folio.launcher
 | Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline oval around the clock fills with charge. Closed at 100%. |
-| Music (optional) | Previous / album art / next above the four icons. Tap art to play or pause; swipe right or long-press art for the player. “Open Spotify” on that page. |
+| Music (optional) | Previous / play / next above the four icons. Tap play to pause; swipe right or long-press play for Spotify’s widget on the print. |
 
 Quotes sit under the date — one short line a day, from an on-device bank. A new Bing print turns the page.
 

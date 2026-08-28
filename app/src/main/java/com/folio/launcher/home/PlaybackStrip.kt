@@ -2,27 +2,21 @@ package com.folio.launcher.home
 
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -30,7 +24,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.folio.launcher.ui.PrintInk
@@ -38,8 +31,6 @@ import com.folio.launcher.ui.PrintInk
 @Composable
 fun PlaybackStrip(
     playing: Boolean,
-    art: ImageBitmap?,
-    @Suppress("UNUSED_PARAMETER") accent: Color,
     dim: Boolean,
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
@@ -48,8 +39,7 @@ fun PlaybackStrip(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val skipInk = PrintInk.copy(alpha = if (dim) 0.78f else 1f)
-    val playInk = PrintInk.copy(alpha = if (dim) 0.88f else 1f)
+    val ink = PrintInk.copy(alpha = if (dim) 0.78f else 1f)
     fun tap(action: () -> Unit) {
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         action()
@@ -59,53 +49,35 @@ fun PlaybackStrip(
         horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SkipButton(onClick = { tap(onPrevious) }) { prevGlyph(skipInk) }
-        ArtButton(
+        SkipButton(onClick = { tap(onPrevious) }) { prevGlyph(ink) }
+        PlayPauseButton(
             playing = playing,
-            art = art,
-            ink = playInk,
+            ink = ink,
             onPlayPause = { tap(onPlayPause) },
             onOpen = { tap(onOpen) },
         )
-        SkipButton(onClick = { tap(onNext) }) { nextGlyph(skipInk) }
+        SkipButton(onClick = { tap(onNext) }) { nextGlyph(ink) }
     }
 }
 
 @Composable
-private fun ArtButton(
+private fun PlayPauseButton(
     playing: Boolean,
-    art: ImageBitmap?,
     ink: Color,
     onPlayPause: () -> Unit,
     onOpen: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
-    Box(
+    Canvas(
         Modifier
             .size(52.dp)
-            .clip(shape)
             .pointerInput(playing) {
                 detectTapGestures(
                     onLongPress = { onOpen() },
                     onTap = { onPlayPause() },
                 )
             },
-        contentAlignment = Alignment.Center,
     ) {
-        if (art != null) {
-            Image(
-                bitmap = art,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(52.dp),
-            )
-        } else {
-            Box(Modifier.size(52.dp).background(Color.White.copy(alpha = 0.10f)))
-        }
-        if (!playing) {
-            Box(Modifier.size(52.dp).background(Color.Black.copy(alpha = 0.42f)))
-            Canvas(Modifier.size(26.dp)) { playGlyph(ink) }
-        }
+        if (playing) pauseGlyph(ink) else playGlyph(ink)
     }
 }
 

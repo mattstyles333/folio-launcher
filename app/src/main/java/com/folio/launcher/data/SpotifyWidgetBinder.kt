@@ -62,11 +62,16 @@ class SpotifyWidgetBinder(private val app: Context) {
         }
     }
 
-    fun createView(context: Context, id: Int): AppWidgetHostView? {
+    fun createView(
+        context: Context,
+        id: Int,
+        widthPx: Int,
+        heightPx: Int,
+    ): AppWidgetHostView? {
         val info = infoFor(id) ?: return null
         val view = host.createView(context, id, info)
         view.setAppWidget(id, info)
-        applySize(context, view, id, info)
+        applySize(context, view, id, widthPx, heightPx)
         return view
     }
 
@@ -74,17 +79,18 @@ class SpotifyWidgetBinder(private val app: Context) {
         context: Context,
         view: AppWidgetHostView,
         id: Int,
-        info: AppWidgetProviderInfo,
+        widthPx: Int,
+        heightPx: Int,
     ) {
         val metrics = context.resources.displayMetrics
-        val pad = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 20f, metrics)
-        val widthPx = (metrics.widthPixels - pad * 2).roundToInt().coerceAtLeast(1)
-        val floor = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 148f, metrics).roundToInt()
-        val ceil = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 220f, metrics).roundToInt()
-        val heightPx = info.minHeight.coerceIn(floor, ceil)
-        view.layoutParams = ViewGroup.LayoutParams(widthPx, heightPx)
-        val widthDp = (widthPx / metrics.density).roundToInt()
-        val heightDp = (heightPx / metrics.density).roundToInt()
+        val pad = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16f, metrics)
+        val w = widthPx.takeIf { it > 0 }
+            ?: (metrics.widthPixels - pad * 2).roundToInt()
+        val h = heightPx.takeIf { it > 0 }
+            ?: (metrics.heightPixels * 0.5f).roundToInt()
+        view.layoutParams = ViewGroup.LayoutParams(w.coerceAtLeast(1), h.coerceAtLeast(1))
+        val widthDp = (w / metrics.density).roundToInt().coerceAtLeast(1)
+        val heightDp = (h / metrics.density).roundToInt().coerceAtLeast(1)
         val opts = Bundle().apply {
             putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, widthDp)
             putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, widthDp)

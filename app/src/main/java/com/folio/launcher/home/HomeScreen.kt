@@ -278,7 +278,9 @@ fun HomeScreen(
             if (wantWidget) onEnsureSpotifyWidget()
         }
         NowPlayingPage(
-            art = state.musicArt,
+            photo = state.wallpaper,
+            blurred = state.blurredWallpaper,
+            mode = look,
             accent = state.accent,
             widgetId = state.spotifyWidgetId,
             widgetAvailable = state.spotifyWidgetAvailable,
@@ -421,8 +423,6 @@ fun HomeScreen(
                 val namedLook = targetLook ?: look
                 PlaybackStrip(
                     playing = state.musicPlaying,
-                    art = state.musicArt,
-                    accent = state.accent,
                     dim = namedLook == RingerVisual.Silent,
                     onPrevious = onPreviousTrack,
                     onPlayPause = onPlayPause,
