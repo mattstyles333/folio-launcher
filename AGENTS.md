@@ -47,6 +47,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Fling settles with spring. Once open, the grid scrolls; pull down from the top to close. Other home screens are hidden from the grid, recents, and the rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
 - Swipe an icon right (rail or drawer) to hide that package from the home screen. Settings → Hidden apps to unhide. Search still finds hidden apps.
 - Swipe down (idle): Android notification shade, not search.
+- Swipe left on the idle print: open the chosen AI app. Swipe right: Google Search. Icon swipe-right still hides.
 - Search pill: tap. No search gesture. Long-press Search: Ask overlay for the chosen AI.
 - Triple-tap the print: Ask overlay. Double-tap is still next Bing. Settings → Ask cycles Grok / ChatGPT / Gemini / Claude if installed. Folio only launches the app (with a prompt when it can); no AI network of its own.
 - Double-tap print: next Bing + next quote.

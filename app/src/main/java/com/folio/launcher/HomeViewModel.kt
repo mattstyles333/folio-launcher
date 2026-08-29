@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.DefaultApps
+import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.OnboardingStep
@@ -317,6 +318,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val pkg = AiApps.matchedPackage(kind, packages) ?: return
         if (AiApps.open(host, kind, prompt, pkg)) {
             viewModelScope.launch { usageStore.record(pkg) }
+        }
+    }
+
+    fun openGoogleSearch(host: Context) {
+        if (GoogleSearch.open(host)) {
+            viewModelScope.launch { usageStore.record(GoogleSearch.PACKAGE) }
         }
     }
 

@@ -37,6 +37,8 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 |---|---|
 | Tap Search | Spotlight |
 | Triple-tap the print, or long-press Search | Ask Grok, ChatGPT, Gemini or Claude (Settings picks which) |
+| Swipe left on the print | Open the chosen AI app |
+| Swipe right on the print | Google Search |
 | Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
 | Swipe down on the print | Notification shade |
 | Double-tap the print | Next Bing photograph + next quote |

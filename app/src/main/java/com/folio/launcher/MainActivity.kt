@@ -224,6 +224,7 @@ class MainActivity : ComponentActivity() {
                             onOpenPlayer = { viewModel.openPlayer(this@MainActivity) },
                             onHideApp = { viewModel.hideApp(it) },
                             onAskAi = { viewModel.openAi(this@MainActivity, it) },
+                            onOpenGoogleSearch = { viewModel.openGoogleSearch(this@MainActivity) },
                         )
                     }
                     composable("settings") {

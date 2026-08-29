@@ -93,6 +93,7 @@ fun HomeScreen(
     onOpenPlayer: () -> Unit,
     onHideApp: (LaunchableApp) -> Unit,
     onAskAi: (String) -> Unit,
+    onOpenGoogleSearch: () -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -273,6 +274,21 @@ fun HomeScreen(
             Modifier
                 .fillMaxSize()
                 .then(sheetDrag())
+                .detectPrintSwipe(
+                    enabled = gesturesEnabled,
+                    onSwipeLeft = {
+                        if (pull.px < 8f) {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onAskAi("")
+                        }
+                    },
+                    onSwipeRight = {
+                        if (pull.px < 8f) {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            onOpenGoogleSearch()
+                        }
+                    },
+                )
                 .detectPrintTaps(
                     enabled = gesturesEnabled,
                     onDoubleTap = {
