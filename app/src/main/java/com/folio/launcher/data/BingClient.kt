@@ -62,11 +62,11 @@ class BingClient {
         return images
     }
 
-    fun download(image: BingImage, dest: File): Boolean {
+    fun download(image: BingImage, dest: File, width: Int = 1080, height: Int = 2340): Boolean {
         val tmp = File(dest.parentFile, "wallpaper.tmp")
-        for (url in image.candidateUrls()) {
+        for (url in image.candidateUrls(width, height)) {
             val bytes = getBytes(url, accept = "image/*") ?: continue
-            if (bytes.size < 8_000) continue
+            if (bytes.size < 80_000) continue
             runCatching {
                 tmp.outputStream().use { it.write(bytes) }
                 if (dest.exists()) dest.delete()
@@ -140,17 +140,35 @@ data class BingImage(
     val title: String = "",
     val hsh: String = "",
 ) {
-    fun candidateUrls(): List<String> {
+    fun candidateUrls(width: Int = 1080, height: Int = 2340): List<String> {
         val host = "https://www.bing.com"
         val list = linkedSetOf<String>()
-        if (url.startsWith("http")) list += url
-        else if (url.isNotBlank()) list += host + url
         if (urlbase.isNotBlank()) {
-            list += "$host${urlbase}_1080x1920.jpg"
             list += "$host${urlbase}_UHD.jpg"
+            list += "$host${urlbase}_1920x1200.jpg"
             list += "$host${urlbase}_1920x1080.jpg"
+            list += "$host${urlbase}_1080x1920.jpg"
+        }
+        val raw = when {
+            url.startsWith("http") -> url
+            url.isNotBlank() -> host + url
+            else -> null
+        }
+        if (raw != null) {
+            list += sized(raw, width, height)
+            list += raw
         }
         return list.toList()
+    }
+
+    private fun sized(url: String, width: Int, height: Int): String {
+        var next = url
+        next = WIDTH.replace(next, "\$1$width")
+        next = HEIGHT.replace(next, "\$1$height")
+        if (!next.contains("w=")) {
+            next += if (next.contains('?')) "&w=$width&h=$height" else "?w=$width&h=$height"
+        }
+        return next
     }
 
     fun caption(): String {
@@ -169,6 +187,8 @@ data class BingImage(
 
     companion object {
         private val OHR = Regex("OHR\\.([A-Za-z0-9]+)")
+        private val WIDTH = Regex("([?&]w=)\\d+")
+        private val HEIGHT = Regex("([?&]h=)\\d+")
     }
 }
 

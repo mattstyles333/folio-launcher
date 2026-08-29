@@ -48,7 +48,7 @@ class WallpaperRepository(private val context: Context) {
                 width = dm.widthPixels,
                 height = dm.heightPixels,
             ) ?: return@runCatching null
-            if (!bing.download(image, file)) return@runCatching null
+            if (!bing.download(image, file, dm.widthPixels, dm.heightPixels)) return@runCatching null
             BingShot(
                 index = index,
                 caption = image.caption(),
@@ -85,10 +85,11 @@ class WallpaperRepository(private val context: Context) {
 
     suspend fun load(targetW: Int, targetH: Int): LoadedWallpaper? = withContext(Dispatchers.IO) {
         if (!exists()) return@withContext null
-        val w = targetW.coerceAtLeast(64)
-        val h = targetH.coerceAtLeast(64)
+        val bleed = 1.08f
+        val w = (targetW.coerceAtLeast(64) * bleed).toInt().coerceAtLeast(64)
+        val h = (targetH.coerceAtLeast(64) * bleed).toInt().coerceAtLeast(64)
         val src = decodeFile(file, w, h) ?: decodeWithCoil(file, w, h) ?: return@withContext null
-        val cropped = centerCrop(src, w, h)
+        val cropped = cover(src, w, h)
         val accent = AccentExtractor.extract(cropped)
         val photo = cropped.copy(Bitmap.Config.ARGB_8888, false)
         val image = photo.asImageBitmap()
@@ -110,6 +111,7 @@ class WallpaperRepository(private val context: Context) {
         val opts = BitmapFactory.Options().apply {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
+            inScaled = false
         }
         return BitmapFactory.decodeFile(file.absolutePath, opts)
     }
@@ -139,15 +141,12 @@ class WallpaperRepository(private val context: Context) {
         }.getOrNull()
     }
 
-    private fun centerCrop(src: Bitmap, w: Int, h: Int): Bitmap {
+    private fun cover(src: Bitmap, w: Int, h: Int): Bitmap {
         if (src.width == w && src.height == h) return src
-        val scale = maxOf(w.toFloat() / src.width, h.toFloat() / src.height)
-        val scaledW = (src.width * scale).toInt().coerceAtLeast(1)
-        val scaledH = (src.height * scale).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(src, scaledW, scaledH, true)
-        val x = ((scaledW - w) / 2).coerceAtLeast(0)
-        val y = ((scaledH - h) / 2.4f).toInt().coerceAtLeast(0).coerceAtMost((scaledH - h).coerceAtLeast(0))
-        return Bitmap.createBitmap(scaled, x, y, w.coerceAtMost(scaled.width), h.coerceAtMost(scaled.height))
+        val win = CoverCrop.window(src.width, src.height, w, h)
+        val cropped = Bitmap.createBitmap(src, win.x, win.y, win.width, win.height)
+        if (cropped.width == w && cropped.height == h) return cropped
+        return Bitmap.createScaledBitmap(cropped, w, h, true)
     }
 
     data class LoadedWallpaper(

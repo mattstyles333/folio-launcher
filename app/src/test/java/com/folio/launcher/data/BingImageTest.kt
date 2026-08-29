@@ -24,15 +24,15 @@ class BingImageTest {
     }
 
     @Test
-    fun candidateUrls_includePortraitAndUhd() {
+    fun candidateUrls_preferUhdThenExactScreen() {
         val image = BingImage(
             url = "/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg&w=1080&h=1920",
             urlbase = "/th?id=OHR.LakeMagadi_EN-US1",
         )
-        val urls = image.candidateUrls()
-        assertTrue(urls.first().startsWith("https://www.bing.com/th?id=OHR.LakeMagadi"))
+        val urls = image.candidateUrls(1080, 2340)
+        assertEquals("https://www.bing.com/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg", urls.first())
+        assertTrue(urls.any { it.contains("w=1080") && it.contains("h=2340") })
         assertTrue(urls.any { it.endsWith("_1080x1920.jpg") })
-        assertTrue(urls.any { it.endsWith("_UHD.jpg") })
     }
 
     @Test

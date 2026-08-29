@@ -8,7 +8,7 @@ Primary device is a **Galaxy S23**: 6.1" 1080×2340 (19.5:9), ~425 ppi, centre p
 
 - Use `WindowInsets.safeDrawing` (cutout + bars), not raw percentages of a 2400px emulator.
 - Clock sits just under the status/cutout band. Idle has no ringer chrome — long-press the print.
-- Bing UHD fetch uses the real `DisplayMetrics` size (1080×2340 on S23), not a hardcoded 1920 height.
+- Bing UHD fetch uses the real `DisplayMetrics` size (1080×2340 on S23), not a hardcoded 1920 height. Download the UHD original first, crop a portrait window, scale to the panel (plus a little bleed for parallax). Do not prefer Bing's 1080×1920 file.
 - Portrait only. Prefer 120 Hz when the panel offers it.
 - Parallax is a few millimetres and must unregister on pause.
 
