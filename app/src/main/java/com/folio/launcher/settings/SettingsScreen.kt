@@ -104,7 +104,7 @@ fun SettingsScreen(
                 state.aiInstalled.isEmpty() ->
                     "Install Grok, ChatGPT, Gemini or Claude"
                 else ->
-                    "${state.aiLabel} · two-finger tap the print"
+                    "${state.aiLabel} · triple-tap the print"
             },
         ) { onCycleAi() }
         SettingsRow(

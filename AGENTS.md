@@ -48,7 +48,7 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe an icon right (rail or drawer) to hide that package from the home screen. Settings → Hidden apps to unhide. Search still finds hidden apps.
 - Swipe down (idle): Android notification shade, not search.
 - Search pill: tap. No search gesture. Long-press Search: Ask overlay for the chosen AI.
-- Two-finger tap the print: Ask overlay. Settings → Ask cycles Grok / ChatGPT / Gemini / Claude if installed. Folio only launches the app (with a prompt when it can); no AI network of its own.
+- Triple-tap the print: Ask overlay. Double-tap is still next Bing. Settings → Ask cycles Grok / ChatGPT / Gemini / Claude if installed. Folio only launches the app (with a prompt when it can); no AI network of its own.
 - Double-tap print: next Bing + next quote.
 - Now playing on home is prev / play / next above the rail, always visible — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause, or to start Spotify if nothing is playing; long-press opens Spotify. Prefer Spotify if several sessions are active.
 - Clock tap does nothing. Clock long-press → Settings → Choose photo for a local print.

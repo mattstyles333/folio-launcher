@@ -273,16 +273,19 @@ fun HomeScreen(
             Modifier
                 .fillMaxSize()
                 .then(sheetDrag())
-                .detectTwoFingerTap(enabled = gesturesEnabled) {
-                    if (pull.px < 8f) openAsk()
-                }
+                .detectPrintTaps(
+                    enabled = gesturesEnabled,
+                    onDoubleTap = {
+                        if (pull.px < 8f) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            onNextBing()
+                        }
+                    },
+                    onTripleTap = { if (pull.px < 8f) openAsk() },
+                )
                 .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
-                        onDoubleTap = {
-                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                            onNextBing()
-                        },
                         onLongPress = { origin ->
                             if (revealTarget != null) return@detectTapGestures
                             if (pull.px > 8f) return@detectTapGestures
