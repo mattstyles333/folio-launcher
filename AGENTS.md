@@ -50,11 +50,11 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 - Swipe left on the idle print: open the chosen AI app. Swipe right: Google Search. Icon swipe-right still hides.
 - Search pill: tap. No search gesture. Long-press Search: Ask overlay for the chosen AI.
 - Triple-tap the print: Ask overlay. Double-tap is still next Bing. Settings → Ask cycles Grok / ChatGPT / Gemini / Claude if installed. Folio only launches the app (with a prompt when it can); no AI network of its own.
-- Double-tap print: next Bing + next quote.
+- Double-tap print: next Bing + next quote. Bing archive is ~16–24 unique UHD prints (several days, a couple of markets), picked at random, not a loop of eight.
 - Now playing on home is prev / play / next above the rail, always visible — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause, or to start Spotify if nothing is playing; long-press opens Spotify. Prefer Spotify if several sessions are active.
 - Clock tap does nothing. Clock long-press → Settings → Choose photo for a local print.
 - Plug in: hairline oval around the clock. Green on Sound. At 100% the oval is closed.
-- Long-press print: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint.
+- Long-press the print or the quote: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint. Long-press the clock is Settings, not the ringer.
 - Quote sits above the clock: 16sp serif, PrintInk, hard drop shadow (no blur). Clock and date use the same ink and shadow so they read on the print. Clock cluster is not rasterized while idle.
 
 ## Tests

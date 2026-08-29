@@ -22,7 +22,7 @@ fun Modifier.detectPrintSwipe(
     val right = rememberUpdatedState(onSwipeRight)
     pointerInput(enabled) {
         if (!enabled) return@pointerInput
-        val slop = viewConfiguration.touchSlop
+        val slop = viewConfiguration.touchSlop * 4f
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val tracker = VelocityTracker()

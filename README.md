@@ -42,7 +42,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
 | Swipe down on the print | Notification shade |
 | Double-tap the print | Next Bing photograph + next quote |
-| Long-press the print | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
+| Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. |
 | Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens Spotify. |

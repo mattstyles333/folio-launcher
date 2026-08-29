@@ -3,14 +3,19 @@ package com.folio.launcher.home
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -18,6 +23,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,9 +50,14 @@ fun ClockCluster(
     captionBusy: Boolean,
     onClockTap: () -> Unit,
     onClockLongPress: () -> Unit,
+    onPrintLongPress: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    var originInParent by remember { mutableStateOf(Offset.Zero) }
+    Column(
+        modifier.onGloballyPositioned { originInParent = it.positionInParent() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         if (lookName == null && quote.isNotEmpty()) {
             Text(
                 text = "“$quote”",
@@ -53,7 +66,14 @@ fun ClockCluster(
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 36.dp),
+                modifier = Modifier
+                    .widthIn(max = 340.dp)
+                    .padding(horizontal = 28.dp)
+                    .pointerInput(onPrintLongPress) {
+                        detectTapGestures(
+                            onLongPress = { local -> onPrintLongPress(originInParent + local) },
+                        )
+                    },
             )
             if (quoteAuthor.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))

@@ -34,4 +34,24 @@ class BingImageTest {
         assertTrue(urls.any { it.endsWith("_1080x1920.jpg") })
         assertTrue(urls.any { it.endsWith("_UHD.jpg") })
     }
+
+    @Test
+    fun identity_usesOhrNameAcrossMarkets() {
+        val us = BingImage(urlbase = "/th?id=OHR.LakeMagadi_EN-US1")
+        val gb = BingImage(urlbase = "/th?id=OHR.LakeMagadi_EN-GB2")
+        assertEquals("LakeMagadi", us.identity())
+        assertEquals(us.identity(), gb.identity())
+    }
+
+    @Test
+    fun nextIndex_neverReturnsCurrentWhenPoolHasMoreThanOne() {
+        val random = kotlin.random.Random(7)
+        repeat(40) {
+            val current = random.nextInt(24)
+            val next = BingClient.nextIndex(current, 24, random)
+            assertTrue(next in 0 until 24)
+            assertTrue(next != current)
+        }
+        assertEquals(0, BingClient.nextIndex(3, 1))
+    }
 }

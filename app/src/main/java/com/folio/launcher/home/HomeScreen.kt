@@ -209,6 +209,28 @@ fun HomeScreen(
             searchOpen = true
         }
 
+        fun cycleRingerFrom(origin: Offset) {
+            if (revealTarget != null) return
+            if (pull.px > 8f) return
+            val current = look
+            val next = current.nextRinger()
+            lookOverride = current
+            revealOrigin = origin
+            revealTarget = next
+            flashLook = true
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onSetRinger(next)
+            scope.launch {
+                revealProgress.snapTo(0f)
+                revealProgress.animateTo(1f, developSpec())
+                lookOverride = next
+                revealTarget = null
+                revealProgress.snapTo(0f)
+                delay(1100)
+                flashLook = false
+            }
+        }
+
         fun openAsk() {
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             searchOpen = false
@@ -302,27 +324,7 @@ fun HomeScreen(
                 .pointerInput(gesturesEnabled, look) {
                     if (!gesturesEnabled) return@pointerInput
                     detectTapGestures(
-                        onLongPress = { origin ->
-                            if (revealTarget != null) return@detectTapGestures
-                            if (pull.px > 8f) return@detectTapGestures
-                            val current = look
-                            val next = current.nextRinger()
-                            lookOverride = current
-                            revealOrigin = origin
-                            revealTarget = next
-                            flashLook = true
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            onSetRinger(next)
-                            scope.launch {
-                                revealProgress.snapTo(0f)
-                                revealProgress.animateTo(1f, developSpec())
-                                lookOverride = next
-                                revealTarget = null
-                                revealProgress.snapTo(0f)
-                                delay(1100)
-                                flashLook = false
-                            }
-                        },
+                        onLongPress = { origin -> cycleRingerFrom(origin) },
                     )
                 },
         )
@@ -345,9 +347,9 @@ fun HomeScreen(
                 captionBusy = state.wallpaperBusy,
                 onClockTap = { },
                 onClockLongPress = onOpenSettings,
+                onPrintLongPress = { cycleRingerFrom(it) },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(top = (paneHeight * 0.045f).coerceIn(18.dp, 32.dp))
                     .graphicsLayer {

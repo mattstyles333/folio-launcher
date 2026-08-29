@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
+import com.folio.launcher.data.BingClient
 import com.folio.launcher.data.DefaultApps
 import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
@@ -368,7 +369,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             extra.value = extra.value.copy(wallpaperBusy = true, wallpaperCaption = "New print…")
             val count = wallpaperRepo.bingCount().let { if (it <= 0) 8 else it }
-            val next = if (latestPrefs.bingIndex < 0) 0 else (latestPrefs.bingIndex + 1) % count
+            val next = BingClient.nextIndex(latestPrefs.bingIndex, count)
             val shot = wallpaperRepo.importBing(next)
             if (shot != null) {
                 prefsStore.update {

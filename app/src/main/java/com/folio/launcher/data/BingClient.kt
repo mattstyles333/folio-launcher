@@ -38,13 +38,23 @@ class BingClient {
         val key = LocalDate.now().toString() + market(locale) + "${w}x$h"
         cache?.let { if (cacheKey == key) return it }
         val mkt = market(locale)
-        val endpoint =
-            "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=$mkt&uhd=1&uhdwidth=$w&uhdheight=$h"
-        val body = getBytes(endpoint, accept = "application/json") ?: return emptyList()
-        val parsed = runCatching {
-            json.decodeFromString<BingArchive>(body.decodeToString())
-        }.getOrNull() ?: return emptyList()
-        val images = parsed.images.filter { it.url.isNotBlank() || it.urlbase.isNotBlank() }
+        val markets = linkedSetOf(mkt, "en-GB", "en-US")
+        val seen = LinkedHashSet<String>()
+        val images = ArrayList<BingImage>(32)
+        for (market in markets) {
+            for (idx in OFFSETS) {
+                val endpoint =
+                    "https://www.bing.com/HPImageArchive.aspx?format=js&idx=$idx&n=8&mkt=$market&uhd=1&uhdwidth=$w&uhdheight=$h"
+                val body = getBytes(endpoint, accept = "application/json") ?: continue
+                val parsed = runCatching {
+                    json.decodeFromString<BingArchive>(body.decodeToString())
+                }.getOrNull() ?: continue
+                for (image in parsed.images) {
+                    if (image.url.isBlank() && image.urlbase.isBlank()) continue
+                    if (seen.add(image.identity())) images += image
+                }
+            }
+        }
         if (images.isNotEmpty()) {
             cache = images
             cacheKey = key
@@ -100,8 +110,20 @@ class BingClient {
     }
 
     companion object {
+        private val OFFSETS = intArrayOf(0, 8, 16)
         private const val UA =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36"
+
+        fun nextIndex(current: Int, count: Int, random: kotlin.random.Random = kotlin.random.Random.Default): Int {
+            if (count <= 1) return 0
+            if (current < 0) return random.nextInt(count)
+            val here = current.floorMod(count)
+            var next = random.nextInt(count)
+            if (next == here) {
+                next = (here + 1 + random.nextInt(count - 1)) % count
+            }
+            return next
+        }
     }
 }
 
@@ -137,6 +159,16 @@ data class BingImage(
         val copy = copyright.trim()
         val cut = copy.indexOf(" (")
         return if (cut > 0) copy.substring(0, cut) else copy
+    }
+
+    fun identity(): String {
+        val src = urlbase.ifBlank { url }
+        val name = OHR.find(src)?.groupValues?.get(1)
+        return name ?: hsh.ifBlank { src }
+    }
+
+    companion object {
+        private val OHR = Regex("OHR\\.([A-Za-z0-9]+)")
     }
 }
 
