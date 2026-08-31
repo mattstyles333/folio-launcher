@@ -39,16 +39,16 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Triple-tap the print, or long-press Search | Ask Grok, ChatGPT, Gemini or Claude (Settings picks which) |
 | Swipe left on the print | Open the chosen AI app |
 | Swipe right on the print | Google Search |
-| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull or fling further for the full scrolling grid. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
+| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the eight most-used apps in thumb reach; pull further for A–Z. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
 | Swipe down on the print | Notification shade |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
-| Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. |
+| Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. Same oval when the battery is at 15% or below, even unplugged. |
 | Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens Spotify. |
 | Settings → Hidden apps | Unhide. |
 
-Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page.
+Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page. The print itself refreshes on the first unlock after midnight; Settings → Previous print goes back one.
 
 ## Permissions
 

@@ -38,6 +38,8 @@ data class Prefs(
     val silentHint: Boolean = false,
     val mediaHintDismissed: Boolean = false,
     val bingIndex: Int = -1,
+    val bingPrevIndex: Int = -1,
+    val bingDay: Int = -1,
     val quoteSalt: Int = 0,
     val hiddenPackages: List<String> = emptyList(),
     val aiPackage: String = "",

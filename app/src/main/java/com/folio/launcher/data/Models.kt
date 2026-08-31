@@ -51,6 +51,7 @@ data class HomeUiState(
     val launches: Map<String, List<Long>> = emptyMap(),
     val wallpaperBusy: Boolean = false,
     val wallpaperCaption: String = "",
+    val hasPreviousPrint: Boolean = false,
     val charging: Boolean = false,
     val charge: Float = 0f,
     val nowPlaying: String = "",

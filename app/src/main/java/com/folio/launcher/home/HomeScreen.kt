@@ -343,9 +343,9 @@ fun HomeScreen(
             ClockCluster(
                 showClock = state.showClock,
                 dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
-                charging = state.charging,
+                showCharge = chargeHairlineVisible(state.charging, state.charge),
                 charge = state.charge,
-                chargeColor = if (namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
+                chargeColor = if (state.charging && namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
                 quote = state.quote,
                 quoteAuthor = state.quoteAuthor,
                 lookName = if (developing || flashLook) namedLook.label() else null,

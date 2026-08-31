@@ -114,13 +114,27 @@ class BingClient {
         private const val UA =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36"
 
-        fun nextIndex(current: Int, count: Int, random: kotlin.random.Random = kotlin.random.Random.Default): Int {
+        fun nextIndex(
+            current: Int,
+            count: Int,
+            random: kotlin.random.Random = kotlin.random.Random.Default,
+            alsoAvoid: Int = -1,
+        ): Int {
             if (count <= 1) return 0
-            if (current < 0) return random.nextInt(count)
-            val here = current.floorMod(count)
+            if (current < 0 && alsoAvoid < 0) return random.nextInt(count)
+            val banned = HashSet<Int>(2)
+            if (current >= 0) banned += current.floorMod(count)
+            if (alsoAvoid >= 0) banned += alsoAvoid.floorMod(count)
+            if (banned.size >= count) {
+                return if (current >= 0) (current.floorMod(count) + 1) % count else 0
+            }
             var next = random.nextInt(count)
-            if (next == here) {
-                next = (here + 1 + random.nextInt(count - 1)) % count
+            var guard = 0
+            while (next in banned && guard++ < 12) {
+                next = random.nextInt(count)
+            }
+            if (next in banned) {
+                next = (0 until count).first { it !in banned }
             }
             return next
         }

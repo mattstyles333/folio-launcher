@@ -18,9 +18,13 @@ import java.io.File
 
 class WallpaperRepository(private val context: Context) {
     val file: File get() = File(context.filesDir, "wallpaper.jpg")
+    private val prevFile: File get() = File(context.filesDir, "wallpaper.prev.jpg")
+    private val nextFile: File get() = File(context.filesDir, "wallpaper.next.jpg")
     private val bing = BingClient()
 
     fun exists(): Boolean = file.exists() && file.length() > 0L
+
+    fun prevExists(): Boolean = prevFile.exists() && prevFile.length() > 0L
 
     fun systemWallpaperReadable(): Boolean {
         return try {
@@ -34,9 +38,11 @@ class WallpaperRepository(private val context: Context) {
     suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { input.copyTo(it) }
+                nextFile.outputStream().use { input.copyTo(it) }
             } ?: return@runCatching false
-            file.length() > 0L
+            if (nextFile.length() <= 0L) return@runCatching false
+            promoteNext()
+            true
         }.getOrDefault(false)
     }
 
@@ -48,13 +54,28 @@ class WallpaperRepository(private val context: Context) {
                 width = dm.widthPixels,
                 height = dm.heightPixels,
             ) ?: return@runCatching null
-            if (!bing.download(image, file, dm.widthPixels, dm.heightPixels)) return@runCatching null
+            if (!bing.download(image, nextFile, dm.widthPixels, dm.heightPixels)) return@runCatching null
+            promoteNext()
             BingShot(
                 index = index,
                 caption = image.caption(),
                 credit = image.copyright,
             )
         }.getOrNull()
+    }
+
+    suspend fun swapWithPrev(): Boolean = withContext(Dispatchers.IO) {
+        if (!prevExists()) return@withContext false
+        val tmp = File(context.filesDir, "wallpaper.swap.jpg")
+        if (tmp.exists()) tmp.delete()
+        val hadCurrent = file.exists()
+        if (hadCurrent && !file.renameTo(tmp)) return@withContext false
+        if (!prevFile.renameTo(file)) {
+            if (hadCurrent) tmp.renameTo(file)
+            return@withContext false
+        }
+        if (tmp.exists()) tmp.renameTo(prevFile)
+        exists()
     }
 
     suspend fun bingCount(): Int = withContext(Dispatchers.IO) {
@@ -78,9 +99,26 @@ class WallpaperRepository(private val context: Context) {
                     }
                 }
             }
-            file.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            nextFile.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            if (nextFile.length() <= 0L) return@runCatching false
+            promoteNext()
             true
         }.getOrDefault(false)
+    }
+
+    private fun stashCurrentAsPrev() {
+        if (!exists()) return
+        file.copyTo(prevFile, overwrite = true)
+    }
+
+    private fun promoteNext() {
+        if (!nextFile.exists() || nextFile.length() <= 0L) return
+        stashCurrentAsPrev()
+        if (file.exists()) file.delete()
+        if (!nextFile.renameTo(file)) {
+            nextFile.copyTo(file, overwrite = true)
+            nextFile.delete()
+        }
     }
 
     suspend fun load(targetW: Int, targetH: Int): LoadedWallpaper? = withContext(Dispatchers.IO) {

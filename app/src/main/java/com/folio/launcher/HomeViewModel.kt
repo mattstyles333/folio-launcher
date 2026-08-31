@@ -26,6 +26,7 @@ import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SlotPref
 import com.folio.launcher.data.UsageData
+import com.folio.launcher.data.WallpaperRepository
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -92,6 +93,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             loadWallpaper()
             ensureFirstPrint()
+            ensureTodaysPrintNow()
         }
         viewModelScope.launch {
             combine(prefsStore.data, usageStore.data, appsRepo.apps) { p, u, a -> Triple(p, u, a) }
@@ -349,7 +351,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun setWallpaper(uri: Uri) {
         viewModelScope.launch {
             if (wallpaperRepo.importFromUri(uri)) {
-                prefsStore.update { finishOnboarding(it.copy(wallpaperSet = true, bingIndex = -1)) }
+                prefsStore.update {
+                    finishOnboarding(
+                        it.copy(
+                            wallpaperSet = true,
+                            bingPrevIndex = it.bingIndex,
+                            bingIndex = -1,
+                        ),
+                    )
+                }
                 loadWallpaper()
             }
         }
@@ -358,7 +368,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun useSystemWallpaper() {
         viewModelScope.launch {
             if (wallpaperRepo.importSystem()) {
-                prefsStore.update { finishOnboarding(it.copy(wallpaperSet = true, bingIndex = -1)) }
+                prefsStore.update {
+                    finishOnboarding(
+                        it.copy(
+                            wallpaperSet = true,
+                            bingPrevIndex = it.bingIndex,
+                            bingIndex = -1,
+                        ),
+                    )
+                }
                 loadWallpaper()
             }
         }
@@ -368,20 +386,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         if (extra.value.wallpaperBusy) return
         viewModelScope.launch {
             extra.value = extra.value.copy(wallpaperBusy = true, wallpaperCaption = "New print…")
-            val count = wallpaperRepo.bingCount().let { if (it <= 0) 8 else it }
-            val next = BingClient.nextIndex(latestPrefs.bingIndex, count)
-            val shot = wallpaperRepo.importBing(next)
+            val shot = fetchBing(avoidCurrent = true)
             if (shot != null) {
-                prefsStore.update {
-                    finishOnboarding(
-                        it.copy(
-                            wallpaperSet = true,
-                            bingIndex = shot.index,
-                            quoteSalt = it.quoteSalt + 1,
-                        ),
-                    )
-                }
-                loadWallpaper()
+                commitBing(shot, turnQuote = true)
                 showCaption(shot.caption)
             } else {
                 showCaption("Couldn't reach Bing")
@@ -389,9 +396,78 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun previousPrint() {
+        if (extra.value.wallpaperBusy) return
+        viewModelScope.launch {
+            if (!wallpaperRepo.swapWithPrev()) return@launch
+            prefsStore.update {
+                it.copy(bingIndex = it.bingPrevIndex, bingPrevIndex = it.bingIndex)
+            }
+            loadWallpaper()
+        }
+    }
+
+    fun ensureTodaysPrint() {
+        viewModelScope.launch { ensureTodaysPrintNow() }
+    }
+
+    private suspend fun ensureTodaysPrintNow() {
+        if (extra.value.wallpaperBusy) return
+        if (!wallpaperRepo.exists()) {
+            ensureFirstPrint()
+            return
+        }
+        val today = QuoteBank.todayIndex()
+        if (latestPrefs.bingIndex < 0) return
+        if (latestPrefs.bingDay < 0) {
+            prefsStore.update { it.copy(bingDay = today) }
+            return
+        }
+        if (latestPrefs.bingDay == today) return
+        extra.value = extra.value.copy(wallpaperBusy = true)
+        val shot = fetchBing(avoidCurrent = true)
+        if (shot != null) {
+            commitBing(shot, turnQuote = true)
+            showCaption(shot.caption)
+        } else {
+            extra.value = extra.value.copy(wallpaperBusy = false)
+        }
+    }
+
+    private suspend fun fetchBing(avoidCurrent: Boolean): WallpaperRepository.BingShot? {
+        val count = wallpaperRepo.bingCount().let { if (it <= 0) 8 else it }
+        val current = if (avoidCurrent) latestPrefs.bingIndex else -1
+        val next = BingClient.nextIndex(
+            current = current,
+            count = count,
+            alsoAvoid = latestPrefs.bingPrevIndex,
+        )
+        return wallpaperRepo.importBing(next)
+    }
+
+    private suspend fun commitBing(
+        shot: WallpaperRepository.BingShot,
+        turnQuote: Boolean,
+    ) {
+        val today = QuoteBank.todayIndex()
+        val prevIndex = latestPrefs.bingIndex
+        prefsStore.update {
+            finishOnboarding(
+                it.copy(
+                    wallpaperSet = true,
+                    bingPrevIndex = prevIndex,
+                    bingIndex = shot.index,
+                    bingDay = today,
+                    quoteSalt = if (turnQuote) it.quoteSalt + 1 else it.quoteSalt,
+                ),
+            )
+        }
+        loadWallpaper()
+    }
+
     private suspend fun showCaption(text: String) {
         extra.value = extra.value.copy(wallpaperBusy = false, wallpaperCaption = text)
-        delay(3200)
+        delay(2_000)
         if (extra.value.wallpaperCaption == text) {
             extra.value = extra.value.copy(wallpaperCaption = "")
         }
@@ -414,7 +490,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val shot = wallpaperRepo.importBing(0)
         if (shot != null) {
             prefsStore.update {
-                finishOnboarding(it.copy(wallpaperSet = true, bingIndex = shot.index))
+                finishOnboarding(
+                    it.copy(
+                        wallpaperSet = true,
+                        bingIndex = shot.index,
+                        bingDay = QuoteBank.todayIndex(),
+                    ),
+                )
             }
             loadWallpaper()
         }
@@ -424,6 +506,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadWallpaper() {
         val dm = app.resources.displayMetrics
         val loaded = wallpaperRepo.load(dm.widthPixels, dm.heightPixels)
+        extra.value = extra.value.copy(hasPreviousPrint = wallpaperRepo.prevExists())
         if (loaded == null) {
             wallpaperBits.value = null
             return
@@ -595,6 +678,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             versionName = BuildConfig.VERSION_NAME,
             wallpaperBusy = extraState.wallpaperBusy,
             wallpaperCaption = extraState.wallpaperCaption,
+            hasPreviousPrint = extraState.hasPreviousPrint,
             charging = extraState.charging,
             charge = extraState.charge,
             nowPlaying = extraState.nowPlaying,
@@ -628,6 +712,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val usageTimestamps: Map<String, List<Long>> = emptyMap(),
         val wallpaperBusy: Boolean = false,
         val wallpaperCaption: String = "",
+        val hasPreviousPrint: Boolean = false,
         val charging: Boolean = false,
         val charge: Float = 0f,
         val nowPlaying: String = "",

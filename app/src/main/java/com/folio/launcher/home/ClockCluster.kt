@@ -36,11 +36,16 @@ import com.folio.launcher.ui.PrintShadow
 import com.folio.launcher.ui.QuoteAuthorStyle
 import com.folio.launcher.ui.QuoteStyle
 
+const val LowBatteryFraction = 0.15f
+
+fun chargeHairlineVisible(charging: Boolean, fraction: Float): Boolean =
+    charging || fraction <= LowBatteryFraction
+
 @Composable
 fun ClockCluster(
     showClock: Boolean,
     dimClock: Boolean,
-    charging: Boolean,
+    showCharge: Boolean,
     charge: Float,
     chargeColor: Color,
     quote: String,
@@ -87,7 +92,7 @@ fun ClockCluster(
         }
         if (showClock) {
             Box(contentAlignment = Alignment.Center) {
-                if (charging) {
+                if (showCharge) {
                     ChargeHairline(
                         color = chargeColor,
                         fraction = charge,

@@ -54,4 +54,15 @@ class BingImageTest {
         }
         assertEquals(0, BingClient.nextIndex(3, 1))
     }
+
+    @Test
+    fun nextIndex_skipsPreviousToo() {
+        val random = kotlin.random.Random(3)
+        repeat(40) {
+            val next = BingClient.nextIndex(current = 2, count = 8, random = random, alsoAvoid = 5)
+            assertTrue(next in 0 until 8)
+            assertTrue(next != 2)
+            assertTrue(next != 5)
+        }
+    }
 }

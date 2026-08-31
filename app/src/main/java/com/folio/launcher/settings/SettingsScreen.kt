@@ -44,6 +44,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onPickPhoto: () -> Unit,
     onNextBing: () -> Unit,
+    onPreviousPrint: () -> Unit,
     onShowClock: (Boolean) -> Unit,
     onResetPins: () -> Unit,
     onSetDefault: () -> Unit,
@@ -76,6 +77,9 @@ fun SettingsScreen(
         Spacer(Modifier.height(28.dp))
         SettingsRow("Choose photo", "Replace the print") { onPickPhoto() }
         SettingsRow("Bing print", "Double-tap the print for the next one") { onNextBing() }
+        if (state.hasPreviousPrint) {
+            SettingsRow("Previous print", "The one before this") { onPreviousPrint() }
+        }
         Row(
             Modifier
                 .fillMaxWidth()

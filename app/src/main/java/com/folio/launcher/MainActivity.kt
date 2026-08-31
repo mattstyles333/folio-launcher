@@ -233,6 +233,7 @@ class MainActivity : ComponentActivity() {
                             onBack = { nav.popBackStack() },
                             onPickPhoto = { openPhotoPicker() },
                             onNextBing = { viewModel.nextBingPrint() },
+                            onPreviousPrint = { viewModel.previousPrint() },
                             onShowClock = { viewModel.setShowClock(it) },
                             onResetPins = { viewModel.resetPins() },
                             onSetDefault = { openHomeRole() },
@@ -254,5 +255,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshSystemState()
+        viewModel.ensureTodaysPrint()
     }
 }

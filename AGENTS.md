@@ -44,22 +44,22 @@ Widget host, icon packs, news/feed, accounts, network beyond Bing wallpaper, ads
 
 ## Touch contracts
 
-- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Three rests — closed, peek (~two rows of most-used, thumb zone), full. A swipe from idle lands on peek; a second pull or a drag past peek opens the full grid, which then scrolls. Pull down from the top of the grid to the peek; a hard fling down closes. Back steps full → peek → closed. Other home screens are hidden from the grid, recents, and the rail (search still finds them) via `HomeApps`. Recent/most-used first. Usage access = last 30 days of system opens; otherwise only launches from Folio.
+- Swipe up on wallpaper/rail: app sheet follows the finger (layout/draw only — do not read `SheetPull.px` in composition). Three rests — closed, peek (~two rows of most-used, thumb zone), full. A swipe from idle lands on peek; a second pull or a drag past peek opens the full grid, which then scrolls. Peek is the eight most-used (not on the rail); below that the grid is A–Z with letter headers. Pull down from the top of the grid to the peek; a hard fling down closes. Back steps full → peek → closed. Other home screens are hidden from the grid, recents, and the rail (search still finds them) via `HomeApps`. Usage access = last 30 days of system opens; otherwise only launches from Folio.
 - Swipe an icon right (rail or drawer) to hide that package from the home screen. Settings → Hidden apps to unhide. Search still finds hidden apps.
 - Swipe down (idle): Android notification shade, not search.
 - Swipe left on the idle print: open the chosen AI app. Swipe right: Google Search. Icon swipe-right still hides.
 - Search pill: tap. No search gesture. Long-press Search: Ask overlay for the chosen AI.
 - Triple-tap the print: Ask overlay. Double-tap is still next Bing. Settings → Ask cycles Grok / ChatGPT / Gemini / Claude if installed. Folio only launches the app (with a prompt when it can); no AI network of its own.
-- Double-tap print: next Bing + next quote. Bing archive is ~16–24 unique UHD prints (several days, a couple of markets), picked at random, not a loop of eight.
+- Double-tap print: next Bing + next quote. Bing archive is ~16–24 unique UHD prints (several days, a couple of markets), picked at random, not a loop of eight. First unlock after midnight quietly fetches a new Bing if the current print is Bing (local photos stay). Caption fades after two seconds. Settings → Previous print restores the one before.
+- Plug in: hairline oval around the clock. Green on Sound. At 100% the oval is closed. Same oval when unplugged and charge is 15% or below (PrintInk, not green).
 - Now playing on home is prev / play / next above the rail, always visible — no album art. Skip glyphs are thin strokes in PrintInk with a hard shadow. Tap play to pause, or to start Spotify if nothing is playing; long-press opens Spotify. Prefer Spotify if several sessions are active.
 - Clock tap does nothing. Clock long-press → Settings → Choose photo for a local print.
-- Plug in: hairline oval around the clock. Green on Sound. At 100% the oval is closed.
 - Long-press the print or the quote: cycle Sound → Vibrate → Silent (applies the real ringer immediately, then the print develops). Vibrate buzzes. Hardware ringer still drives the look. Silent without DND access shows a hint. Long-press the clock is Settings, not the ringer.
 - Quote sits above the clock: 16sp serif, PrintInk, hard drop shadow (no blur). Clock and date use the same ink and shadow so they read on the print. Clock cluster is not rasterized while idle.
 
 ## Tests
 
-`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability, sheet settle/peek/rubber-band, AiApps install/cycle/uris. Run `testDebugUnitTest` before a push.
+`app/src/test` — Ranking, ClockCopy, BingImage URL helpers, QuoteBank pick stability, sheet settle/peek/rubber-band, drawer peek/A–Z, charge hairline, AiApps install/cycle/uris. Run `testDebugUnitTest` before a push.
 
 ## Ship
 
