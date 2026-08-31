@@ -23,7 +23,10 @@ import kotlinx.coroutines.Job
 /** Pull of the app sheet in pixels. Read this from layout/draw, not from composition. */
 class SheetPull {
     var px by mutableFloatStateOf(0f)
+    /** Full height: the grid may scroll. Do not read [px] from composition. */
     var locked by mutableStateOf(false)
+    /** Any non-closed rest (peek or full). Updated on settle, not during the drag. */
+    var showing by mutableStateOf(false)
     var settleJob: Job? = null
 
     fun cancelSettle() {
@@ -40,14 +43,64 @@ fun rubberBand(offset: Float, limit: Float): Float {
     return limit + extra * dim / (dim + extra)
 }
 
-fun sheetShouldOpen(pull: Float, max: Float, velocityY: Float): Boolean {
-    val pullVel = -velocityY
-    return if (abs(pullVel) > 800f) pullVel > 0f else pull > max * 0.2f
+/** Two drawer rows plus a sliver of the next — thumb-zone rest. */
+const val SheetPeekRowCount = 2.28f
+
+const val SheetFlingStep = 800f
+const val SheetFlingSkip = 2200f
+
+fun sheetPeekPx(rowPx: Float, maxPx: Float): Float {
+    if (rowPx <= 0f || maxPx <= 0f) return 0f
+    val ideal = rowPx * SheetPeekRowCount
+    val lo = rowPx * 1.7f
+    val hi = maxPx * 0.45f
+    if (hi <= 0f) return 0f
+    if (lo >= hi) return hi
+    return ideal.coerceIn(lo, hi)
+}
+
+fun sheetIsFull(target: Float, max: Float): Boolean = target >= max - 1f
+
+/**
+ * Three rests: closed, peek (most-used, thumb reach), full.
+ * A swipe or fling from idle lands on peek — opening never skips, so a
+ * casual flick does not slam the full grid. A hard fling down from above
+ * peek still closes. Slow release snaps to the nearest rest.
+ */
+fun sheetSettleTarget(
+    pull: Float,
+    peek: Float,
+    max: Float,
+    velocityY: Float,
+    stepVelocity: Float = SheetFlingStep,
+    skipVelocity: Float = SheetFlingSkip,
+): Float {
+    val lo = 0f
+    val hi = max.coerceAtLeast(lo)
+    val mid = peek.coerceIn(lo, hi)
+    val speed = abs(velocityY)
+    val opening = -velocityY > 0f
+    if (!opening && speed >= skipVelocity && pull > mid + 8f) return lo
+    if (speed >= stepVelocity) {
+        return if (opening) {
+            if (pull + 8f < mid) mid else hi
+        } else {
+            if (pull - 8f > mid) mid else lo
+        }
+    }
+    val dLo = abs(pull - lo)
+    val dMid = abs(pull - mid)
+    val dHi = abs(pull - hi)
+    return when {
+        dMid <= dLo && dMid <= dHi -> mid
+        dHi <= dLo -> hi
+        else -> lo
+    }
 }
 
 fun sheetSpring() = spring<Float>(
-    dampingRatio = 0.90f,
-    stiffness = 300f,
+    dampingRatio = 0.88f,
+    stiffness = 400f,
     visibilityThreshold = 0.5f,
 )
 

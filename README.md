@@ -39,7 +39,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Triple-tap the print, or long-press Search | Ask Grok, ChatGPT, Gemini or Claude (Settings picks which) |
 | Swipe left on the print | Open the chosen AI app |
 | Swipe right on the print | Google Search |
-| Drag the four icons up | App sheet — follows your finger, then scrolls. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
+| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull or fling further for the full scrolling grid. Recent / most used first, then A–Z. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
 | Swipe down on the print | Notification shade |
 | Double-tap the print | Next Bing photograph + next quote |
 | Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |

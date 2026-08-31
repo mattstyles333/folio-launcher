@@ -62,6 +62,7 @@ import com.folio.launcher.search.SearchOverlay
 import com.folio.launcher.ui.ChargeGreen
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -137,6 +138,7 @@ fun HomeScreen(
         revealProgress.snapTo(0f)
         pull.cancelSettle()
         pull.locked = false
+        pull.showing = false
         pull.px = 0f
     }
 
@@ -148,18 +150,20 @@ fun HomeScreen(
         }
         val paneHeight = maxHeight
         val maxSheetPx = with(density) { (paneHeight * 0.62f).toPx() }.coerceAtLeast(rowPx * 3.2f)
+        val peekSheetPx = sheetPeekPx(rowPx, maxSheetPx)
 
         fun grabSheet() {
             pull.cancelSettle()
             pull.locked = false
         }
 
-        fun settleSheet(velocityY: Float = 0f) {
+        fun animateSheetTo(target: Float, velocityY: Float = 0f) {
             pull.cancelSettle()
+            val full = sheetIsFull(target, maxSheetPx)
+            if (target > 8f) pull.showing = true
+            if (!full) pull.locked = false
             pull.settleJob = scope.launch {
                 val start = pull.px
-                val open = sheetShouldOpen(start, maxSheetPx, velocityY)
-                val target = if (open) maxSheetPx else 0f
                 animate(
                     initialValue = start,
                     targetValue = target,
@@ -169,8 +173,9 @@ fun HomeScreen(
                     pull.px = value
                 }
                 pull.px = target
-                pull.locked = open
-                if (open) {
+                pull.locked = full
+                pull.showing = target > 8f
+                if (target > 8f && abs(target - start) > 8f) {
                     val tick = if (Build.VERSION.SDK_INT >= 34) {
                         HapticFeedbackConstants.GESTURE_START
                     } else {
@@ -179,6 +184,13 @@ fun HomeScreen(
                     view.performHapticFeedback(tick)
                 }
             }
+        }
+
+        fun settleSheet(velocityY: Float = 0f) {
+            animateSheetTo(
+                sheetSettleTarget(pull.px, peekSheetPx, maxSheetPx, velocityY),
+                velocityY,
+            )
         }
 
         val gesturesEnabled = state.onboarding == null && !searchOpen && !askOpen && pinSlot < 0
@@ -193,14 +205,7 @@ fun HomeScreen(
 
         fun collapse() {
             grabSheet()
-            pull.settleJob = scope.launch {
-                val start = pull.px
-                animate(start, 0f, 0f, sheetSpring()) { value, _ ->
-                    pull.px = value
-                }
-                pull.px = 0f
-                pull.locked = false
-            }
+            animateSheetTo(0f)
         }
 
         fun openSearch() {
@@ -240,7 +245,7 @@ fun HomeScreen(
             if (pull.px > 8f) collapse()
         }
 
-        BackHandler(enabled = searchOpen || askOpen || pull.locked || pinSlot >= 0) {
+        BackHandler(enabled = searchOpen || askOpen || pull.showing || pinSlot >= 0) {
             when {
                 pinSlot >= 0 -> pinSlot = -1
                 askOpen -> {
@@ -251,6 +256,7 @@ fun HomeScreen(
                     searchOpen = false
                     query = ""
                 }
+                pull.locked -> animateSheetTo(peekSheetPx)
                 else -> collapse()
             }
         }
@@ -353,9 +359,10 @@ fun HomeScreen(
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(top = (paneHeight * 0.045f).coerceIn(18.dp, 32.dp))
                     .graphicsLayer {
-                        val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
-                        alpha = 1f - open * 0.92f
-                        translationY = -open * 18f
+                        val span = (maxSheetPx - peekSheetPx).coerceAtLeast(1f)
+                        val pastPeek = ((pull.px - peekSheetPx) / span).coerceIn(0f, 1f)
+                        alpha = 1f - pastPeek * 0.92f
+                        translationY = -pastPeek * 18f
                     },
             )
         }
@@ -406,9 +413,9 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .padding(bottom = 156.dp)
                         .graphicsLayer {
-                            val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
-                            alpha = 1f - open * 0.95f
-                            translationY = open * 28f
+                            val cover = if (peekSheetPx <= 0f) 0f else (pull.px / peekSheetPx).coerceIn(0f, 1f)
+                            alpha = 1f - cover * 0.95f
+                            translationY = cover * 28f
                         },
                 )
             }
@@ -531,13 +538,13 @@ fun HomeScreen(
                 state.onboarding == null &&
                 !searchOpen &&
                 !askOpen &&
-                !pull.locked ->
+                !pull.showing ->
                 "Tap to let Silent mute the ringer." to onSilentHint
             state.mediaHint &&
                 state.onboarding == null &&
                 !searchOpen &&
                 !askOpen &&
-                !pull.locked ->
+                !pull.showing ->
                 "Tap so Folio can see what’s playing." to onMediaHint
             else -> null
         }
