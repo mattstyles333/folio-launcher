@@ -3,19 +3,8 @@ package com.folio.launcher.data
 import java.time.LocalDate
 import java.time.ZoneId
 
-sealed class DrawerEntry {
-    abstract val key: String
-    data class App(val app: LaunchableApp) : DrawerEntry() {
-        override val key: String get() = app.key
-    }
-    data class Letter(val letter: String) : DrawerEntry() {
-        override val key: String get() = "letter:$letter"
-    }
-}
-
 object Ranking {
     const val DAY_MS = 86_400_000L
-    const val DRAWER_PEEK_COUNT = 8
 
     fun startOfDay(now: Long = System.currentTimeMillis()): Long {
         val zone = ZoneId.systemDefault()
@@ -151,35 +140,17 @@ object Ranking {
         launches: Map<String, List<Long>>,
         hidden: Set<String> = emptySet(),
         now: Long = System.currentTimeMillis(),
-    ): List<DrawerEntry> {
+    ): List<LaunchableApp> {
         val visible = apps.filter { !it.isHome && it.packageName !in hidden }
-        val labeled = visible.map { it.packageName to it.label }
-        val peekOrder = orderDrawer(labeled, railPackages, launches, now, hidden)
-            .take(DRAWER_PEEK_COUNT)
-        val peekPkgs = peekOrder.toSet()
+        val order = orderDrawer(
+            labeled = visible.map { it.packageName to it.label },
+            rail = railPackages,
+            launches = launches,
+            now = now,
+            hide = hidden,
+        )
         val byPkg = visible.groupBy { it.packageName }
-        val out = ArrayList<DrawerEntry>(visible.size + 16)
-        for (pkg in peekOrder) {
-            byPkg[pkg].orEmpty().forEach { out += DrawerEntry.App(it) }
-        }
-        val rest = visible
-            .filter { it.packageName !in railPackages && it.packageName !in peekPkgs }
-            .sortedBy { it.label.lowercase() }
-        var lastLetter = ""
-        for (app in rest) {
-            val letter = drawerLetter(app.label)
-            if (letter != lastLetter) {
-                out += DrawerEntry.Letter(letter)
-                lastLetter = letter
-            }
-            out += DrawerEntry.App(app)
-        }
-        return out
-    }
-
-    fun drawerLetter(label: String): String {
-        val c = label.firstOrNull { it.isLetter() }?.uppercaseChar()
-        return c?.toString() ?: "#"
+        return order.flatMap { pkg -> byPkg[pkg].orEmpty() }
     }
 
     fun orderDrawer(
@@ -199,17 +170,6 @@ object Ranking {
                     score(launches[it.first].orEmpty(), now)
                 }.thenBy { it.second.lowercase() },
             )
-            .map { it.first }
-    }
-
-    fun orderDrawerAlpha(
-        labeled: List<Pair<String, String>>,
-        exclude: Set<String>,
-    ): List<String> {
-        return labeled
-            .filter { it.first !in exclude }
-            .distinctBy { it.first }
-            .sortedBy { it.second.lowercase() }
             .map { it.first }
     }
 

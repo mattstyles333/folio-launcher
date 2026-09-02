@@ -59,7 +59,7 @@ class RankingTest {
     }
 
     @Test
-    fun drawer_peekIsRecent_restIsAlpha() {
+    fun drawer_recentAndMostUsedFirst() {
         val now = noon
         val launches = mapOf(
             "com.chat" to listOf(now - 1_000),
@@ -73,32 +73,8 @@ class RankingTest {
             "com.zeta" to "Zeta",
             "com.beta" to "Beta",
         )
-        val peek = Ranking.orderDrawer(labeled, rail = setOf("com.rail"), launches, now)
-            .take(Ranking.DRAWER_PEEK_COUNT)
-        assertEquals(listOf("com.chat", "com.maps", "com.alpha", "com.beta", "com.zeta"), peek)
-        val rest = Ranking.orderDrawerAlpha(labeled, exclude = setOf("com.rail") + peek.toSet())
-        assertEquals(emptyList<String>(), rest)
-    }
-
-    @Test
-    fun drawer_alphaExcludesPeekAndRail() {
-        val labeled = (1..12).map { i -> "com.app$i" to "App $i" } +
-            listOf("com.rail" to "Phone", "com.zoom" to "Zoom")
-        val peek = listOf("com.app1", "com.app2", "com.app3", "com.app4",
-            "com.app5", "com.app6", "com.app7", "com.app8")
-        val rest = Ranking.orderDrawerAlpha(labeled, exclude = peek.toSet() + "com.rail")
-        assertEquals(listOf("com.app10", "com.app11", "com.app12", "com.app9", "com.zoom"), rest)
-        assertFalse(rest.contains("com.rail"))
-        peek.forEach { assertFalse(rest.contains(it)) }
-    }
-
-    @Test
-    fun drawerLetter_usesInitialOrHash() {
-        assertEquals("A", Ranking.drawerLetter("Alpha"))
-        assertEquals("G", Ranking.drawerLetter("gmail"))
-        assertEquals("C", Ranking.drawerLetter("10 Calendar"))
-        assertEquals("#", Ranking.drawerLetter("123"))
-        assertEquals("#", Ranking.drawerLetter(""))
+        val order = Ranking.orderDrawer(labeled, rail = setOf("com.rail"), launches, now)
+        assertEquals(listOf("com.chat", "com.maps", "com.alpha", "com.beta", "com.zeta"), order)
     }
 
     @Test

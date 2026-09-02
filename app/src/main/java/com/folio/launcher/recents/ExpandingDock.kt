@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -32,14 +31,12 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.folio.launcher.data.DrawerEntry
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.RailSlot
 import com.folio.launcher.home.Rail
@@ -57,7 +54,7 @@ fun ExpandingDock(
     pull: SheetPull,
     maxSheetPx: Float,
     rail: List<RailSlot>,
-    extras: List<DrawerEntry>,
+    extras: List<LaunchableApp>,
     iconSaturation: Float,
     onSettle: (Float) -> Unit,
     onLaunch: (LaunchableApp) -> Unit,
@@ -129,26 +126,13 @@ fun ExpandingDock(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(0.dp),
                     ) {
-                        items(
-                            extras,
-                            key = { it.key },
-                            span = { GridItemSpan(if (it is DrawerEntry.Letter) maxLineSpan else 1) },
-                            contentType = {
-                                when (it) {
-                                    is DrawerEntry.Letter -> "letter"
-                                    is DrawerEntry.App -> "app"
-                                }
-                            },
-                        ) { entry ->
-                            when (entry) {
-                                is DrawerEntry.App -> DrawerCell(
-                                    app = entry.app,
-                                    iconSaturation = iconSaturation,
-                                    onLaunch = onLaunch,
-                                    onHide = onHide,
-                                )
-                                is DrawerEntry.Letter -> DrawerLetter(entry.letter)
-                            }
+                        items(extras, key = { it.key }, contentType = { "app" }) { app ->
+                            DrawerCell(
+                                app = app,
+                                iconSaturation = iconSaturation,
+                                onLaunch = onLaunch,
+                                onHide = onHide,
+                            )
                         }
                     }
                 }
@@ -171,19 +155,6 @@ fun ExpandingDock(
             gridPlaceable.placeRelative(0, railPlaceable.height)
         }
     }
-}
-
-@Composable
-private fun DrawerLetter(letter: String) {
-    Text(
-        text = letter,
-        color = PrintInk.copy(alpha = 0.34f),
-        fontFamily = FontFamily.Serif,
-        fontSize = 13.sp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 4.dp, top = 10.dp, bottom = 4.dp),
-    )
 }
 
 @Composable
