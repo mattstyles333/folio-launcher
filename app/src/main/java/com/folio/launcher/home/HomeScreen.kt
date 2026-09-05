@@ -72,10 +72,8 @@ fun HomeScreen(
     idleEpoch: Int,
     launches: Map<String, List<Long>>,
     onLaunch: (LaunchableApp) -> Unit,
-    onDismissRecent: (String) -> Unit,
     onPin: (Int, LaunchableApp) -> Unit,
     onReorder: (Int, Int) -> Unit,
-    onCycleRinger: () -> Unit,
     onSetRinger: (RingerVisual) -> Unit,
     onOpenSettings: () -> Unit,
     onPickPhoto: () -> Unit,
@@ -274,7 +272,6 @@ fun HomeScreen(
         val namedLook = targetLook ?: look
         WallpaperLayer(
             photo = state.wallpaper,
-            blurred = state.blurredWallpaper,
             mode = look,
             accent = state.accent,
             parallax = parallax,
@@ -591,5 +588,3 @@ private fun RingerVisual.label(): String = when (this) {
     RingerVisual.Vibrate -> "Vibrate"
     RingerVisual.Silent -> "Silent"
 }
-
-

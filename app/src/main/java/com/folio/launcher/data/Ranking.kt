@@ -185,18 +185,4 @@ object Ranking {
             if (b.isEmpty()) a else (a + b).distinct().sorted()
         }
     }
-
-    fun relativeTime(then: Long, now: Long = System.currentTimeMillis()): String {
-        val d = (now - then).coerceAtLeast(0)
-        val m = d / 60_000
-        val h = d / 3_600_000
-        val days = d / DAY_MS
-        return when {
-            m < 1 -> "now"
-            m < 60 -> "${m}m"
-            h < 24 -> "${h}h"
-            days < 7 -> "${days}d"
-            else -> "${days / 7}w"
-        }
-    }
 }

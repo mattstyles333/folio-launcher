@@ -6,7 +6,6 @@ import android.graphics.Rect
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
@@ -103,19 +102,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
         }
         viewModelScope.launch {
-            combine(app.signals.charge, app.signals.nowPlaying) { charge, now -> charge to now }
-                .collect { (charge, now) ->
+            combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
+                .collect { (charge, playing) ->
                     extra.value = extra.value.copy(
                         charging = charge.charging,
                         charge = charge.fraction,
-                        nowPlaying = now.line,
-                        musicTitle = now.title,
-                        musicArtist = now.artist,
-                        musicPlaying = now.playing,
-                        musicArt = now.art?.asImageBitmap(),
-                        musicPositionMs = now.positionMs,
-                        musicDurationMs = now.durationMs,
-                        nowPlayingPackage = now.packageName,
+                        musicPlaying = playing,
                         hasNowPlayingAccess = app.signals.hasNowPlayingAccess(),
                     )
                 }
@@ -138,10 +130,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playPause(host: Context) {
         app.signals.playPause(host)
-    }
-
-    fun seekTrack(fraction: Float) {
-        app.signals.seek(fraction)
     }
 
     fun openPlayer(host: Context) {
@@ -238,15 +226,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun cycleRinger() {
-        val next = when (state.value.mode) {
-            RingerVisual.Sound -> RingerVisual.Vibrate
-            RingerVisual.Vibrate -> RingerVisual.Silent
-            RingerVisual.Silent -> RingerVisual.Sound
-        }
-        setRinger(next)
-    }
-
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {
         val ok = appsRepo.launch(app, bounds)
         if (ok) {
@@ -256,14 +235,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return ok
-    }
-
-    fun dismissRecent(packageName: String) {
-        viewModelScope.launch {
-            prefsStore.update {
-                it.copy(dismissedRecents = it.dismissedRecents + (packageName to System.currentTimeMillis()))
-            }
-        }
     }
 
     fun pin(slotIndex: Int, app: LaunchableApp) {
@@ -512,7 +483,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val accent = argb(loaded.accent)
-        wallpaperBits.value = WallpaperBits(loaded.photo, loaded.blurred, accent)
+        wallpaperBits.value = WallpaperBits(loaded.photo, accent)
         prefsStore.update { it.copy(accent = loaded.accent) }
     }
 
@@ -597,7 +568,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         wall: WallpaperBits?,
         extraState: ExtraState,
     ): HomeUiState {
-        val now = System.currentTimeMillis()
         val launches = Ranking.combinedLaunches(usage.launches, extraState.usageTimestamps)
 
         val lastUsed = HashMap<String, Long>()
@@ -618,15 +588,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .distinctBy { it.app.packageName }
             .take(20)
             .toList()
-
-        val recentsPkgs = recents.map { it.app.packageName }.toSet()
-        val reveal = apps
-            .filter { !it.isHome && it.packageName !in recentsPkgs && it.packageName !in prefs.hiddenPackages }
-            .sortedWith(
-                compareByDescending<LaunchableApp> {
-                    Ranking.score(launches[it.packageName].orEmpty(), now)
-                }.thenBy { it.label.lowercase() },
-            )
 
         val rail = (prefs.slots + List(4) { SlotPref() }).take(4).map { slot ->
             RailSlot(
@@ -660,11 +621,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             apps = apps,
             rail = rail,
             recents = recents,
-            reveal = reveal,
             mode = visual,
             showClock = prefs.showClock,
             wallpaper = wall?.photo,
-            blurredWallpaper = wall?.blurred,
             accent = wall?.accent ?: argb(prefs.accent),
             launches = launches,
             onboarding = onboarding,
@@ -681,13 +640,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             hasPreviousPrint = extraState.hasPreviousPrint,
             charging = extraState.charging,
             charge = extraState.charge,
-            nowPlaying = extraState.nowPlaying,
-            musicTitle = extraState.musicTitle,
-            musicArtist = extraState.musicArtist,
             musicPlaying = extraState.musicPlaying,
-            musicArt = extraState.musicArt,
-            musicPositionMs = extraState.musicPositionMs,
-            musicDurationMs = extraState.musicDurationMs,
             hasNowPlayingAccess = extraState.hasNowPlayingAccess,
             quote = quote?.text.orEmpty(),
             quoteAuthor = quote?.author.orEmpty(),
@@ -700,7 +653,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private data class WallpaperBits(
         val photo: ImageBitmap,
-        val blurred: ImageBitmap,
         val accent: Color,
     )
 
@@ -715,14 +667,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val hasPreviousPrint: Boolean = false,
         val charging: Boolean = false,
         val charge: Float = 0f,
-        val nowPlaying: String = "",
-        val musicTitle: String = "",
-        val musicArtist: String = "",
         val musicPlaying: Boolean = false,
-        val musicArt: ImageBitmap? = null,
-        val musicPositionMs: Long = 0L,
-        val musicDurationMs: Long = 0L,
-        val nowPlayingPackage: String = "",
         val hasNowPlayingAccess: Boolean = false,
     )
 

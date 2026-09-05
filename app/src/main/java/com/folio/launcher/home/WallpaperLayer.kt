@@ -59,7 +59,6 @@ data class GradeReveal(
 @Composable
 fun WallpaperLayer(
     photo: ImageBitmap?,
-    blurred: ImageBitmap?,
     mode: RingerVisual,
     accent: Color,
     parallax: ParallaxState? = null,
@@ -294,7 +293,7 @@ private fun GradedPrint(
                     colorFilter = filter,
                 )
             } else {
-                PhotoOrGradient(null, accent)
+                FallbackGradient(accent)
             }
         }
         Box(
@@ -326,39 +325,30 @@ private fun GradedPrint(
 }
 
 @Composable
-private fun PhotoOrGradient(photo: ImageBitmap?, accent: Color) {
-    if (photo != null) {
-        Image(
-            bitmap = photo,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
-    } else {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF141821),
-                            Color(0xFF0B0E14),
-                            Color(0xFF07080B),
-                        ),
+private fun FallbackGradient(accent: Color) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF141821),
+                        Color(0xFF0B0E14),
+                        Color(0xFF07080B),
                     ),
                 ),
-        )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.45f)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.22f), Color.Transparent),
-                    ),
+            ),
+    )
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.45f)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(accent.copy(alpha = 0.22f), Color.Transparent),
                 ),
-        )
-    }
+            ),
+    )
 }
 
 private fun saturationMatrix(amount: Float): ColorMatrix {

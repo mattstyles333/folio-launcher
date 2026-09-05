@@ -49,16 +49,6 @@ class RankingTest {
     }
 
     @Test
-    fun relativeTime_buckets() {
-        val now = noon
-        assertEquals("now", Ranking.relativeTime(now - 10_000, now))
-        assertEquals("3m", Ranking.relativeTime(now - 3 * 60_000, now))
-        assertEquals("2h", Ranking.relativeTime(now - 2 * 3_600_000, now))
-        assertEquals("3d", Ranking.relativeTime(now - 3 * Ranking.DAY_MS, now))
-        assertEquals("2w", Ranking.relativeTime(now - 14 * Ranking.DAY_MS, now))
-    }
-
-    @Test
     fun drawer_recentAndMostUsedFirst() {
         val now = noon
         val launches = mapOf(

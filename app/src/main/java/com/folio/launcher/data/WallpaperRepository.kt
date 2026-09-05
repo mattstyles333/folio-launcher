@@ -133,7 +133,6 @@ class WallpaperRepository(private val context: Context) {
         val image = photo.asImageBitmap()
         LoadedWallpaper(
             photo = image,
-            blurred = image,
             accent = accent,
         )
     }
@@ -189,7 +188,6 @@ class WallpaperRepository(private val context: Context) {
 
     data class LoadedWallpaper(
         val photo: ImageBitmap,
-        val blurred: ImageBitmap,
         val accent: Int,
     )
 

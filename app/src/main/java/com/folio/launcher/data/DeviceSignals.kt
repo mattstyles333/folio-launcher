@@ -6,9 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
-import android.graphics.Bitmap
 import android.media.AudioManager
-import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -16,7 +14,6 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,17 +23,6 @@ import kotlinx.coroutines.flow.asStateFlow
 data class ChargeState(
     val charging: Boolean = false,
     val fraction: Float = 0f,
-)
-
-data class NowPlaying(
-    val line: String = "",
-    val title: String = "",
-    val artist: String = "",
-    val playing: Boolean = false,
-    val packageName: String = "",
-    val art: Bitmap? = null,
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
 )
 
 class DeviceSignals(private val context: Context) {
@@ -49,18 +35,15 @@ class DeviceSignals(private val context: Context) {
     private val _charge = MutableStateFlow(ChargeState())
     val charge: StateFlow<ChargeState> = _charge.asStateFlow()
 
-    private val _now = MutableStateFlow(NowPlaying())
-    val nowPlaying: StateFlow<NowPlaying> = _now.asStateFlow()
+    private val _musicPlaying = MutableStateFlow(false)
+    val musicPlaying: StateFlow<Boolean> = _musicPlaying.asStateFlow()
 
     private val sessions = app.getSystemService(MediaSessionManager::class.java)
     private val audio = app.getSystemService(AudioManager::class.java)
     private val listenerName = ComponentName(app, FolioSessionListener::class.java)
     private val main = Handler(Looper.getMainLooper())
     private var controller: MediaController? = null
-    private var artKey: String = ""
-    private var artCache: Bitmap? = null
     private val controllerCallback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = publish()
         override fun onPlaybackStateChanged(state: PlaybackState?) = publish()
         override fun onSessionDestroyed() {
             bind(null)
@@ -112,13 +95,6 @@ class DeviceSignals(private val context: Context) {
         startSpotify(host)
     }
 
-    fun seek(fraction: Float) {
-        val dur = controller?.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
-        if (dur <= 0L) return
-        val ms = (dur * fraction.coerceIn(0f, 1f)).toLong()
-        controller?.transportControls?.seekTo(ms)
-    }
-
     fun openSession(host: Context = app): Boolean {
         val sent = controller?.sessionActivity?.let { pi ->
             runCatching {
@@ -128,7 +104,6 @@ class DeviceSignals(private val context: Context) {
         } ?: false
         if (sent) return true
         val pkg = controller?.packageName?.takeIf { it.isNotBlank() }
-            ?: _now.value.packageName.takeIf { it.isNotBlank() }
             ?: SPOTIFY_PACKAGE
         return launchPlayer(host, pkg)
     }
@@ -189,7 +164,6 @@ class DeviceSignals(private val context: Context) {
     private fun attachSessions() {
         if (!listenerEnabled()) {
             detachSessions()
-            _now.value = NowPlaying()
             return
         }
         if (!listeningSessions) {
@@ -207,7 +181,6 @@ class DeviceSignals(private val context: Context) {
             listeningSessions = false
         }
         bind(null)
-        _now.value = NowPlaying()
     }
 
     private fun refreshSessions() {
@@ -237,51 +210,7 @@ class DeviceSignals(private val context: Context) {
     }
 
     private fun publish() {
-        val c = controller
-        val state = c?.playbackState?.state
-        val meta = c?.metadata
-        val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE)?.trim().orEmpty()
-        val artist = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST)?.trim().orEmpty()
-        val line = when {
-            title.isNotEmpty() && artist.isNotEmpty() -> "$title  ·  $artist"
-            title.isNotEmpty() -> title
-            artist.isNotEmpty() -> artist
-            else -> ""
-        }
-        val active = playingOrPaused(state) && line.isNotEmpty()
-        val pkg = c?.packageName.orEmpty()
-        val art = if (active) albumArt(meta, "$pkg|$line") else {
-            artKey = ""
-            artCache = null
-            null
-        }
-        val duration = meta?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
-        val position = c?.playbackState?.let { playbackPosition(it) } ?: 0L
-        _now.value = NowPlaying(
-            line = if (active) line else "",
-            title = if (active) title else "",
-            artist = if (active) artist else "",
-            playing = state == PlaybackState.STATE_PLAYING,
-            packageName = if (active) pkg else "",
-            art = art,
-            positionMs = if (active) position else 0L,
-            durationMs = if (active) duration else 0L,
-        )
-    }
-
-    private fun playbackPosition(state: PlaybackState): Long {
-        if (state.state != PlaybackState.STATE_PLAYING) return state.position.coerceAtLeast(0L)
-        val delta = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
-        return (state.position + (delta * state.playbackSpeed).toLong()).coerceAtLeast(0L)
-    }
-
-    private fun albumArt(meta: MediaMetadata?, key: String): Bitmap? {
-        if (key == artKey) return artCache
-        artKey = key
-        val src = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
-        artCache = src?.let { Bitmap.createScaledBitmap(it, 720, 720, true) }
-        return artCache
+        _musicPlaying.value = controller?.playbackState?.state == PlaybackState.STATE_PLAYING
     }
 
     private fun readBattery(intent: Intent) {
