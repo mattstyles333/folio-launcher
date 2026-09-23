@@ -1,31 +1,58 @@
 package com.folio.launcher.data
 
+import android.annotation.SuppressLint
 import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
 import android.graphics.Canvas
+import android.graphics.ImageDecoder
+import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
+import android.hardware.display.DisplayManager
 import android.net.Uri
+import android.view.Display
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.size.Scale
+import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 class WallpaperRepository(private val context: Context) {
     val file: File get() = File(context.filesDir, "wallpaper.jpg")
     private val prevFile: File get() = File(context.filesDir, "wallpaper.prev.jpg")
     private val nextFile: File get() = File(context.filesDir, "wallpaper.next.jpg")
-    private val bing = BingClient()
+    private val bing = BingClient(File(context.filesDir, "bing-archive.json"))
 
     fun exists(): Boolean = file.exists() && file.length() > 0L
 
     fun prevExists(): Boolean = prevFile.exists() && prevFile.length() > 0L
 
+    /** Full panel in portrait (1080×2340 on the S23), independent of bars or window insets. */
+    fun panelSize(): Pair<Int, Int> {
+        val mode = runCatching {
+            context.getSystemService(DisplayManager::class.java)
+                .getDisplay(Display.DEFAULT_DISPLAY)
+                ?.mode
+        }.getOrNull()
+        val dm = context.resources.displayMetrics
+        val a = mode?.physicalWidth ?: dm.widthPixels
+        val b = mode?.physicalHeight ?: dm.heightPixels
+        return min(a, b).coerceAtLeast(64) to max(a, b).coerceAtLeast(64)
+    }
+
+    private fun printSize(): Pair<Int, Int> {
+        val (w, h) = panelSize()
+        return (w * PARALLAX_BLEED).roundToInt() to (h * PARALLAX_BLEED).roundToInt()
+    }
+
+    // Reading another app's wallpaper needs a permission Folio can't hold on 13+; both reads
+    // fail closed (false / no import) and onboarding hides "Use system" when that happens.
+    @SuppressLint("MissingPermission")
     fun systemWallpaperReadable(): Boolean {
         return try {
             val wm = WallpaperManager.getInstance(context)
@@ -35,29 +62,41 @@ class WallpaperRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Re-encodes the picked photo upright (EXIF applied) and no larger than the print needs,
+     * so a 50 MP original never has to be decoded at full size again.
+     */
     suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                nextFile.outputStream().use { input.copyTo(it) }
-            } ?: return@runCatching false
+            val (w, h) = printSize()
+            val source = ImageDecoder.createSource(context.contentResolver, uri)
+            val bmp = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val scale = coverScale(info.size.width, info.size.height, w, h)
+                if (scale < 1f) {
+                    decoder.setTargetSize(
+                        (info.size.width * scale).roundToInt().coerceAtLeast(1),
+                        (info.size.height * scale).roundToInt().coerceAtLeast(1),
+                    )
+                }
+            }
+            nextFile.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            bmp.recycle()
             if (nextFile.length() <= 0L) return@runCatching false
             promoteNext()
             true
         }.getOrDefault(false)
     }
 
-    suspend fun importBing(index: Int): BingShot? = withContext(Dispatchers.IO) {
+    /** Downloads a Bing print that isn't one of [avoid] (Bing identities). */
+    suspend fun importBing(avoid: Set<String>): BingShot? = withContext(Dispatchers.IO) {
         runCatching {
-            val dm = context.resources.displayMetrics
-            val image = bing.imageAt(
-                index = index,
-                width = dm.widthPixels,
-                height = dm.heightPixels,
-            ) ?: return@runCatching null
-            if (!bing.download(image, nextFile, dm.widthPixels, dm.heightPixels)) return@runCatching null
+            val (w, h) = panelSize()
+            val image = BingClient.pickNext(bing.archive(), avoid) ?: return@runCatching null
+            if (!bing.download(image, nextFile, w, h)) return@runCatching null
             promoteNext()
             BingShot(
-                index = index,
+                id = image.identity(),
                 caption = image.caption(),
                 credit = image.copyright,
             )
@@ -78,10 +117,7 @@ class WallpaperRepository(private val context: Context) {
         exists()
     }
 
-    suspend fun bingCount(): Int = withContext(Dispatchers.IO) {
-        runCatching { bing.archive().size }.getOrDefault(0)
-    }
-
+    @SuppressLint("MissingPermission")
     suspend fun importSystem(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val wm = WallpaperManager.getInstance(context)
@@ -121,69 +157,53 @@ class WallpaperRepository(private val context: Context) {
         }
     }
 
-    suspend fun load(targetW: Int, targetH: Int): LoadedWallpaper? = withContext(Dispatchers.IO) {
+    suspend fun load(): LoadedWallpaper? = withContext(Dispatchers.IO) {
         if (!exists()) return@withContext null
-        val bleed = 1.08f
-        val w = (targetW.coerceAtLeast(64) * bleed).toInt().coerceAtLeast(64)
-        val h = (targetH.coerceAtLeast(64) * bleed).toInt().coerceAtLeast(64)
-        val src = decodeFile(file, w, h) ?: decodeWithCoil(file, w, h) ?: return@withContext null
-        val cropped = cover(src, w, h)
-        val accent = AccentExtractor.extract(cropped)
-        val photo = cropped.copy(Bitmap.Config.ARGB_8888, false)
-        val image = photo.asImageBitmap()
+        val (w, h) = printSize()
+        val photo = decodeRegion(file, w, h) ?: decodeWhole(file, w, h) ?: return@withContext null
         LoadedWallpaper(
-            photo = image,
-            accent = accent,
+            photo = photo.asImageBitmap(),
+            accent = AccentExtractor.extract(photo),
         )
     }
 
-    private fun decodeFile(file: File, reqW: Int, reqH: Int): Bitmap? {
+    /** Decodes only the portrait cover window — a landscape UHD never lands in memory whole. */
+    private fun decodeRegion(file: File, w: Int, h: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / sample > reqW * 2 && bounds.outHeight / sample > reqH * 2) {
-            sample *= 2
-        }
+        val win = CoverCrop.window(bounds.outWidth, bounds.outHeight, w, h)
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = sample
+            inSampleSize = CoverCrop.sampleSize(win.width, win.height, w, h)
             inPreferredConfig = Bitmap.Config.ARGB_8888
-            inScaled = false
         }
-        return BitmapFactory.decodeFile(file.absolutePath, opts)
-    }
-
-    private suspend fun decodeWithCoil(file: File, w: Int, h: Int): Bitmap? {
-        return runCatching {
-            val request = ImageRequest.Builder(context)
-                .data(file)
-                .size(w, h)
-                .scale(Scale.FILL)
-                .allowHardware(false)
-                .bitmapConfig(Bitmap.Config.ARGB_8888)
-                .build()
-            val drawable = context.imageLoader.execute(request).drawable ?: return null
-            when (drawable) {
-                is BitmapDrawable -> drawable.bitmap
-                else -> {
-                    val bw = drawable.intrinsicWidth.coerceAtLeast(1)
-                    val bh = drawable.intrinsicHeight.coerceAtLeast(1)
-                    Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also { out ->
-                        val canvas = Canvas(out)
-                        drawable.setBounds(0, 0, bw, bh)
-                        drawable.draw(canvas)
-                    }
-                }
+        val region = runCatching {
+            val decoder = BitmapRegionDecoder.newInstance(file.absolutePath)
+            try {
+                decoder.decodeRegion(Rect(win.x, win.y, win.x + win.width, win.y + win.height), opts)
+            } finally {
+                decoder.recycle()
             }
-        }.getOrNull()
+        }.getOrNull() ?: return null
+        return scaleTo(region, w, h)
     }
 
-    private fun cover(src: Bitmap, w: Int, h: Int): Bitmap {
-        if (src.width == w && src.height == h) return src
+    /** Formats the region decoder can't read. */
+    private fun decodeWhole(file: File, w: Int, h: Int): Bitmap? = runCatching {
+        val src = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, _, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        }
         val win = CoverCrop.window(src.width, src.height, w, h)
         val cropped = Bitmap.createBitmap(src, win.x, win.y, win.width, win.height)
-        if (cropped.width == w && cropped.height == h) return cropped
-        return Bitmap.createScaledBitmap(cropped, w, h, true)
+        if (cropped !== src) src.recycle()
+        scaleTo(cropped, w, h)
+    }.getOrNull()
+
+    private fun scaleTo(src: Bitmap, w: Int, h: Int): Bitmap {
+        if (src.width == w && src.height == h) return src
+        val scaled = Bitmap.createScaledBitmap(src, w, h, true)
+        if (scaled !== src) src.recycle()
+        return scaled
     }
 
     data class LoadedWallpaper(
@@ -192,8 +212,19 @@ class WallpaperRepository(private val context: Context) {
     )
 
     data class BingShot(
-        val index: Int,
+        val id: String,
         val caption: String,
         val credit: String,
     )
+
+    companion object {
+        /** A little over the panel so parallax never shows an edge. */
+        private const val PARALLAX_BLEED = 1.08f
+
+        /** Scale (≤ 1 means shrink) at which [srcW]×[srcH] just covers [dstW]×[dstH]. */
+        internal fun coverScale(srcW: Int, srcH: Int, dstW: Int, dstH: Int): Float {
+            if (srcW <= 0 || srcH <= 0) return 1f
+            return max(dstW.toFloat() / srcW, dstH.toFloat() / srcH)
+        }
+    }
 }

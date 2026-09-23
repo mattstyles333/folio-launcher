@@ -58,6 +58,7 @@ fun ExpandingDock(
     iconSaturation: Float,
     onSettle: (Float) -> Unit,
     onLaunch: (LaunchableApp) -> Unit,
+    onAppInfo: (LaunchableApp) -> Unit,
     onPinRequest: (Int) -> Unit,
     onReorder: (Int, Int) -> Unit,
     onHide: (LaunchableApp) -> Unit,
@@ -131,6 +132,7 @@ fun ExpandingDock(
                                 app = app,
                                 iconSaturation = iconSaturation,
                                 onLaunch = onLaunch,
+                                onAppInfo = onAppInfo,
                                 onHide = onHide,
                             )
                         }
@@ -162,6 +164,7 @@ private fun DrawerCell(
     app: LaunchableApp,
     iconSaturation: Float,
     onLaunch: (LaunchableApp) -> Unit,
+    onAppInfo: (LaunchableApp) -> Unit,
     onHide: (LaunchableApp) -> Unit,
 ) {
     Column(
@@ -171,7 +174,10 @@ private fun DrawerCell(
             .height(DockRowHeight)
             .swipeAwayToHide(app.key) { onHide(app) }
             .pointerInput(app.key) {
-                detectTapGestures(onTap = { onLaunch(app) })
+                detectTapGestures(
+                    onTap = { onLaunch(app) },
+                    onLongPress = { onAppInfo(app) },
+                )
             }
             .padding(horizontal = 2.dp, vertical = 4.dp),
     ) {

@@ -14,8 +14,8 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.view.KeyEvent
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -220,10 +220,8 @@ class DeviceSignals(private val context: Context) {
         _charge.value = ChargeState(charging = plugged, fraction = (level / scale.toFloat()).coerceIn(0f, 1f))
     }
 
-    private fun listenerEnabled(): Boolean {
-        val raw = Settings.Secure.getString(app.contentResolver, "enabled_notification_listeners") ?: return false
-        return raw.split(":").any { it.contains(app.packageName, ignoreCase = true) }
-    }
+    private fun listenerEnabled(): Boolean =
+        app.packageName in NotificationManagerCompat.getEnabledListenerPackages(app)
 
     companion object {
         private const val SPOTIFY_PACKAGE = "com.spotify.music"

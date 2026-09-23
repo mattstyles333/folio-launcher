@@ -4,9 +4,9 @@ An Android home screen. Idle is a photograph. Apps are four icons, a Search pill
 
 No ads, no feed, no account. Sideload only.
 
-**Primary device:** Galaxy S23 (6.1", 1080×2340, 19.5:9, 120 Hz, centre punch-hole).
+**Primary device:** Galaxy S23 on Android 14+ (6.1", 1080×2340, 19.5:9, 120 Hz, centre punch-hole).
 
-Requires Android 12 (API 31)+.
+Requires Android 12 (API 31)+; built and tested for Android 14+ on the S23.
 
 ## Install
 
@@ -39,10 +39,10 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Triple-tap the print, or long-press Search | Ask Grok, ChatGPT, Gemini or Claude (Settings picks which) |
 | Swipe left on the print | Open the chosen AI app |
 | Swipe right on the print | Google Search |
-| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull further to scroll. Recent / most used first. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. |
+| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull further to scroll. Most used first. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. Long-press an icon for app info. |
 | Swipe down on the print | Notification shade |
 | Double-tap the print | Next Bing photograph + next quote |
-| Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer). Next grade develops from your finger. |
+| Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer; media stays on). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. Same oval when the battery is at 15% or below, even unplugged. |
 | Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens Spotify. |
@@ -64,10 +64,10 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 
 ## Build
 
-JDK 17, Android SDK 35.
+JDK 17, Android SDK 37 (compile) / 35 (target).
 
 ```bash
-./gradlew testDebugUnitTest assembleDebug assembleRelease
+./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease
 ```
 
 See `AGENTS.md` if you are a coding agent working in this tree.

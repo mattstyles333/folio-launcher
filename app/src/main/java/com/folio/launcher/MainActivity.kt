@@ -30,6 +30,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.home.HomeScreen
+import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.settings.SettingsScreen
 import com.folio.launcher.ui.FolioTheme
 import kotlinx.coroutines.flow.collectLatest
@@ -71,106 +72,18 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.StartActivityForResult(),
                 ) { viewModel.refreshSystemState() }
 
-                var accessWalk by remember { mutableIntStateOf(0) }
-
-                val mediaLauncher = rememberLauncherForActivityResult(
+                val accessLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
-                ) {
-                    viewModel.refreshSystemState()
-                    viewModel.skipAccess()
-                    accessWalk = 0
-                }
+                ) { viewModel.onAccessReturned() }
 
-                val usageLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult(),
-                ) {
-                    viewModel.refreshSystemState()
-                    if (accessWalk == 2) {
-                        if (state.hasNowPlayingAccess) {
-                            viewModel.skipAccess()
-                            accessWalk = 0
-                        } else {
-                            accessWalk = 3
-                            mediaLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                        }
-                    }
-                }
-
-                val dndLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.StartActivityForResult(),
-                ) {
-                    viewModel.onDndAccessReturned()
-                    viewModel.refreshSystemState()
-                    if (accessWalk == 1) {
-                        when {
-                            !state.hasUsageAccess -> {
-                                accessWalk = 2
-                                usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                            }
-                            !state.hasNowPlayingAccess -> {
-                                accessWalk = 3
-                                mediaLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                            }
-                            else -> {
-                                viewModel.skipAccess()
-                                accessWalk = 0
-                            }
-                        }
+                LaunchedEffect(Unit) {
+                    viewModel.accessRequests.collect { screen ->
+                        accessLauncher.launch(Intent(screen.settingsAction()))
                     }
                 }
 
                 LaunchedEffect(state.needsDndAccess) {
                     if (state.needsDndAccess) viewModel.consumeDndRequest()
-                }
-
-                LaunchedEffect(
-                    state.hasDndAccess,
-                    state.hasUsageAccess,
-                    state.hasNowPlayingAccess,
-                    state.onboarding,
-                ) {
-                    if (state.onboarding == null) accessWalk = 0
-                    if (state.onboarding != null &&
-                        state.hasDndAccess &&
-                        state.hasUsageAccess &&
-                        state.hasNowPlayingAccess
-                    ) {
-                        viewModel.skipAccess()
-                        accessWalk = 0
-                    }
-                }
-
-                fun openDndAccess() {
-                    dndLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
-                }
-
-                fun openUsageAccess() {
-                    usageLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                }
-
-                fun openMediaAccess() {
-                    mediaLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                }
-
-                fun startAccessWalk() {
-                    when {
-                        state.hasDndAccess && state.hasUsageAccess && state.hasNowPlayingAccess -> {
-                            viewModel.skipAccess()
-                            accessWalk = 0
-                        }
-                        !state.hasDndAccess -> {
-                            accessWalk = 1
-                            openDndAccess()
-                        }
-                        !state.hasUsageAccess -> {
-                            accessWalk = 2
-                            openUsageAccess()
-                        }
-                        else -> {
-                            accessWalk = 3
-                            openMediaAccess()
-                        }
-                    }
                 }
 
                 fun openPhotoPicker() {
@@ -196,6 +109,7 @@ class MainActivity : ComponentActivity() {
                             idleEpoch = idleEpoch,
                             launches = state.launches,
                             onLaunch = { viewModel.launch(it) },
+                            onAppInfo = { viewModel.openAppInfo(it) },
                             onPin = { slot, app -> viewModel.pin(slot, app) },
                             onReorder = { from, to -> viewModel.reorderRail(from, to) },
                             onSetRinger = { viewModel.setRinger(it) },
@@ -205,15 +119,15 @@ class MainActivity : ComponentActivity() {
                             onSkipRole = { viewModel.skipRole() },
                             onSkipWallpaper = { viewModel.skipWallpaper() },
                             onUseSystemWallpaper = { viewModel.useSystemWallpaper() },
-                            onOpenDnd = { startAccessWalk() },
+                            onOpenDnd = { viewModel.startAccessWalk() },
                             onSkipAccess = { viewModel.skipAccess() },
                             onSilentHint = {
                                 viewModel.dismissSilentHint()
-                                openDndAccess()
+                                viewModel.openAccess(AccessScreen.Dnd)
                             },
                             onMediaHint = {
                                 viewModel.dismissMediaHint()
-                                openMediaAccess()
+                                viewModel.openAccess(AccessScreen.Media)
                             },
                             onNextBing = { viewModel.nextBingPrint() },
                             onPreviousTrack = { viewModel.previousTrack() },
@@ -242,6 +156,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun AccessScreen.settingsAction(): String = when (this) {
+        AccessScreen.Dnd -> Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
+        AccessScreen.Usage -> Settings.ACTION_USAGE_ACCESS_SETTINGS
+        AccessScreen.Media -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
     }
 
     override fun onNewIntent(intent: Intent) {

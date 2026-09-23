@@ -147,7 +147,7 @@ fun Onboarding(
                             PrimaryButton(
                                 when {
                                     all -> "Continue"
-                                    !hasDndAccess -> "Let Silent actually mute"
+                                    !hasDndAccess -> "Let Silent mute the ringer"
                                     !hasUsageAccess -> "Rank apps from how you use them"
                                     !hasNowPlayingAccess -> "Show Spotify on the print"
                                     else -> "Continue"
@@ -180,7 +180,7 @@ fun Onboarding(
 }
 
 private fun accessStatus(dnd: Boolean, usage: Boolean, media: Boolean): String {
-    val mute = if (dnd) "Silent can mute" else "Silent needs Do Not Disturb"
+    val mute = if (dnd) "Silent mutes the ringer" else "Silent needs Do Not Disturb"
     val rank = if (usage) "Ranking uses the last 30 days" else "Ranking starts from Folio until usage access"
     val spotify = if (media) "Spotify can sit on the print" else "Spotify needs notification access"
     return "$mute. $rank. $spotify."

@@ -37,13 +37,34 @@ data class Prefs(
     val dismissedRecents: Map<String, Long> = emptyMap(),
     val silentHint: Boolean = false,
     val mediaHintDismissed: Boolean = false,
+    /** Bing identity (OHR name) of the current print; empty when it's a local photo. */
+    val bingId: String = "",
+    val bingPrevId: String = "",
+    val bingDay: Int = -1,
+    /** Old installs stored archive list positions. Only [migrated] reads them. */
     val bingIndex: Int = -1,
     val bingPrevIndex: Int = -1,
-    val bingDay: Int = -1,
     val quoteSalt: Int = 0,
     val hiddenPackages: List<String> = emptyList(),
     val aiPackage: String = "",
-)
+) {
+    val isBingPrint: Boolean get() = bingId.isNotEmpty()
+
+    /** Old installs stored a position in the day's archive; keep "this is a Bing print" across the upgrade. */
+    fun migrated(): Prefs {
+        if (bingIndex < 0 && bingPrevIndex < 0) return this
+        return copy(
+            bingId = bingId.ifEmpty { if (bingIndex >= 0) LEGACY_BING_ID else "" },
+            bingPrevId = bingPrevId.ifEmpty { if (bingPrevIndex >= 0) LEGACY_BING_ID else "" },
+            bingIndex = -1,
+            bingPrevIndex = -1,
+        )
+    }
+
+    companion object {
+        const val LEGACY_BING_ID = "legacy"
+    }
+}
 
 class PrefsStore(context: Context) {
     private val ds = context.applicationContext.folioPrefs
@@ -54,13 +75,13 @@ class PrefsStore(context: Context) {
 
     val data: Flow<Prefs> = ds.data.map { prefs ->
         val raw = prefs[KEY] ?: return@map Prefs()
-        runCatching { json.decodeFromString<Prefs>(raw) }.getOrDefault(Prefs())
+        runCatching { json.decodeFromString<Prefs>(raw).migrated() }.getOrDefault(Prefs())
     }.distinctUntilChanged()
 
     suspend fun update(transform: (Prefs) -> Prefs) {
         ds.edit { prefs ->
             val current = prefs[KEY]?.let {
-                runCatching { json.decodeFromString<Prefs>(it) }.getOrNull()
+                runCatching { json.decodeFromString<Prefs>(it).migrated() }.getOrNull()
             } ?: Prefs()
             val next = transform(current).let { p ->
                 p.copy(slots = (p.slots + List(4) { SlotPref() }).take(4))

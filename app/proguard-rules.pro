@@ -1,5 +1,6 @@
-# Sideload release currently ships without minify. These keeps are here
-# so enabling R8 later does not strip Compose / serialization.
+# R8 is on for release. kotlinx.serialization ships its own consumer rules, and every
+# decode here uses the compile-time serializer (decodeFromString<T>), so nothing is found
+# by reflection. These keeps are belt and braces for the generated serializers.
 
 -keepattributes *Annotation*, InnerClasses, Signature
 -keepclassmembers class ** {

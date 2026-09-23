@@ -1,0 +1,4 @@
+# Folio is small and all of it is on the idle path: have ART precompile it at install.
+# AGP rewrites these through the R8 mapping for release.
+HSPLcom/folio/launcher/**->**(**)**
+Lcom/folio/launcher/**;

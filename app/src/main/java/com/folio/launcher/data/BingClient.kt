@@ -5,75 +5,67 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
 import java.util.Locale
+import kotlin.random.Random
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-class BingClient {
+/**
+ * Bing's homepage archive. One sweep per day per market (offsets 0 and 7 — Bing ignores
+ * anything past idx=7), requests in parallel, and the list is kept on disk so a killed
+ * process doesn't refetch it.
+ */
+class BingClient(private val cacheFile: File? = null) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val lock = Mutex()
 
     @Volatile
-    private var cache: List<BingImage>? = null
-    @Volatile
-    private var cacheKey: String? = null
+    private var cache: BingArchiveCache? = null
 
-    fun imageAt(
-        index: Int,
-        locale: Locale = Locale.getDefault(),
-        width: Int = 1080,
-        height: Int = 2340,
-    ): BingImage? {
-        val images = archive(locale, width, height)
-        if (images.isEmpty()) return null
-        val i = index.floorMod(images.size)
-        return images[i]
+    suspend fun archive(locale: Locale = Locale.getDefault()): List<BingImage> = lock.withLock {
+        val key = cacheKey(LocalDate.now(), market(locale))
+        cache?.let { if (it.key == key) return@withLock it.images }
+        readDisk()?.let { if (it.key == key && it.images.isNotEmpty()) { cache = it; return@withLock it.images } }
+        val images = fetchArchive(locale)
+        if (images.isNotEmpty()) {
+            val fresh = BingArchiveCache(key, images)
+            cache = fresh
+            writeDisk(fresh)
+        } else {
+            // Offline: yesterday's list still points at valid images.
+            (cache ?: readDisk())?.let { return@withLock it.images }
+        }
+        images
     }
 
-    fun archive(
-        locale: Locale = Locale.getDefault(),
-        width: Int = 1080,
-        height: Int = 2340,
-    ): List<BingImage> {
-        val w = width.coerceIn(720, 1440)
-        val h = height.coerceIn(1280, 3200)
-        val key = LocalDate.now().toString() + market(locale) + "${w}x$h"
-        cache?.let { if (cacheKey == key) return it }
-        val mkt = market(locale)
-        val markets = linkedSetOf(mkt, "en-GB", "en-US")
-        val seen = LinkedHashSet<String>()
-        val images = ArrayList<BingImage>(32)
-        for (market in markets) {
-            for (idx in OFFSETS) {
-                val endpoint =
-                    "https://www.bing.com/HPImageArchive.aspx?format=js&idx=$idx&n=8&mkt=$market&uhd=1&uhdwidth=$w&uhdheight=$h"
-                val body = getBytes(endpoint, accept = "application/json") ?: continue
-                val parsed = runCatching {
-                    json.decodeFromString<BingArchive>(body.decodeToString())
-                }.getOrNull() ?: continue
-                for (image in parsed.images) {
-                    if (image.url.isBlank() && image.urlbase.isBlank()) continue
-                    if (seen.add(image.identity())) images += image
+    private suspend fun fetchArchive(locale: Locale): List<BingImage> = coroutineScope {
+        val markets = linkedSetOf(market(locale), "en-GB", "en-US")
+        val pages = markets.flatMap { market -> OFFSETS.map { idx -> archiveUrl(market, idx) } }
+            .map { endpoint ->
+                async(Dispatchers.IO) {
+                    val body = getBytes(endpoint, accept = "application/json") ?: return@async emptyList()
+                    runCatching { json.decodeFromString<BingArchive>(body.decodeToString()).images }
+                        .getOrDefault(emptyList())
                 }
             }
-        }
-        if (images.isNotEmpty()) {
-            cache = images
-            cacheKey = key
-        }
-        return images
+            .awaitAll()
+        dedupe(pages.flatten())
     }
 
-    fun download(image: BingImage, dest: File, width: Int = 1080, height: Int = 2340): Boolean {
+    fun download(image: BingImage, dest: File, width: Int, height: Int): Boolean {
         val tmp = File(dest.parentFile, "wallpaper.tmp")
         for (url in image.candidateUrls(width, height)) {
-            val bytes = getBytes(url, accept = "image/*") ?: continue
-            if (bytes.size < 80_000) continue
+            if (!getToFile(url, tmp)) continue
+            if (tmp.length() < MIN_IMAGE_BYTES) continue
             runCatching {
-                tmp.outputStream().use { it.write(bytes) }
                 if (dest.exists()) dest.delete()
                 if (!tmp.renameTo(dest)) {
-                    tmp.inputStream().use { input ->
-                        dest.outputStream().use { input.copyTo(it) }
-                    }
+                    tmp.copyTo(dest, overwrite = true)
                     tmp.delete()
                 }
             }.onSuccess {
@@ -84,18 +76,38 @@ class BingClient {
         return false
     }
 
+    private fun readDisk(): BingArchiveCache? {
+        val file = cacheFile ?: return null
+        if (!file.isFile) return null
+        return runCatching { json.decodeFromString<BingArchiveCache>(file.readText()) }.getOrNull()
+    }
+
+    private fun writeDisk(value: BingArchiveCache) {
+        val file = cacheFile ?: return
+        runCatching {
+            val tmp = File(file.parentFile, file.name + ".tmp")
+            tmp.writeText(json.encodeToString(BingArchiveCache.serializer(), value))
+            if (!tmp.renameTo(file)) {
+                tmp.copyTo(file, overwrite = true)
+                tmp.delete()
+            }
+        }
+    }
+
+    private fun open(url: String, accept: String): HttpURLConnection =
+        (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 25_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", UA)
+            setRequestProperty("Accept", accept)
+        }
+
     private fun getBytes(url: String, accept: String): ByteArray? {
         return runCatching {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 10_000
-                readTimeout = 25_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", UA)
-                setRequestProperty("Accept", accept)
-            }
+            val conn = open(url, accept)
             try {
-                val code = conn.responseCode
-                if (code !in 200..299) return null
+                if (conn.responseCode !in 200..299) return null
                 conn.inputStream.use { it.readBytes() }
             } finally {
                 conn.disconnect()
@@ -103,43 +115,63 @@ class BingClient {
         }.getOrNull()
     }
 
-    private fun market(locale: Locale): String {
-        val lang = locale.language.ifBlank { "en" }
-        val region = locale.country.ifBlank { "US" }
-        return "$lang-$region"
+    /** Streams straight to disk — a UHD original is several MB. */
+    private fun getToFile(url: String, out: File): Boolean {
+        return runCatching {
+            val conn = open(url, accept = "image/*")
+            try {
+                if (conn.responseCode !in 200..299) return false
+                conn.inputStream.use { input -> out.outputStream().use { input.copyTo(it) } }
+                true
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrDefault(false)
     }
 
     companion object {
-        private val OFFSETS = intArrayOf(0, 8, 16)
+        /** Bing serves the same eight images for every idx >= 7. */
+        internal val OFFSETS = intArrayOf(0, 7)
+        private const val MIN_IMAGE_BYTES = 80_000L
         private const val UA =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0.0.0 Mobile Safari/537.36"
 
-        fun nextIndex(
-            current: Int,
-            count: Int,
-            random: kotlin.random.Random = kotlin.random.Random.Default,
-            alsoAvoid: Int = -1,
-        ): Int {
-            if (count <= 1) return 0
-            if (current < 0 && alsoAvoid < 0) return random.nextInt(count)
-            val banned = HashSet<Int>(2)
-            if (current >= 0) banned += current.floorMod(count)
-            if (alsoAvoid >= 0) banned += alsoAvoid.floorMod(count)
-            if (banned.size >= count) {
-                return if (current >= 0) (current.floorMod(count) + 1) % count else 0
+        internal fun archiveUrl(market: String, idx: Int): String =
+            "https://www.bing.com/HPImageArchive.aspx?format=js&idx=$idx&n=8&mkt=$market&uhd=1"
+
+        internal fun cacheKey(day: LocalDate, market: String): String = "$day/$market"
+
+        internal fun market(locale: Locale): String {
+            val lang = locale.language.ifBlank { "en" }
+            val region = locale.country.ifBlank { "US" }
+            return "$lang-$region"
+        }
+
+        internal fun dedupe(images: List<BingImage>): List<BingImage> {
+            val seen = HashSet<String>()
+            return images.filter { image ->
+                (image.url.isNotBlank() || image.urlbase.isNotBlank()) && seen.add(image.identity())
             }
-            var next = random.nextInt(count)
-            var guard = 0
-            while (next in banned && guard++ < 12) {
-                next = random.nextInt(count)
-            }
-            if (next in banned) {
-                next = (0 until count).first { it !in banned }
-            }
-            return next
+        }
+
+        /** A random print that isn't the current or previous one (by Bing identity, not list position). */
+        fun pickNext(
+            images: List<BingImage>,
+            avoid: Set<String>,
+            random: Random = Random.Default,
+        ): BingImage? {
+            if (images.isEmpty()) return null
+            val fresh = images.filter { it.identity() !in avoid }
+            return (fresh.ifEmpty { images }).random(random)
         }
     }
 }
+
+@Serializable
+internal data class BingArchiveCache(
+    val key: String,
+    val images: List<BingImage>,
+)
 
 @Serializable
 data class BingArchive(
@@ -204,10 +236,4 @@ data class BingImage(
         private val WIDTH = Regex("([?&]w=)\\d+")
         private val HEIGHT = Regex("([?&]h=)\\d+")
     }
-}
-
-private fun Int.floorMod(m: Int): Int {
-    if (m <= 0) return 0
-    val r = this % m
-    return if (r < 0) r + m else r
 }

@@ -19,4 +19,14 @@ class CoverCropTest {
         val win = CoverCrop.window(1080, 2340, 1080, 2340)
         assertEquals(CoverWindow(0, 0, 1080, 2340), win)
     }
+
+    @Test
+    fun sampleSize_neverDropsBelowTarget() {
+        // UHD strip is shorter than the panel: decode at full size.
+        assertEquals(1, CoverCrop.sampleSize(1000, 2160, 1166, 2527))
+        // A 50 MP phone photo halves twice and still covers the panel.
+        assertEquals(2, CoverCrop.sampleSize(3000, 6500, 1166, 2527))
+        assertEquals(4, CoverCrop.sampleSize(4800, 10400, 1166, 2527))
+        assertEquals(1, CoverCrop.sampleSize(0, 0, 1166, 2527))
+    }
 }

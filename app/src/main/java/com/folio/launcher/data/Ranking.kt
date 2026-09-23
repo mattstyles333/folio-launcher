@@ -8,7 +8,8 @@ object Ranking {
 
     fun startOfDay(now: Long = System.currentTimeMillis()): Long {
         val zone = ZoneId.systemDefault()
-        return LocalDate.ofInstant(java.time.Instant.ofEpochMilli(now), zone)
+        // LocalDate.ofInstant is API 34; minSdk is 31.
+        return java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
             .atStartOfDay(zone)
             .toInstant()
             .toEpochMilli()
@@ -28,7 +29,7 @@ object Ranking {
                 if (t >= today) usedToday = true
             }
         }
-        return opens7 * 4 + opens30 + if (usedToday) 8 else 0
+        return opens7 * 4 + opens30 + if (usedToday) 2 else 0
     }
 
     fun isEligible(
@@ -69,7 +70,6 @@ object Ranking {
     fun suggest(
         apps: List<LaunchableApp>,
         rail: List<LaunchableApp>,
-        recents: List<LaunchableApp>,
         launches: Map<String, List<Long>>,
         limit: Int = 16,
         now: Long = System.currentTimeMillis(),
@@ -81,9 +81,9 @@ object Ranking {
             if (seen.add(app.key)) out += app
         }
         rail.forEach(::take)
-        recents.forEach(::take)
         apps.sortedWith(
             compareByDescending<LaunchableApp> { score(launches[it.packageName].orEmpty(), now) }
+                .thenByDescending { launches[it.packageName].orEmpty().maxOrNull() ?: 0L }
                 .thenBy { it.label.lowercase() },
         ).forEach(::take)
         return out
@@ -165,9 +165,9 @@ object Ranking {
             .distinctBy { it.first }
             .sortedWith(
                 compareByDescending<Pair<String, String>> {
-                    launches[it.first].orEmpty().maxOrNull() ?: 0L
-                }.thenByDescending {
                     score(launches[it.first].orEmpty(), now)
+                }.thenByDescending {
+                    launches[it.first].orEmpty().maxOrNull() ?: 0L
                 }.thenBy { it.second.lowercase() },
             )
             .map { it.first }
@@ -185,4 +185,44 @@ object Ranking {
             if (b.isEmpty()) a else (a + b).distinct().sorted()
         }
     }
+
+    const val RAIL_SLOTS = 4
+
+    /** Pads or trims saved slots to exactly [RAIL_SLOTS]. */
+    fun railSlots(saved: List<SlotPref>): List<SlotPref> =
+        (saved + List(RAIL_SLOTS) { SlotPref() }).take(RAIL_SLOTS)
+
+    /**
+     * Pins that are still installed stay in their slot; every other slot takes the next
+     * best-ranked app not already on the rail. [resolveKey] maps a slot to an installed
+     * app's key, or null if it's gone.
+     */
+    fun fillRail(
+        current: List<SlotPref>,
+        ranked: List<SlotPref>,
+        resolveKey: (SlotPref) -> String?,
+    ): List<SlotPref> {
+        val slots = railSlots(current)
+        val used = HashSet<String>()
+        val next = MutableList(RAIL_SLOTS) { SlotPref() }
+        for (i in slots.indices) {
+            val slot = slots[i]
+            if (!slot.pinned || slot.packageName == null) continue
+            val key = resolveKey(slot) ?: continue
+            next[i] = slot
+            used += key
+        }
+        var idx = 0
+        for (i in next.indices) {
+            if (next[i].pinned) continue
+            while (idx < ranked.size && slotKey(ranked[idx]) in used) idx++
+            val pick = ranked.getOrNull(idx) ?: continue
+            next[i] = pick.copy(pinned = false)
+            used += slotKey(pick)
+            idx++
+        }
+        return next
+    }
+
+    private fun slotKey(slot: SlotPref) = "${slot.packageName}/${slot.activityName}"
 }

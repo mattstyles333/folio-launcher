@@ -72,6 +72,7 @@ fun HomeScreen(
     idleEpoch: Int,
     launches: Map<String, List<Long>>,
     onLaunch: (LaunchableApp) -> Unit,
+    onAppInfo: (LaunchableApp) -> Unit,
     onPin: (Int, LaunchableApp) -> Unit,
     onReorder: (Int, Int) -> Unit,
     onSetRinger: (RingerVisual) -> Unit,
@@ -384,6 +385,10 @@ fun HomeScreen(
                     searchOpen = false
                     collapse()
                 },
+                onAppInfo = { app ->
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    onAppInfo(app)
+                },
                 onPinRequest = { pinSlot = it },
                 onReorder = onReorder,
                 onHide = { app ->
@@ -431,12 +436,11 @@ fun HomeScreen(
             }
         }
 
-        val results = remember(query, state.apps, launches, state.rail, state.recents, state.hiddenPackages) {
+        val results = remember(query, state.apps, launches, state.rail, state.hiddenPackages) {
             if (query.isBlank()) {
                 Ranking.suggest(
                     apps = state.apps.filter { it.packageName !in state.hiddenPackages },
                     rail = state.rail.mapNotNull { it.app },
-                    recents = state.recents.map { it.app },
                     launches = launches,
                 )
             } else {
@@ -454,6 +458,10 @@ fun HomeScreen(
                 onLaunch(it)
                 searchOpen = false
                 query = ""
+            },
+            onAppInfo = { app ->
+                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                onAppInfo(app)
             },
             onDismiss = {
                 searchOpen = false

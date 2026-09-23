@@ -17,8 +17,8 @@ class RankingTest {
         val fortyDays = noon - 40 * Ranking.DAY_MS
         val score = Ranking.score(listOf(today, sixDays, twentyDays, fortyDays), noon)
         // today + 6d count as 7d and 30d; 20d is 30d only; 40d ignored
-        // opens7=2 *4 =8, opens30=3, usedToday=8 → 19
-        assertEquals(19, score)
+        // opens7=2 *4 =8, opens30=3, usedToday=2 → 13
+        assertEquals(13, score)
     }
 
     @Test
@@ -65,6 +65,25 @@ class RankingTest {
         )
         val order = Ranking.orderDrawer(labeled, rail = setOf("com.rail"), launches, now)
         assertEquals(listOf("com.chat", "com.maps", "com.alpha", "com.beta", "com.zeta"), order)
+    }
+
+    @Test
+    fun drawer_habitBeatsOneOffToday() {
+        val now = noon
+        val week = List(5) { i -> now - (i + 1) * Ranking.DAY_MS }
+        val launches = mapOf(
+            "com.maps" to week,
+            "com.bank" to listOf(now),
+        )
+        val labeled = listOf(
+            "com.bank" to "Bank",
+            "com.maps" to "Maps",
+        )
+        val order = Ranking.orderDrawer(labeled, rail = emptySet(), launches, now)
+        assertEquals(listOf("com.maps", "com.bank"), order)
+        assertTrue(
+            Ranking.score(week, now) > Ranking.score(listOf(now), now),
+        )
     }
 
     @Test
@@ -135,5 +154,36 @@ class RankingTest {
         val merged = Ranking.combinedLaunches(local, extra)
         assertEquals(listOf(1L, 2L, 3L), merged["a"])
         assertEquals(listOf(9L), merged["b"])
+    }
+
+    private fun slot(pkg: String, pinned: Boolean = false) = SlotPref(pkg, "$pkg.Main", pinned)
+
+    @Test
+    fun fillRail_keepsPinsInPlaceAndFillsTheRestByRank() {
+        val installed = setOf("a", "b", "c", "d", "e", "pin")
+        val next = Ranking.fillRail(
+            current = listOf(SlotPref(), slot("pin", pinned = true), slot("old"), SlotPref()),
+            ranked = listOf("pin", "a", "b", "c").map { slot(it) },
+            resolveKey = { s -> s.packageName?.takeIf { it in installed }?.let { "$it/$it.Main" } },
+        )
+        assertEquals(listOf("a", "pin", "b", "c"), next.map { it.packageName })
+        assertEquals(listOf(false, true, false, false), next.map { it.pinned })
+    }
+
+    @Test
+    fun fillRail_dropsUninstalledPins() {
+        val next = Ranking.fillRail(
+            current = listOf(slot("gone", pinned = true)),
+            ranked = listOf(slot("a")),
+            resolveKey = { s -> s.packageName?.takeIf { it != "gone" }?.let { "$it/$it.Main" } },
+        )
+        assertEquals(listOf("a", null, null, null), next.map { it.packageName })
+        assertFalse(next.any { it.pinned })
+    }
+
+    @Test
+    fun railSlots_alwaysFour() {
+        assertEquals(4, Ranking.railSlots(emptyList()).size)
+        assertEquals(4, Ranking.railSlots(List(6) { slot("x$it") }).size)
     }
 }

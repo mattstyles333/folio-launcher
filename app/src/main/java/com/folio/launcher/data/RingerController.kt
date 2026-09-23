@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import android.annotation.SuppressLint
 import android.app.NotificationManager
 import android.app.role.RoleManager
 import android.content.BroadcastReceiver
@@ -28,6 +29,7 @@ class RingerController(private val context: Context) {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
+            restoreUserPolicyIfIdle()
             val sys = readSystem()
             if (overrideVisual != null && sys != overrideVisual) return
             overrideVisual = null
@@ -55,6 +57,7 @@ class RingerController(private val context: Context) {
     }
 
     fun refresh() {
+        restoreUserPolicyIfIdle()
         if (overrideVisual == null) {
             _visual.value = readSystem()
         } else {
@@ -152,10 +155,46 @@ class RingerController(private val context: Context) {
         if (ringVolume() == 0) setRingVolume(target)
     }
 
-    private fun clearDnd() {
-        if (hasPolicyAccess()) {
-            runCatching { notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL) }
+    private val saved = context.getSharedPreferences("folio_dnd", Context.MODE_PRIVATE)
+
+    /** The user's own DND policy, stashed while Folio's Silent owns DND. Survives process death. */
+    private fun loadSavedPolicy(): SavedDndPolicy? =
+        SavedDndPolicy.decode(saved.getString(KEY_SAVED_POLICY, null))
+
+    // commit(), not apply(): the stash must be on disk before the live policy is overwritten.
+    @SuppressLint("ApplySharedPref")
+    private fun storeSavedPolicy(policy: SavedDndPolicy?) {
+        saved.edit().apply {
+            if (policy == null) remove(KEY_SAVED_POLICY) else putString(KEY_SAVED_POLICY, policy.encode())
+        }.commit()
+    }
+
+    /** Hand DND back to the user once Folio's Silent is no longer in force. */
+    private fun restoreUserPolicyIfIdle() {
+        val stash = loadSavedPolicy() ?: return
+        if (!hasPolicyAccess()) return
+        if (notifications.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL) return
+        runCatching {
+            val current = notifications.notificationPolicy
+            if (SavedDndPolicy.isFolioSilent(current.priorityCategories)) {
+                notifications.notificationPolicy = stash.toPolicy()
+            }
         }
+        storeSavedPolicy(null)
+    }
+
+    /**
+     * Leaving Silent. Any DND ends here anyway: the platform exits DND as soon as an app sets
+     * the ringer to normal or vibrate. What matters is handing back the user's own policy.
+     */
+    private fun clearDnd() {
+        if (!hasPolicyAccess()) return
+        val stash = loadSavedPolicy()
+        runCatching {
+            stash?.let { notifications.notificationPolicy = it.toPolicy() }
+            notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+        }
+        storeSavedPolicy(null)
     }
 
     private fun setMode(mode: Int): Boolean {
@@ -166,29 +205,77 @@ class RingerController(private val context: Context) {
     }
 
     private fun trySilent(): Boolean {
-        if (hasPolicyAccess()) {
-            setMode(AudioManager.RINGER_MODE_SILENT)
-            runCatching { notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE) }
-            return readSystem() == RingerVisual.Silent
+        setMode(AudioManager.RINGER_MODE_SILENT)
+        if (!hasPolicyAccess()) {
+            return audio.ringerMode == AudioManager.RINGER_MODE_SILENT
         }
-        return setMode(AudioManager.RINGER_MODE_SILENT) &&
-            audio.ringerMode == AudioManager.RINGER_MODE_SILENT
+        runCatching {
+            val current = notifications.notificationPolicy
+            val stash = loadSavedPolicy() ?: SavedDndPolicy.from(current).also {
+                // Persist before touching the policy so a kill mid-Silent can still restore it.
+                storeSavedPolicy(it)
+            }
+            // Total silence (FILTER_NONE) ducks STREAM_MUSIC on One UI.
+            // Priority DND with media + alarms keeps Spotify, kills calls.
+            notifications.notificationPolicy = silentMediaPolicy(stash)
+            notifications.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+        }
+        return readSystem() == RingerVisual.Silent
     }
 
     fun hasPolicyAccess(): Boolean = notifications.isNotificationPolicyAccessGranted
 
     fun readSystem(): RingerVisual {
-        if (notifications.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE) {
-            return RingerVisual.Silent
-        }
-        return when (audio.ringerMode) {
-            AudioManager.RINGER_MODE_SILENT -> RingerVisual.Silent
-            AudioManager.RINGER_MODE_VIBRATE -> RingerVisual.Vibrate
-            else -> if (ringVolume() == 0) RingerVisual.Vibrate else RingerVisual.Sound
-        }
+        val policy = runCatching { notifications.notificationPolicy }.getOrNull()
+        return ringerVisual(
+            interruptionFilter = notifications.currentInterruptionFilter,
+            ringerMode = audio.ringerMode,
+            ringVolume = ringVolume(),
+            priorityCategories = policy?.priorityCategories ?: 0,
+        )
     }
 
     companion object {
+        private const val KEY_SAVED_POLICY = "saved_policy"
+
+        internal fun silentMediaPolicy(user: SavedDndPolicy): NotificationManager.Policy {
+            return NotificationManager.Policy(
+                SavedDndPolicy.FOLIO_SILENT_CATEGORIES,
+                user.callSenders,
+                user.messageSenders,
+                user.suppressedVisualEffects,
+                NotificationManager.Policy.CONVERSATION_SENDERS_NONE,
+            )
+        }
+
+        internal fun ringerVisual(
+            interruptionFilter: Int,
+            ringerMode: Int,
+            ringVolume: Int,
+            priorityCategories: Int,
+        ): RingerVisual {
+            when (interruptionFilter) {
+                NotificationManager.INTERRUPTION_FILTER_NONE,
+                NotificationManager.INTERRUPTION_FILTER_ALARMS,
+                -> return RingerVisual.Silent
+                NotificationManager.INTERRUPTION_FILTER_PRIORITY -> {
+                    if (isRingerSilentPolicy(priorityCategories)) return RingerVisual.Silent
+                }
+            }
+            return when (ringerMode) {
+                AudioManager.RINGER_MODE_SILENT -> RingerVisual.Silent
+                AudioManager.RINGER_MODE_VIBRATE -> RingerVisual.Vibrate
+                else -> if (ringVolume == 0) RingerVisual.Vibrate else RingerVisual.Sound
+            }
+        }
+
+        internal fun isRingerSilentPolicy(priorityCategories: Int): Boolean {
+            val media = priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_MEDIA != 0
+            val calls = priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_CALLS != 0
+            val messages = priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_MESSAGES != 0
+            return media && !calls && !messages
+        }
+
         fun isDefaultHome(context: Context): Boolean {
             val role = context.getSystemService(RoleManager::class.java)
             if (role.isRoleHeld(RoleManager.ROLE_HOME)) return true
@@ -209,7 +296,7 @@ class RingerController(private val context: Context) {
         fun hasUsageAccess(context: Context): Boolean {
             return try {
                 val appOps = context.getSystemService(AppOpsManager::class.java)
-                val mode = appOps.unsafeCheckOpNoThrow(
+                val mode = appOps.checkOpNoThrow(
                     AppOpsManager.OPSTR_GET_USAGE_STATS,
                     android.os.Process.myUid(),
                     context.packageName,

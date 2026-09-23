@@ -6,8 +6,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +63,7 @@ fun SearchOverlay(
     results: List<LaunchableApp>,
     accent: Color,
     onLaunch: (LaunchableApp) -> Unit,
+    onAppInfo: (LaunchableApp) -> Unit = {},
     onDismiss: () -> Unit,
     iconSaturation: Float = 1f,
 ) {
@@ -151,7 +154,7 @@ fun SearchOverlay(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     items(results, key = { it.key }) { app ->
-                        SearchRow(app, onLaunch, saturation = iconSaturation)
+                        SearchRow(app, onLaunch, onAppInfo, saturation = iconSaturation)
                     }
                 }
             }
@@ -159,12 +162,27 @@ fun SearchOverlay(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SearchRow(app: LaunchableApp, onLaunch: (LaunchableApp) -> Unit, saturation: Float = 1f) {
+fun SearchRow(
+    app: LaunchableApp,
+    onLaunch: (LaunchableApp) -> Unit,
+    onAppInfo: ((LaunchableApp) -> Unit)? = null,
+    saturation: Float = 1f,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable { onLaunch(app) }
+            .then(
+                if (onAppInfo != null) {
+                    Modifier.combinedClickable(
+                        onClick = { onLaunch(app) },
+                        onLongClick = { onAppInfo(app) },
+                    )
+                } else {
+                    Modifier.clickable { onLaunch(app) }
+                },
+            )
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

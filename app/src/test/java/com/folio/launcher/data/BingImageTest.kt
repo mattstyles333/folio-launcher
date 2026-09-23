@@ -43,26 +43,45 @@ class BingImageTest {
         assertEquals(us.identity(), gb.identity())
     }
 
+    private fun image(name: String, market: String = "EN-US") =
+        BingImage(urlbase = "/th?id=OHR.${name}_${market}1")
+
     @Test
-    fun nextIndex_neverReturnsCurrentWhenPoolHasMoreThanOne() {
+    fun pickNext_avoidsCurrentAndPrevious() {
+        val pool = listOf("A", "B", "C", "D").map { image(it) }
         val random = kotlin.random.Random(7)
         repeat(40) {
-            val current = random.nextInt(24)
-            val next = BingClient.nextIndex(current, 24, random)
-            assertTrue(next in 0 until 24)
-            assertTrue(next != current)
+            val next = BingClient.pickNext(pool, avoid = setOf("A", "C"), random = random)!!
+            assertTrue(next.identity() in setOf("B", "D"))
         }
-        assertEquals(0, BingClient.nextIndex(3, 1))
     }
 
     @Test
-    fun nextIndex_skipsPreviousToo() {
-        val random = kotlin.random.Random(3)
-        repeat(40) {
-            val next = BingClient.nextIndex(current = 2, count = 8, random = random, alsoAvoid = 5)
-            assertTrue(next in 0 until 8)
-            assertTrue(next != 2)
-            assertTrue(next != 5)
-        }
+    fun pickNext_fallsBackWhenEverythingIsAvoided() {
+        val pool = listOf(image("A"))
+        assertEquals("A", BingClient.pickNext(pool, avoid = setOf("A"))?.identity())
+        assertEquals(null, BingClient.pickNext(emptyList(), avoid = emptySet()))
+    }
+
+    @Test
+    fun dedupe_dropsSameImageFromAnotherMarketAndBlanks() {
+        val list = listOf(image("A", "EN-GB"), image("B"), image("A", "EN-US"), BingImage())
+        assertEquals(listOf("A", "B"), BingClient.dedupe(list).map { it.identity() })
+    }
+
+    @Test
+    fun archive_onlyAsksForOffsetsBingServes() {
+        assertTrue(BingClient.OFFSETS.all { it in 0..7 })
+        assertEquals(BingClient.OFFSETS.size, BingClient.OFFSETS.toSet().size)
+        val url = BingClient.archiveUrl("en-GB", 7)
+        assertTrue(url.contains("idx=7") && url.contains("mkt=en-GB") && url.contains("uhd=1"))
+    }
+
+    @Test
+    fun cacheKey_changesByDayAndMarketNotScreenSize() {
+        val day = java.time.LocalDate.of(2026, 9, 23)
+        assertEquals(BingClient.cacheKey(day, "en-GB"), BingClient.cacheKey(day, "en-GB"))
+        assertTrue(BingClient.cacheKey(day, "en-GB") != BingClient.cacheKey(day.plusDays(1), "en-GB"))
+        assertTrue(BingClient.cacheKey(day, "en-GB") != BingClient.cacheKey(day, "en-US"))
     }
 }
