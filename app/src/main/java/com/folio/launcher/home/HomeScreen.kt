@@ -48,10 +48,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.folio.launcher.data.AiApps
+import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.RingerVisual
+import com.folio.launcher.data.SearchHint
+import com.folio.launcher.data.SearchRoute
+import com.folio.launcher.data.Spotify
 import com.folio.launcher.data.StatusShade
 import com.folio.launcher.onboarding.Onboarding
 import com.folio.launcher.recents.DockRowHeight
@@ -94,6 +98,9 @@ fun HomeScreen(
     onHideApp: (LaunchableApp) -> Unit,
     onAskAi: (String) -> Unit,
     onOpenGoogleSearch: () -> Unit,
+    searchHint: SearchHint = SearchHint(),
+    onSearchQuery: (String) -> Unit = {},
+    onSearchRoute: (SearchRoute, String) -> Unit = { _, _ -> },
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -447,6 +454,12 @@ fun HomeScreen(
                 Ranking.search(query, state.apps, launches)
             }
         }
+        LaunchedEffect(searchOpen, query) { onSearchQuery(if (searchOpen) query else "") }
+        val aiApp = remember(state.apps, state.aiPackage) {
+            state.apps.firstOrNull { it.packageName == state.aiPackage }
+        }
+        val webApp = remember(state.apps) { state.apps.firstOrNull { it.packageName == GoogleSearch.PACKAGE } }
+        val musicApp = remember(state.apps) { state.apps.firstOrNull { it.packageName == Spotify.PACKAGE } }
         SearchOverlay(
             visible = searchOpen,
             query = query,
@@ -454,6 +467,15 @@ fun HomeScreen(
             results = results,
             accent = state.accent,
             iconSaturation = iconSat,
+            hint = searchHint,
+            aiApp = aiApp,
+            webApp = webApp,
+            musicApp = musicApp,
+            onRoute = { route ->
+                onSearchRoute(route, query.trim())
+                searchOpen = false
+                query = ""
+            },
             onLaunch = {
                 onLaunch(it)
                 searchOpen = false

@@ -35,7 +35,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 | Gesture | What |
 |---|---|
-| Tap Search | Spotlight |
+| Tap Search | Spotlight. With an OpenRouter key (Settings → Jev), Jev reads what you type and offers one route: the app you meant ("trains" → Trainline), the web, a one-line answer, your Ask app, or Spotify. Enter follows it. |
 | Triple-tap the print, or long-press Search | Ask Grok, ChatGPT, Gemini or Claude (Settings picks which) |
 | Swipe left on the print | Open the chosen AI app |
 | Swipe right on the print | Google Search |
@@ -48,7 +48,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens Spotify. |
 | Settings → Hidden apps | Unhide. |
 
-Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page. The print itself refreshes on the first unlock after midnight; Settings → Previous print goes back one.
+Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page; with an OpenRouter key, Jev picks the line that suits the photograph (only its Bing title and caption are sent). The print itself refreshes on the first unlock after midnight; Settings → Previous print goes back one.
 
 ## Permissions
 
@@ -56,7 +56,7 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 
 | Access | When |
 |---|---|
-| Internet | Bing prints only. Everything else is local. |
+| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name, plus your app labels, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. |
 | Photo picker | Settings → Choose photo. No broad storage. |
 | Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny. |
 | Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Last 30 days of opens. |

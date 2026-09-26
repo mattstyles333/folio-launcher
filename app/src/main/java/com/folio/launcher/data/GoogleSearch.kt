@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import android.app.SearchManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -14,6 +15,17 @@ object GoogleSearch {
         val web = Intent(Intent.ACTION_WEB_SEARCH).addFlags(flags)
         if (start(host, web)) return true
         val site = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).addFlags(flags)
+        return start(host, site)
+    }
+
+    /** Google with [query] already typed; any web search app, then the browser. */
+    fun search(host: Context, query: String): Boolean {
+        val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+        val web = Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, query).addFlags(flags)
+        if (start(host, Intent(web).setPackage(PACKAGE))) return true
+        if (start(host, web)) return true
+        val site = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(query)))
+            .addFlags(flags)
         return start(host, site)
     }
 

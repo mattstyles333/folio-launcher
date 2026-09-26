@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             FolioTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
+                val searchHint by viewModel.searchHint.collectAsStateWithLifecycle()
                 val nav = rememberNavController()
                 var idleEpoch by remember { mutableIntStateOf(0) }
 
@@ -137,6 +138,9 @@ class MainActivity : ComponentActivity() {
                             onHideApp = { viewModel.hideApp(it) },
                             onAskAi = { viewModel.openAi(this@MainActivity, it) },
                             onOpenGoogleSearch = { viewModel.openGoogleSearch(this@MainActivity) },
+                            searchHint = searchHint,
+                            onSearchQuery = viewModel::onSearchQuery,
+                            onSearchRoute = { route, query -> viewModel.follow(this@MainActivity, route, query) },
                         )
                     }
                     composable("settings") {
@@ -151,6 +155,8 @@ class MainActivity : ComponentActivity() {
                             onSetDefault = { openHomeRole() },
                             onUnhideApp = { viewModel.unhideApp(it) },
                             onCycleAi = { viewModel.cycleAi() },
+                            onSetOpenRouterKey = viewModel::setOpenRouterKey,
+                            onClearOpenRouterKey = { viewModel.clearOpenRouterKey() },
                         )
                     }
                 }

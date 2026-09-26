@@ -31,6 +31,8 @@ class PrintController(
     private val prefsStore: PrefsStore,
     /** Marks onboarding steps done once a print is in place. */
     private val finishOnboarding: (Prefs) -> Prefs,
+    /** Bank index of the quote that suits a new Bing print (with this salt), or null for the daily pick. */
+    private val fitQuote: suspend (WallpaperRepository.BingShot, Int) -> Int? = { _, _ -> null },
     private val today: () -> Int = { QuoteBank.todayIndex() },
 ) {
     private val _state = MutableStateFlow(PrintState())
@@ -65,7 +67,14 @@ class PrintController(
         if (!claim()) return
         scope.launch {
             if (repo.swapWithPrev()) {
-                prefsStore.update { it.copy(bingId = it.bingPrevId, bingPrevId = it.bingId) }
+                prefsStore.update {
+                    it.copy(
+                        bingId = it.bingPrevId,
+                        bingPrevId = it.bingId,
+                        quoteFit = it.quotePrevFit,
+                        quotePrevFit = it.quoteFit,
+                    )
+                }
                 load()
             }
             release()
@@ -86,7 +95,15 @@ class PrintController(
         scope.launch {
             if (import()) {
                 prefsStore.update {
-                    finishOnboarding(it.copy(wallpaperSet = true, bingPrevId = it.bingId, bingId = ""))
+                    finishOnboarding(
+                        it.copy(
+                            wallpaperSet = true,
+                            bingPrevId = it.bingId,
+                            bingId = "",
+                            quotePrevFit = it.quoteFit,
+                            quoteFit = -1,
+                        ),
+                    )
                 }
                 load()
             }
@@ -121,16 +138,20 @@ class PrintController(
         val shot = repo.importBing(avoid = emptySet())
         if (shot != null) {
             val day = today()
+            val fit = fitQuote(shot, prefsStore.data.first().quoteSalt) ?: -1
             prefsStore.update {
-                finishOnboarding(it.copy(wallpaperSet = true, bingId = shot.id, bingDay = day))
+                finishOnboarding(it.copy(wallpaperSet = true, bingId = shot.id, bingDay = day, quoteFit = fit))
             }
             load()
         }
         release()
     }
 
+    /** The quote is fitted before the print is committed, so the two change together. */
     private suspend fun commitBing(shot: WallpaperRepository.BingShot) {
         val day = today()
+        val salt = prefsStore.data.first().quoteSalt + 1
+        val fit = fitQuote(shot, salt) ?: -1
         prefsStore.update {
             finishOnboarding(
                 it.copy(
@@ -138,7 +159,9 @@ class PrintController(
                     bingPrevId = it.bingId,
                     bingId = shot.id,
                     bingDay = day,
-                    quoteSalt = it.quoteSalt + 1,
+                    quoteSalt = salt,
+                    quotePrevFit = it.quoteFit,
+                    quoteFit = fit,
                 ),
             )
         }

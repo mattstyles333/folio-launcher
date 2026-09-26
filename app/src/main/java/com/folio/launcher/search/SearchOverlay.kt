@@ -45,12 +45,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.SearchHint
+import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.home.SearchGlyph
 import com.folio.launcher.ui.AppIcon
 import com.folio.launcher.ui.PrintInk
@@ -66,7 +71,27 @@ fun SearchOverlay(
     onAppInfo: (LaunchableApp) -> Unit = {},
     onDismiss: () -> Unit,
     iconSaturation: Float = 1f,
+    hint: SearchHint = SearchHint(),
+    aiApp: LaunchableApp? = null,
+    webApp: LaunchableApp? = null,
+    musicApp: LaunchableApp? = null,
+    onRoute: (SearchRoute) -> Unit = {},
 ) {
+    val typed = query.trim()
+    val live = hint.takeIf { typed.isNotEmpty() && it.query == typed }
+    val picked = live?.app
+    val shown = if (picked == null) results else listOf(picked) + results.filterNot { it.key == picked.key }
+    // Jev's route when it's sure; with nothing local to launch, the web.
+    val action = live?.route?.takeUnless { it is SearchRoute.App }
+        ?: SearchRoute.Web.takeIf { typed.isNotEmpty() && shown.isEmpty() }
+    fun enter() {
+        when {
+            picked != null -> onLaunch(picked)
+            action != null && live?.route != null -> onRoute(action)
+            shown.isNotEmpty() -> onLaunch(shown.first())
+            action != null -> onRoute(action)
+        }
+    }
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(180)) + slideInVertically(tween(280)) { -it / 14 },
@@ -123,9 +148,7 @@ fun SearchOverlay(
                                 fontWeight = FontWeight.Normal,
                             ),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(
-                                onSearch = { results.firstOrNull()?.let(onLaunch) },
-                            ),
+                            keyboardActions = KeyboardActions(onSearch = { enter() }),
                             decorationBox = { inner ->
                                 Box {
                                     if (query.isEmpty()) {
@@ -153,8 +176,27 @@ fun SearchOverlay(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    items(results, key = { it.key }) { app ->
-                        SearchRow(app, onLaunch, onAppInfo, saturation = iconSaturation)
+                    if (action != null) {
+                        item(key = "route") {
+                            Box(Modifier.animateItem()) {
+                                RouteRow(
+                                    route = action,
+                                    typed = typed,
+                                    hint = live,
+                                    accent = accent,
+                                    aiApp = aiApp,
+                                    webApp = webApp,
+                                    musicApp = musicApp,
+                                    saturation = iconSaturation,
+                                    onRoute = onRoute,
+                                )
+                            }
+                        }
+                    }
+                    items(shown, key = { it.key }) { app ->
+                        Box(Modifier.animateItem()) {
+                            SearchRow(app, onLaunch, onAppInfo, saturation = iconSaturation)
+                        }
                     }
                 }
             }
@@ -201,5 +243,117 @@ fun SearchRow(
             fontSize = 16.sp,
             fontWeight = FontWeight.Normal,
         )
+    }
+}
+
+@Composable
+private fun RouteRow(
+    route: SearchRoute,
+    typed: String,
+    hint: SearchHint?,
+    accent: Color,
+    aiApp: LaunchableApp?,
+    webApp: LaunchableApp?,
+    musicApp: LaunchableApp?,
+    saturation: Float,
+    onRoute: (SearchRoute) -> Unit,
+) {
+    when (route) {
+        SearchRoute.Answer -> AnswerLine(
+            answer = hint?.answer.orEmpty(),
+            answering = hint?.answering == true,
+            next = aiApp?.let { "Continue in ${it.label}" } ?: "Search the web",
+            accent = accent,
+            onClick = { onRoute(route) },
+        )
+        SearchRoute.Web -> ActionRow(webApp?.icon, "Search the web", "“$typed”", saturation) { onRoute(route) }
+        SearchRoute.Ask -> ActionRow(aiApp?.icon, "Ask ${aiApp?.label ?: "AI"}", "“$typed”", saturation) {
+            onRoute(route)
+        }
+        is SearchRoute.Music -> ActionRow(musicApp?.icon, "Play on Spotify", "“${route.term}”", saturation) {
+            onRoute(route)
+        }
+        is SearchRoute.App -> Unit
+    }
+}
+
+/** DeepSeek's one line, set like the quote on the print. */
+@Composable
+private fun AnswerLine(
+    answer: String,
+    answering: Boolean,
+    next: String,
+    accent: Color,
+    onClick: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !answering, onClick = onClick)
+            .padding(top = 6.dp, bottom = 14.dp),
+    ) {
+        Text(
+            text = if (answering) "…" else answer,
+            color = PrintInk.copy(alpha = if (answering) 0.4f else 0.95f),
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Light,
+            fontSize = 20.sp,
+            lineHeight = 27.sp,
+        )
+        if (!answering) {
+            Spacer(Modifier.height(8.dp))
+            Text(next, color = accent.copy(alpha = 0.92f), fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(accent.copy(alpha = 0.3f)))
+    }
+}
+
+@Composable
+private fun ActionRow(
+    icon: ImageBitmap?,
+    title: String,
+    detail: String,
+    saturation: Float,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            AppIcon(
+                bitmap = icon,
+                contentDescription = null,
+                saturation = saturation,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape),
+            )
+        } else {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                SearchGlyph(color = PrintInk.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = PrintInk.copy(alpha = 0.92f), fontSize = 16.sp)
+            Text(
+                detail,
+                color = PrintInk.copy(alpha = 0.45f),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

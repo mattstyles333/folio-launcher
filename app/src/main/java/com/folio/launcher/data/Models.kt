@@ -8,6 +8,9 @@ enum class RingerVisual { Sound, Vibrate, Silent }
 
 enum class OnboardingStep { Role, Wallpaper, Access }
 
+/** Jev in search: no key, key being checked, working, refused, or saved but unreachable. */
+enum class BrainStatus { Off, Checking, Ready, Rejected, Unverified }
+
 data class LaunchableApp(
     val packageName: String,
     val activityName: String,
@@ -60,4 +63,5 @@ data class HomeUiState(
     val aiPackage: String = "",
     val aiLabel: String = "",
     val aiInstalled: List<AiKind> = emptyList(),
+    val brain: BrainStatus = BrainStatus.Off,
 )

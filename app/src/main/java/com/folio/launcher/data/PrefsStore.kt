@@ -45,8 +45,13 @@ data class Prefs(
     val bingIndex: Int = -1,
     val bingPrevIndex: Int = -1,
     val quoteSalt: Int = 0,
+    /** Bank index Jev fitted to the current / previous Bing print; -1 is the plain daily pick. */
+    val quoteFit: Int = -1,
+    val quotePrevFit: Int = -1,
     val hiddenPackages: List<String> = emptyList(),
     val aiPackage: String = "",
+    /** Pasted in Settings. Never built into the APK: the repo and its Releases are public. */
+    val openRouterKey: String = "",
 ) {
     val isBingPrint: Boolean get() = bingId.isNotEmpty()
 

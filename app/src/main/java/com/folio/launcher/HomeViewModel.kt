@@ -9,23 +9,31 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.AppIndex
+import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.DefaultApps
 import com.folio.launcher.data.FolioBuzz
 import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.OnboardingStep
+import com.folio.launcher.data.OpenRouter
 import com.folio.launcher.data.Prefs
 import com.folio.launcher.data.PrintController
 import com.folio.launcher.data.PrintState
 import com.folio.launcher.data.QuoteBank
+import com.folio.launcher.data.QuoteFit
 import com.folio.launcher.data.RailSlot
 import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.RecentItem
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.RingerVisual
+import com.folio.launcher.data.SearchBrain
+import com.folio.launcher.data.SearchHint
+import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.data.SlotPref
+import com.folio.launcher.data.Spotify
 import com.folio.launcher.data.UsageData
+import com.folio.launcher.data.WallpaperRepository
 import com.folio.launcher.onboarding.AccessGrants
 import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.onboarding.AccessWalk
@@ -33,12 +41,15 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
@@ -64,6 +75,7 @@ class HomeViewModel(
         repo = app.wallpaper,
         prefsStore = prefsStore,
         finishOnboarding = ::finishOnboarding,
+        fitQuote = ::fitQuote,
     )
 
     private val extra = MutableStateFlow(
@@ -83,6 +95,12 @@ class HomeViewModel(
 
     /** Settings screens the activity should open; it reports back with [onAccessReturned]. */
     val accessRequests: Flow<AccessScreen> = _accessRequests.receiveAsFlow()
+
+    private val searchQuery = MutableStateFlow("")
+    private val _searchHint = MutableStateFlow(SearchHint())
+
+    /** Jev's route (and DeepSeek's line) for what's typed in search. Empty without a key. */
+    val searchHint: StateFlow<SearchHint> = _searchHint.asStateFlow()
 
     /** Screen currently open in Settings, and whether it's part of the onboarding walk. */
     private var pendingAccess: AccessScreen?
@@ -119,6 +137,7 @@ class HomeViewModel(
                     recomputeRail(prefs, usage, apps, force = false)
                 }
         }
+        viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
                 .collect { (charge, playing) ->
@@ -361,6 +380,104 @@ class HomeViewModel(
         }
     }
 
+    fun onSearchQuery(query: String) {
+        searchQuery.value = query.trim()
+    }
+
+    /** Once per keystroke; collectLatest drops a call still in flight when the next one arrives. */
+    private suspend fun think(query: String) {
+        _searchHint.value = SearchHint(query = query)
+        val key = prefsStore.data.first().openRouterKey
+        if (key.isEmpty() || extra.value.brain == BrainStatus.Rejected) return
+        if (query.length < SearchBrain.MIN_CHARS) return
+        delay(SearchBrain.PAUSE_MS)
+        val apps = appsRepo.apps.value
+        val options = withContext(Dispatchers.Default) {
+            if (!SearchBrain.worthAsking(query, apps.map { it.label })) return@withContext null
+            SearchBrain.candidates(apps, state.value.launches)
+        } ?: return
+        val (brainState, questions) = SearchBrain.request(
+            query,
+            options.mapValues { it.value.packageName },
+            music = apps.any { it.packageName == Spotify.PACKAGE },
+        )
+        val router = OpenRouter(key)
+        val answers = router.decide(brainState, questions) ?: return
+        val route = when (val picked = SearchBrain.route(query, answers)) {
+            SearchRoute.Ask -> if (state.value.aiLabel.isEmpty()) SearchRoute.Web else picked
+            else -> picked
+        } ?: return
+        when (route) {
+            is SearchRoute.App -> {
+                val app = options[route.name] ?: return
+                _searchHint.value = SearchHint(query, route, app = app)
+            }
+            SearchRoute.Answer -> {
+                _searchHint.value = SearchHint(query, route, answering = true)
+                val line = router.write(SearchBrain.ANSWER_SYSTEM, query)?.let(SearchBrain::cleanAnswer)
+                _searchHint.value = if (line != null) {
+                    SearchHint(query, route, answer = line)
+                } else {
+                    SearchHint(query, SearchRoute.Web)
+                }
+            }
+            else -> _searchHint.value = SearchHint(query, route)
+        }
+    }
+
+    /** A search route that was tapped or entered. App routes launch through [launch]. */
+    fun follow(host: Context, route: SearchRoute, query: String) {
+        when (route) {
+            is SearchRoute.App -> Unit
+            SearchRoute.Web -> openWeb(host, query)
+            SearchRoute.Answer, SearchRoute.Ask ->
+                if (state.value.aiLabel.isNotEmpty()) openAi(host, query) else openWeb(host, query)
+            is SearchRoute.Music -> if (Spotify.search(host, route.term)) {
+                viewModelScope.launch { usageStore.record(Spotify.PACKAGE) }
+            }
+        }
+    }
+
+    private fun openWeb(host: Context, query: String) {
+        if (GoogleSearch.search(host, query)) {
+            viewModelScope.launch { usageStore.record(GoogleSearch.PACKAGE) }
+        }
+    }
+
+    /** Jev's quote for a new Bing print, from the shortlist the daily pick heads. Null without a key. */
+    private suspend fun fitQuote(shot: WallpaperRepository.BingShot, salt: Int): Int? {
+        val key = prefsStore.data.first().openRouterKey
+        if (key.isEmpty() || extra.value.brain == BrainStatus.Rejected) return null
+        val quotes = QuoteBank.load(app)
+        val shortlist = QuoteFit.shortlist(quotes.size, QuoteBank.todayIndex(), salt)
+        val (photo, questions) = QuoteFit.request(QuoteFit.describe(shot.caption, shot.credit), quotes, shortlist)
+        val answers = OpenRouter(key).decide(photo, questions) ?: return null
+        return QuoteFit.pick(answers, shortlist)
+    }
+
+    /** Text from the clipboard in Settings. False if it isn't an OpenRouter key. */
+    fun setOpenRouterKey(text: String): Boolean {
+        val key = text.trim()
+        if (!OpenRouter.looksLikeKey(key)) return false
+        extra.value = extra.value.copy(brain = BrainStatus.Checking)
+        viewModelScope.launch {
+            prefsStore.update { it.copy(openRouterKey = key) }
+            val status = when (OpenRouter(key).check()) {
+                true -> BrainStatus.Ready
+                false -> BrainStatus.Rejected
+                null -> BrainStatus.Unverified
+            }
+            extra.value = extra.value.copy(brain = status)
+        }
+        return true
+    }
+
+    fun clearOpenRouterKey() {
+        extra.value = extra.value.copy(brain = null)
+        _searchHint.value = SearchHint()
+        viewModelScope.launch { prefsStore.update { it.copy(openRouterKey = "") } }
+    }
+
     fun skipRole() {
         viewModelScope.launch {
             prefsStore.update { finishOnboarding(it.copy(skippedRole = true)) }
@@ -488,11 +605,9 @@ class HomeViewModel(
             )
         }
 
-        val quote = QuoteBank.pick(
-            QuoteBank.load(app),
-            QuoteBank.todayIndex(),
-            prefs.quoteSalt,
-        )
+        val bank = QuoteBank.load(app)
+        val quote = bank.getOrNull(prefs.quoteFit)?.takeIf { prefs.isBingPrint }
+            ?: QuoteBank.pick(bank, QuoteBank.todayIndex(), prefs.quoteSalt)
         val packages = apps.mapTo(HashSet()) { it.packageName }
         val aiInstalled = AiApps.installedFrom(packages)
         val ai = AiApps.resolve(prefs.aiPackage, aiInstalled)
@@ -540,6 +655,7 @@ class HomeViewModel(
             aiPackage = aiPackage,
             aiLabel = ai?.label.orEmpty(),
             aiInstalled = aiInstalled,
+            brain = if (prefs.openRouterKey.isEmpty()) BrainStatus.Off else extraState.brain ?: BrainStatus.Ready,
         )
     }
 
@@ -551,6 +667,8 @@ class HomeViewModel(
         val charging: Boolean = false,
         val charge: Float = 0f,
         val musicPlaying: Boolean = false,
+        /** Result of checking a key pasted this session; null means trust the saved key. */
+        val brain: BrainStatus? = null,
     )
 
     companion object {
