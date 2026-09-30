@@ -52,6 +52,20 @@ data class Prefs(
     val aiPackage: String = "",
     /** Pasted in Settings. Never built into the APK: the repo and its Releases are public. */
     val openRouterKey: String = "",
+    /** Endless-scroll packages Jev flagged or the user added; [EndlessApps.KNOWN] are implied. */
+    val endless: List<String> = emptyList(),
+    /** Packages the user said aren't endless; never re-added. */
+    val endlessOff: List<String> = emptyList(),
+    /** Packages Jev has already sorted. */
+    val endlessChecked: List<String> = emptyList(),
+    /** Daily endless-scroll goal in minutes; 0 = none. */
+    val scrollGoal: Int = 60,
+    /** The dog looks up before an endless app opens from Folio. */
+    val doorPause: Boolean = true,
+    val petWeather: Boolean = false,
+    /** Times today the owner stayed at the door instead of opening an endless app. */
+    val staysDay: Int = -1,
+    val stays: Int = 0,
 ) {
     val isBingPrint: Boolean get() = bingId.isNotEmpty()
 

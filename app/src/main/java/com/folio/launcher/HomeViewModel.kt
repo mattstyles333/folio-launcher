@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.AppIndex
 import com.folio.launcher.data.BrainStatus
+import com.folio.launcher.data.Door
+import com.folio.launcher.data.EndlessApps
 import com.folio.launcher.data.DefaultApps
 import com.folio.launcher.data.FolioBuzz
 import com.folio.launcher.data.GoogleSearch
@@ -17,6 +19,10 @@ import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.OnboardingStep
 import com.folio.launcher.data.OpenRouter
+import com.folio.launcher.data.PetMind
+import com.folio.launcher.data.PetMove
+import com.folio.launcher.data.PetStore
+import com.folio.launcher.data.PetUi
 import com.folio.launcher.data.Prefs
 import com.folio.launcher.data.PrintController
 import com.folio.launcher.data.PrintState
@@ -29,17 +35,24 @@ import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SearchBrain
 import com.folio.launcher.data.SearchHint
+import com.folio.launcher.data.ScrollDay
+import com.folio.launcher.data.ScrollUsage
 import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.data.SlotPref
 import com.folio.launcher.data.Spotify
 import com.folio.launcher.data.UsageData
 import com.folio.launcher.data.WallpaperRepository
+import com.folio.launcher.data.Weather
+import com.folio.launcher.data.WeatherClient
+import java.time.DayOfWeek
+import java.time.Instant
 import com.folio.launcher.onboarding.AccessGrants
 import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.onboarding.AccessWalk
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -55,6 +68,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -102,6 +116,24 @@ class HomeViewModel(
     /** Jev's route (and DeepSeek's line) for what's typed in search. Empty without a key. */
     val searchHint: StateFlow<SearchHint> = _searchHint.asStateFlow()
 
+    private val petStore = PetStore(app)
+    private val _pet = MutableStateFlow(PetUi())
+
+    /** The dog on the print: its sheet, mood, current move, the odd line, and the door it guards. */
+    val pet: StateFlow<PetUi> = _pet.asStateFlow()
+    private var petJob: Job? = null
+    private var petThoughtAt = 0L
+    private var petLineAt = 0L
+    private var petPats = ArrayDeque<Long>()
+
+    /** Something that just happened, for the next thought ("just chose not to open X"). */
+    private var petMoment: String? = null
+    private var scrollToday = ScrollDay()
+    private var usualCache: Triple<Int, Int, Int>? = null
+    private var weatherCache: Pair<Long, Weather>? = null
+    private var doorPassed: Pair<String, Long>? = null
+    private var endlessSorting = false
+
     /** Screen currently open in Settings, and whether it's part of the onboarding walk. */
     private var pendingAccess: AccessScreen?
         get() = saved.get<String>(KEY_PENDING_ACCESS)?.let { name -> AccessScreen.entries.find { it.name == name } }
@@ -135,7 +167,15 @@ class HomeViewModel(
                 .collect { (prefs, usage, apps) ->
                     noteFirstSeen(apps, prefs)
                     recomputeRail(prefs, usage, apps, force = false)
+                    sortEndless(prefs, apps)
                 }
+        }
+        viewModelScope.launch {
+            val sheet = petStore.load()
+            _pet.update { it.copy(sheet = sheet) }
+            extra.update { it.copy(hasPet = sheet != null) }
+            if (sheet != null) sortEndless(prefsStore.data.first(), appsRepo.apps.value)
+            petThink(force = true)
         }
         viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch {
@@ -213,6 +253,7 @@ class HomeViewModel(
             systemWallpaperReadable = app.wallpaper.systemWallpaperReadable(),
         )
         app.signals.refresh()
+        petThink()
         viewModelScope.launch {
             val stats = if (grants.usage) {
                 withContext(Dispatchers.IO) { RingerController.queryUsageTimestamps(app) }
@@ -298,6 +339,8 @@ class HomeViewModel(
 
     fun setRinger(visual: RingerVisual) {
         ringer.set(visual)
+        petMoment = "the owner just set the phone to ${visual.name}"
+        petThink()
         if (visual == RingerVisual.Vibrate) FolioBuzz.play(app)
         viewModelScope.launch {
             val hint = visual == RingerVisual.Silent && !ringer.hasPolicyAccess()
@@ -306,6 +349,7 @@ class HomeViewModel(
     }
 
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {
+        if (holdAtDoor(app)) return false
         val ok = appsRepo.launch(app, bounds)
         if (ok) {
             viewModelScope.launch {
@@ -441,6 +485,234 @@ class HomeViewModel(
     private fun openWeb(host: Context, query: String) {
         if (GoogleSearch.search(host, query)) {
             viewModelScope.launch { usageStore.record(GoogleSearch.PACKAGE) }
+        }
+    }
+
+    /**
+     * Jev looks at the day and decides how the dog feels, what it does, and whether it speaks.
+     * At most every few minutes, unless something just happened.
+     */
+    private fun petThink(force: Boolean = false) {
+        if (_pet.value.sheet == null) return
+        if (!force && petMoment == null && petJob?.isActive == true) return
+        val moment = petMoment.also { petMoment = null }
+        petJob?.cancel()
+        petJob = viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val prefs = prefsStore.data.first()
+            val ui = state.value
+            val (day, usual) = withContext(Dispatchers.IO) { scrollDay(ui.endless, now) }
+            scrollToday = day
+            val labels = ui.apps.associate { it.packageName to it.label }
+            val label = { pkg: String -> labels[pkg] ?: pkg }
+            val tag = ScrollUsage.tag(day.minutesByApp, label)
+            // Coming home from an endless app always counts, even right after the last thought.
+            val cameBack = (day.justLeft?.end ?: 0L) > petThoughtAt
+            if (!force && moment == null && !cameBack && now - petThoughtAt < PET_THINK_MS) {
+                _pet.update { it.copy(tag = tag) }
+                return@launch
+            }
+            petThoughtAt = now
+            val weather = if (prefs.petWeather) weatherNow(now)?.let(WeatherClient::describe).orEmpty() else ""
+            val local = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault())
+            val facts = PetMind.facts(
+                hour = local.hour,
+                weekend = local.dayOfWeek == DayOfWeek.SATURDAY || local.dayOfWeek == DayOfWeek.SUNDAY,
+                day = day,
+                usual = usual,
+                goal = prefs.scrollGoal,
+                stays = if (prefs.staysDay == today()) prefs.stays else 0,
+                label = label,
+                justNow = moment,
+                ringer = ui.mode,
+                weather = weather,
+            )
+            val router = prefs.openRouterKey
+                .takeIf { it.isNotEmpty() && extra.value.brain != BrainStatus.Rejected }
+                ?.let(::OpenRouter)
+            val thought = router?.let { r ->
+                val (seen, questions) = PetMind.request(facts)
+                r.decide(seen, questions)?.let { PetMind.read(it, _pet.value.mood) }
+            }
+            val chosen = thought ?: PetMind.fallback(local.hour, ui.mode == RingerVisual.Silent, day, usual)
+            _pet.update {
+                it.copy(
+                    mood = chosen.mood,
+                    move = chosen.move,
+                    beat = it.beat + 1,
+                    tag = tag,
+                )
+            }
+            if (router == null || !chosen.speak || now - petLineAt < PET_LINE_GAP_MS) return@launch
+            val line = router.write(PetMind.LINE_SYSTEM, PetMind.linePrompt(facts, chosen.mood), maxTokens = 40)
+                ?.let(PetMind::cleanLine)
+                ?: return@launch
+            petLineAt = now
+            _pet.update { it.copy(line = line) }
+            // Its own job, so a newer thought can't leave the line stuck on screen.
+            viewModelScope.launch {
+                delay(PET_LINE_SHOWN_MS)
+                _pet.update { if (it.line == line) it.copy(line = "") else it }
+            }
+        }
+    }
+
+    /** Today's endless-app scrolling and the usual day's minutes (cached per day and app set). */
+    private fun scrollDay(endless: Set<String>, now: Long): Pair<ScrollDay, Int> {
+        val todayStart = Ranking.startOfDay(now)
+        val events = ScrollUsage.read(app, todayStart - 3_600_000L, now)
+        val day = ScrollUsage.day(ScrollUsage.sessions(events, endless, now), todayStart, now)
+        val cacheKey = today() to endless.hashCode()
+        val usual = usualCache?.takeIf { it.first == cacheKey.first && it.second == cacheKey.second }?.third
+            ?: run {
+                val past = ScrollUsage.read(app, todayStart - 7 * Ranking.DAY_MS, todayStart)
+                ScrollUsage.usualMinutes(ScrollUsage.sessions(past, endless, todayStart), todayStart)
+                    .also { usualCache = Triple(cacheKey.first, cacheKey.second, it) }
+            }
+        return day to usual
+    }
+
+    private suspend fun weatherNow(now: Long): Weather? {
+        weatherCache?.takeIf { now - it.first < WEATHER_MS }?.let { return it.second }
+        val fresh = WeatherClient.current(app) ?: return weatherCache?.second
+        weatherCache = now to fresh
+        return fresh
+    }
+
+    /** A pat: it waves, and three quick pats make it jump. No network. */
+    fun patPet() {
+        val now = System.currentTimeMillis()
+        petPats.addLast(now)
+        while (petPats.isNotEmpty() && now - petPats.first() > 10_000L) petPats.removeFirst()
+        val move = if (petPats.size >= 3) PetMove.Jumping else PetMove.Waving
+        if (move == PetMove.Jumping) petPats.clear()
+        _pet.update { it.copy(move = move, beat = it.beat + 1) }
+    }
+
+    /** Endless apps from Folio wait a moment at the door while the dog looks up. */
+    private fun holdAtDoor(target: LaunchableApp): Boolean {
+        val ui = state.value
+        if (_pet.value.sheet == null || !ui.doorPause || target.packageName !in ui.endless) return false
+        val now = System.currentTimeMillis()
+        val passed = doorPassed
+        if (passed != null && passed.first == target.packageName && now - passed.second < DOOR_GRACE_MS) return false
+        _pet.update { it.copy(door = Door(target, doorToday(scrollToday, target.packageName))) }
+        viewModelScope.launch {
+            val (day, _) = withContext(Dispatchers.IO) { scrollDay(ui.endless, now) }
+            scrollToday = day
+            _pet.update { p ->
+                if (p.door?.app?.key != target.key) p else p.copy(door = Door(target, doorToday(day, target.packageName)))
+            }
+        }
+        return true
+    }
+
+    private fun doorToday(day: ScrollDay, pkg: String): String {
+        val mine = day.minutesByApp[pkg] ?: 0
+        return if (mine == 0) "First time today" else "${PetMind.minutes(mine).replaceFirstChar { it.uppercase() }} today"
+    }
+
+    fun doorGo() {
+        val door = _pet.value.door ?: return
+        doorPassed = door.app.packageName to System.currentTimeMillis()
+        _pet.update { it.copy(door = null) }
+        launch(door.app)
+    }
+
+    fun doorStay() {
+        val door = _pet.value.door ?: return
+        _pet.update { it.copy(door = null, move = PetMove.Jumping, beat = it.beat + 1) }
+        petMoment = "just chose not to open ${door.app.label}"
+        viewModelScope.launch {
+            val day = today()
+            prefsStore.update { it.copy(staysDay = day, stays = if (it.staysDay == day) it.stays + 1 else 1) }
+            petThink()
+        }
+    }
+
+    /** Jev sorts new apps into endless-scroll or not, a batch at a time; the user's word wins. */
+    private fun sortEndless(prefs: Prefs, apps: List<LaunchableApp>) {
+        if (endlessSorting || !extra.value.hasPet) return
+        val key = prefs.openRouterKey.takeIf { it.isNotEmpty() && extra.value.brain != BrainStatus.Rejected } ?: return
+        val checked = prefs.endlessChecked.toSet()
+        val todo = apps
+            .filter {
+                !it.isHome && it.packageName != app.packageName &&
+                    it.packageName !in checked && it.packageName !in EndlessApps.KNOWN
+            }
+            .distinctBy { it.packageName }
+            .take(PetMind.ENDLESS_BATCH)
+        if (todo.isEmpty()) return
+        endlessSorting = true
+        viewModelScope.launch {
+            try {
+                val (listed, questions) = PetMind.endlessRequest(todo.map { "${it.label} (${it.packageName})" })
+                val answers = OpenRouter(key).decide(listed, questions) ?: return@launch
+                val flagged = PetMind.endlessRead(answers, todo.size).map { todo[it].packageName }
+                prefsStore.update { p ->
+                    p.copy(
+                        endless = (p.endless + flagged.filter { it !in p.endlessOff }).distinct(),
+                        endlessChecked = (p.endlessChecked + todo.map { it.packageName }).distinct(),
+                    )
+                }
+            } finally {
+                endlessSorting = false
+            }
+        }
+    }
+
+    fun importPet(uri: Uri) {
+        viewModelScope.launch {
+            val ok = petStore.import(uri)
+            val sheet = if (ok) petStore.load() else _pet.value.sheet
+            _pet.update { it.copy(sheet = sheet) }
+            extra.update { it.copy(hasPet = sheet != null, petNote = if (ok) "" else "That isn’t a petdex sprite sheet") }
+            if (ok) {
+                sortEndless(prefsStore.data.first(), appsRepo.apps.value)
+                petThink(force = true)
+            }
+        }
+    }
+
+    fun removePet() {
+        petStore.remove()
+        petJob?.cancel()
+        _pet.value = PetUi()
+        extra.update { it.copy(hasPet = false, petNote = "") }
+    }
+
+    fun toggleEndless(target: LaunchableApp) {
+        val pkg = target.packageName
+        val on = pkg in state.value.endless
+        viewModelScope.launch {
+            prefsStore.update { p ->
+                if (on) {
+                    p.copy(endless = p.endless - pkg, endlessOff = (p.endlessOff + pkg).distinct())
+                } else {
+                    p.copy(endless = (p.endless + pkg).distinct(), endlessOff = p.endlessOff - pkg)
+                }
+            }
+        }
+    }
+
+    fun cycleScrollGoal() {
+        viewModelScope.launch {
+            prefsStore.update { p ->
+                val i = GOALS.indexOf(p.scrollGoal)
+                p.copy(scrollGoal = GOALS[(i + 1).mod(GOALS.size)])
+            }
+        }
+    }
+
+    fun setDoorPause(on: Boolean) {
+        viewModelScope.launch { prefsStore.update { it.copy(doorPause = on) } }
+    }
+
+    fun setPetWeather(on: Boolean) {
+        weatherCache = null
+        viewModelScope.launch {
+            prefsStore.update { it.copy(petWeather = on) }
+            if (on) petThink(force = true)
         }
     }
 
@@ -656,6 +928,12 @@ class HomeViewModel(
             aiLabel = ai?.label.orEmpty(),
             aiInstalled = aiInstalled,
             brain = if (prefs.openRouterKey.isEmpty()) BrainStatus.Off else extraState.brain ?: BrainStatus.Ready,
+            hasPet = extraState.hasPet,
+            petNote = extraState.petNote,
+            endless = EndlessApps.effective(packages, prefs.endless, prefs.endlessOff),
+            scrollGoal = prefs.scrollGoal,
+            doorPause = prefs.doorPause,
+            petWeather = prefs.petWeather,
         )
     }
 
@@ -669,11 +947,19 @@ class HomeViewModel(
         val musicPlaying: Boolean = false,
         /** Result of checking a key pasted this session; null means trust the saved key. */
         val brain: BrainStatus? = null,
+        val hasPet: Boolean = false,
+        val petNote: String = "",
     )
 
     companion object {
         private const val KEY_PENDING_ACCESS = "pending_access"
         private const val KEY_WALKING = "access_walking"
+        private const val PET_THINK_MS = 3 * 60_000L
+        private const val PET_LINE_GAP_MS = 20 * 60_000L
+        private const val PET_LINE_SHOWN_MS = 6_000L
+        private const val DOOR_GRACE_MS = 5 * 60_000L
+        private const val WEATHER_MS = 30 * 60_000L
+        private val GOALS = listOf(30, 45, 60, 90, 120, 0)
 
         private fun today(): Int = LocalDate.now(ZoneId.systemDefault()).toEpochDay().toInt()
     }

@@ -1,5 +1,6 @@
 package com.folio.launcher
 
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Build
@@ -29,6 +30,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.folio.launcher.data.RingerController
+import com.folio.launcher.data.WeatherClient
 import com.folio.launcher.home.HomeScreen
 import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.settings.SettingsScreen
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
             FolioTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val searchHint by viewModel.searchHint.collectAsStateWithLifecycle()
+                val pet by viewModel.pet.collectAsStateWithLifecycle()
                 val nav = rememberNavController()
                 var idleEpoch by remember { mutableIntStateOf(0) }
 
@@ -68,6 +71,14 @@ class MainActivity : ComponentActivity() {
                 val pickPhoto = rememberLauncherForActivityResult(
                     ActivityResultContracts.PickVisualMedia(),
                 ) { uri -> uri?.let { viewModel.setWallpaper(it) } }
+
+                val pickPet = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocument(),
+                ) { uri -> uri?.let { viewModel.importPet(it) } }
+
+                val askLocation = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { granted -> viewModel.setPetWeather(granted) }
 
                 val roleLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
@@ -141,6 +152,10 @@ class MainActivity : ComponentActivity() {
                             searchHint = searchHint,
                             onSearchQuery = viewModel::onSearchQuery,
                             onSearchRoute = { route, query -> viewModel.follow(this@MainActivity, route, query) },
+                            pet = pet,
+                            onPatPet = { viewModel.patPet() },
+                            onDoorGo = { viewModel.doorGo() },
+                            onDoorStay = { viewModel.doorStay() },
                         )
                     }
                     composable("settings") {
@@ -157,6 +172,18 @@ class MainActivity : ComponentActivity() {
                             onCycleAi = { viewModel.cycleAi() },
                             onSetOpenRouterKey = viewModel::setOpenRouterKey,
                             onClearOpenRouterKey = { viewModel.clearOpenRouterKey() },
+                            onImportPet = { pickPet.launch(arrayOf("image/webp", "image/png")) },
+                            onRemovePet = { viewModel.removePet() },
+                            onToggleEndless = { viewModel.toggleEndless(it) },
+                            onCycleScrollGoal = { viewModel.cycleScrollGoal() },
+                            onDoorPause = { viewModel.setDoorPause(it) },
+                            onPetWeather = { on ->
+                                when {
+                                    !on -> viewModel.setPetWeather(false)
+                                    WeatherClient.hasPermission(this@MainActivity) -> viewModel.setPetWeather(true)
+                                    else -> askLocation.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+                                }
+                            },
                         )
                     }
                 }

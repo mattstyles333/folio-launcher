@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Only when the dog's weather is turned on; rounded to ~1 km before it leaves the phone. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-feature
         android:name="android.hardware.sensor.accelerometer"

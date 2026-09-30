@@ -8,6 +8,21 @@ enum class RingerVisual { Sound, Vibrate, Silent }
 
 enum class OnboardingStep { Role, Wallpaper, Access }
 
+/** The dog on the print, and the door it guards. */
+data class PetUi(
+    val sheet: PetSheet? = null,
+    val mood: PetMood = PetMood.Content,
+    /** The move to play now; [beat] changes to replay the same one. */
+    val move: PetMove = PetMove.Idle,
+    val beat: Int = 0,
+    val line: String = "",
+    val tag: String = "",
+    val door: Door? = null,
+)
+
+/** An endless app about to open from Folio, held for a moment. */
+data class Door(val app: LaunchableApp, val today: String)
+
 /** Jev in search: no key, key being checked, working, refused, or saved but unreachable. */
 enum class BrainStatus { Off, Checking, Ready, Rejected, Unverified }
 
@@ -64,4 +79,11 @@ data class HomeUiState(
     val aiLabel: String = "",
     val aiInstalled: List<AiKind> = emptyList(),
     val brain: BrainStatus = BrainStatus.Off,
+    val hasPet: Boolean = false,
+    /** Why the last pet import failed, for Settings. */
+    val petNote: String = "",
+    val endless: Set<String> = emptySet(),
+    val scrollGoal: Int = 60,
+    val doorPause: Boolean = true,
+    val petWeather: Boolean = false,
 )

@@ -10,7 +10,18 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.graphics.Bitmap
+import android.os.Process
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import com.folio.launcher.data.Door
 import com.folio.launcher.data.HomeUiState
+import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.PetFrames
+import com.folio.launcher.data.PetSheet
+import com.folio.launcher.data.PetUi
 import com.folio.launcher.data.OnboardingStep
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.ui.FolioTheme
@@ -29,7 +40,7 @@ class HomeGesturesTest {
 
     private val calls = mutableListOf<String>()
 
-    private fun show(state: HomeUiState = HomeUiState()) {
+    private fun show(state: HomeUiState = HomeUiState(), pet: PetUi = PetUi()) {
         compose.setContent {
             FolioTheme {
                 HomeScreen(
@@ -59,6 +70,10 @@ class HomeGesturesTest {
                     onHideApp = { calls += "hide" },
                     onAskAi = { calls += "askAi:$it" },
                     onOpenGoogleSearch = { calls += "google" },
+                    pet = pet,
+                    onPatPet = { calls += "pat" },
+                    onDoorGo = { calls += "doorGo" },
+                    onDoorStay = { calls += "doorStay" },
                 )
             }
         }
@@ -140,5 +155,59 @@ class HomeGesturesTest {
         }
         compose.waitForIdle()
         assertEquals(emptyList<String>(), calls.filter { it == "nextBing" || it.startsWith("askAi") })
+    }
+
+    /** A tiny 8×9 petdex sheet (24×26 frames). */
+    private fun sheet(): PetSheet {
+        val bitmap = Bitmap.createBitmap(8 * 24, 9 * 26, Bitmap.Config.ARGB_8888)
+        return PetSheet(bitmap.asImageBitmap(), PetFrames.geometry(bitmap.width, bitmap.height)!!)
+    }
+
+    private val x = LaunchableApp(
+        packageName = "com.twitter.android",
+        activityName = "com.twitter.android.Main",
+        user = Process.myUserHandle(),
+        label = "X",
+        icon = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap(),
+    )
+
+    @Test
+    fun tapPet_patsIt() {
+        show(pet = PetUi(sheet = sheet()))
+        compose.onNodeWithTag("pet").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals(listOf("pat"), calls)
+    }
+
+    @Test
+    fun doubleTapPet_isTwoPatsNotANewPrint() {
+        show(pet = PetUi(sheet = sheet()))
+        compose.onNodeWithTag("pet").performTouchInput { doubleClick() }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals(listOf("pat", "pat"), calls)
+    }
+
+    @Test
+    fun door_choiceAppearsAfterAPause() {
+        show(pet = PetUi(sheet = sheet(), door = Door(x, "47 minutes today")))
+        compose.onNodeWithText("47 minutes today").assertExists()
+        compose.onNodeWithText("Open X").performClick()
+        compose.waitForIdle()
+        assertEquals(emptyList<String>(), calls)
+        compose.mainClock.advanceTimeBy(1_600)
+        compose.onNodeWithText("Open X").performClick()
+        compose.onNodeWithText("Stay").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("doorGo", "doorStay"), calls)
+    }
+
+    @Test
+    fun door_tappingTheDogStays() {
+        show(pet = PetUi(sheet = sheet(), door = Door(x, "First time today")))
+        compose.onNodeWithTag("doorPet").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("doorStay"), calls)
     }
 }

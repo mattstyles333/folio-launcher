@@ -58,16 +58,23 @@ fun SettingsScreen(
     onCycleAi: () -> Unit,
     onSetOpenRouterKey: (String) -> Boolean,
     onClearOpenRouterKey: () -> Unit,
+    onImportPet: () -> Unit = {},
+    onRemovePet: () -> Unit = {},
+    onToggleEndless: (LaunchableApp) -> Unit = {},
+    onCycleScrollGoal: () -> Unit = {},
+    onDoorPause: (Boolean) -> Unit = {},
+    onPetWeather: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     var hiddenOpen by remember { mutableStateOf(false) }
+    var endlessOpen by remember { mutableStateOf(false) }
     var keyMissing by remember { mutableStateOf(false) }
     val hiddenApps = remember(state.apps, state.hiddenPackages) {
         state.apps.filter { it.packageName in state.hiddenPackages }
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
     }
-    BackHandler(enabled = !hiddenOpen, onBack = onBack)
+    BackHandler(enabled = !hiddenOpen && !endlessOpen, onBack = onBack)
     Box(Modifier.fillMaxSize().background(VoidBlack)) {
     Column(
         Modifier
@@ -151,6 +158,42 @@ fun SettingsScreen(
                 keyMissing = !onSetOpenRouterKey(text)
             }
             SettingsRow(
+                "Pet",
+                when {
+                    state.petNote.isNotEmpty() -> state.petNote
+                    state.hasPet -> "Lives on the print. Tap for a new sheet, hold to remove."
+                    else -> "Import a petdex spritesheet — the one Hermes /hatch makes"
+                },
+                onLongClick = if (state.hasPet) onRemovePet else null,
+            ) { onImportPet() }
+            if (state.hasPet) {
+                val endlessNames = state.apps
+                    .filter { it.packageName in state.endless }
+                    .map { it.label }
+                    .distinct()
+                    .sorted()
+                SettingsRow(
+                    "Endless apps",
+                    if (endlessNames.isEmpty()) "None yet. Tap to choose." else endlessNames.joinToString(", "),
+                ) { endlessOpen = true }
+                SettingsRow(
+                    "Daily scroll goal",
+                    if (state.scrollGoal == 0) "None. Tap to set one." else "${state.scrollGoal} minutes across endless apps",
+                ) { onCycleScrollGoal() }
+                SettingsRow(
+                    "Pause at the door",
+                    if (state.doorPause) "The dog looks up before an endless app opens" else "Off",
+                ) { onDoorPause(!state.doorPause) }
+                SettingsRow(
+                    "Weather",
+                    if (state.petWeather) {
+                        "The dog feels today’s weather. Location rounded to ~1 km."
+                    } else {
+                        "Off. Tap to let the dog feel the weather."
+                    },
+                ) { onPetWeather(!state.petWeather) }
+            }
+            SettingsRow(
                 "Hidden apps",
                 if (hiddenApps.isEmpty()) {
                     "Swipe an app right on the home screen to hide it"
@@ -200,6 +243,19 @@ fun SettingsScreen(
             color = state.accent,
             modifier = Modifier.clickable(onClick = onBack),
             fontSize = 14.sp,
+        )
+    }
+    if (endlessOpen) {
+        AppPicker(
+            title = "Endless apps",
+            placeholder = "Find an app",
+            empty = "No apps",
+            apps = state.apps.filter { !it.isHome }.distinctBy { it.packageName },
+            launches = state.launches,
+            accent = state.accent,
+            marked = state.endless,
+            onPick = onToggleEndless,
+            onDismiss = { endlessOpen = false },
         )
     }
     if (hiddenOpen) {

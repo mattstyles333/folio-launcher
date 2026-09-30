@@ -42,6 +42,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull further to scroll. Most used first. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. Long-press an icon for app info. |
 | Swipe down on the print | Notification shade |
 | Double-tap the print | Next Bing photograph + next quote |
+| Tap the dog | A pat. Three quick pats and it jumps. |
 | Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer; media stays on). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too |
 | Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. Same oval when the battery is at 15% or below, even unplugged. |
@@ -50,13 +51,16 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page; with an OpenRouter key, Jev picks the line that suits the photograph (only its Bing title and caption are sent). The print itself refreshes on the first unlock after midnight; Settings → Previous print goes back one.
 
+**The dog.** Hatch a pet in Hermes (`/hatch a scruffy terrier…`), send yourself its `spritesheet.webp`, then Settings → Pet. It sits above the playback strip and Jev decides how it feels from your day: minutes on endless-scroll apps (X, YouTube, and whatever Jev or you add) against your usual and your goal, the time, the ringer, the weather. Come back from a long scroll and it has flopped; stay off X and it jumps. Open an endless app from Folio and it looks up first — today's minutes, then Stay or Open. It never dies and never nags; now and then it says one short line.
+
 ## Permissions
 
 First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow** walks Do Not Disturb, usage access, and notification access for Spotify (find Folio, switch on, Back). Skip any; they stay in Settings.
 
 | Access | When |
 |---|---|
-| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name, plus your app labels, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. |
+| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name, plus your app labels, go to Jev; one-line answers come from DeepSeek V4.1 Flash. The dog's facts (scroll minutes in words, time of day, ringer, weather) go to Jev and, for its rare line, DeepSeek. No key, no calls. |
+| Location | Optional, approximate. Only for Settings → Weather; rounded to ~1 km and sent to Open-Meteo. |
 | Photo picker | Settings → Choose photo. No broad storage. |
 | Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny. |
 | Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Last 30 days of opens. |

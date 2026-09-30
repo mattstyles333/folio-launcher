@@ -51,6 +51,7 @@ import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.PetUi
 import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SearchHint
@@ -101,6 +102,10 @@ fun HomeScreen(
     searchHint: SearchHint = SearchHint(),
     onSearchQuery: (String) -> Unit = {},
     onSearchRoute: (SearchRoute, String) -> Unit = { _, _ -> },
+    pet: PetUi = PetUi(),
+    onPatPet: () -> Unit = {},
+    onDoorGo: () -> Unit = {},
+    onDoorStay: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -428,6 +433,24 @@ fun HomeScreen(
                         },
                 )
             }
+            if (state.onboarding == null && !searchOpen && !askOpen) {
+                PetOnPrint(
+                    pet = pet,
+                    saturation = iconSat,
+                    onPat = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onPatPet()
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 20.dp, bottom = 204.dp)
+                        .graphicsLayer {
+                            val cover = if (peekSheetPx <= 0f) 0f else (pull.px / peekSheetPx).coerceIn(0f, 1f)
+                            alpha = 1f - cover
+                            translationY = cover * 28f
+                        },
+                )
+            }
             if (state.onboarding == null) {
                 SearchButton(
                     onClick = { if (!searchOpen && !askOpen && pinSlot < 0) openSearch() },
@@ -524,6 +547,18 @@ fun HomeScreen(
                     pinSlot = -1
                 },
                 onDismiss = { pinSlot = -1 },
+            )
+        }
+
+        val door = pet.door
+        val doorSheet = pet.sheet
+        if (door != null && doorSheet != null) {
+            DoorPause(
+                door = door,
+                sheet = doorSheet,
+                accent = state.accent,
+                onGo = onDoorGo,
+                onStay = onDoorStay,
             )
         }
 

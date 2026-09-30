@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,7 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -44,14 +48,19 @@ fun AppPicker(
     accent: Color,
     onPick: (LaunchableApp) -> Unit,
     onDismiss: () -> Unit,
+    /** Packages shown first, with a dot — e.g. the endless apps being edited. */
+    marked: Set<String> = emptySet(),
 ) {
     BackHandler(onBack = onDismiss)
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
-    val results = remember(query, apps) {
-        if (query.isBlank()) apps.sortedBy { it.label.lowercase() }
-        else Ranking.search(query, apps, launches)
+    val results = remember(query, apps, marked) {
+        if (query.isBlank()) {
+            apps.sortedWith(compareBy<LaunchableApp> { it.packageName !in marked }.thenBy { it.label.lowercase() })
+        } else {
+            Ranking.search(query, apps, launches)
+        }
     }
     Box(
         Modifier
@@ -90,7 +99,18 @@ fun AppPicker(
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(results, key = { it.key }) { app ->
-                        SearchRow(app, onPick)
+                        Box(contentAlignment = Alignment.CenterEnd) {
+                            SearchRow(app, onPick)
+                            if (app.packageName in marked) {
+                                Box(
+                                    Modifier
+                                        .padding(end = 6.dp)
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(accent),
+                                )
+                            }
+                        }
                     }
                 }
             }
