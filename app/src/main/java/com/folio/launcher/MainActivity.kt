@@ -4,6 +4,8 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -28,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.folio.hermes.telemetry.Telemetry
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.home.HomeScreen
 import com.folio.launcher.onboarding.AccessScreen
@@ -166,6 +169,7 @@ class MainActivity : ComponentActivity() {
                             onNextBing = { viewModel.nextBingPrint() },
                             onPreviousPrint = { viewModel.previousPrint() },
                             onShowClock = { viewModel.setShowClock(it) },
+                            onDiagnostics = { viewModel.setDiagnostics(it) },
                             onResetPins = { viewModel.resetPins() },
                             onSetDefault = { openHomeRole() },
                             onUnhideApp = { viewModel.unhideApp(it) },
@@ -206,7 +210,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!startReported) {
+            startReported = true
+            // Process start to the first resumed home screen (cold start when the process is new).
+            Telemetry.event("home.start", mapOf("start_ms" to SystemClock.uptimeMillis() - Process.getStartUptimeMillis()))
+        }
         viewModel.refreshSystemState()
         viewModel.ensureTodaysPrint()
+    }
+
+    private companion object {
+        /** Once per process. */
+        var startReported = false
     }
 }

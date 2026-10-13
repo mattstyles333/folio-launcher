@@ -4,11 +4,15 @@ import com.folio.hermes.AccessTokenProvider
 import com.folio.hermes.ApprovalChoice
 import com.folio.hermes.ClarifyRequest
 import com.folio.hermes.GatewayEvent
+import com.folio.hermes.HermesAuthException
 import com.folio.hermes.HermesConfig
 import com.folio.hermes.HermesConversation
 import com.folio.hermes.HermesEndpoint
 import com.folio.hermes.HermesGateway
+import com.folio.hermes.HermesRpcException
 import com.folio.hermes.SessionOptions
+import com.folio.hermes.TurnUpdate
+import com.folio.hermes.telemetry.Telemetry
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -52,6 +56,7 @@ class HermesAsk(
 
     // Folio is the home app: an escaped error here must not crash-loop the phone.
     private val handler = CoroutineExceptionHandler { _, e ->
+        Telemetry.error("hermes.ask", if (e is IOException) null else e, askAttrs(e, "uncaught"))
         _state.update { it.copy(working = null, error = HermesAskReducer.plain(e)) }
     }
     private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob(parent.coroutineContext[Job]) + handler)
@@ -119,16 +124,19 @@ class HermesAsk(
         _state.update { HermesAskReducer.asked(it, id, question) }
         turnJob = scope.launch {
             val l = prepare() ?: run {
+                Telemetry.warn("hermes.ask", null, mapOf("op" to "turn", "type" to "signed_out"))
                 _state.update { HermesAskReducer.failed(it, id, LiveTokenProvider.SIGNED_OUT) }
                 return@launch
             }
             try {
                 l.conversation.turn(question, interruptFirst = interruptFirst).collect { update ->
+                    if (update is TurnUpdate.Failed) Telemetry.warn("hermes.ask", null, mapOf("op" to "turn", "type" to "turn_failed"))
                     _state.update { HermesAskReducer.reduce(it, id, update) }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Telemetry.warn("hermes.ask", if (e is IOException) null else e, askAttrs(e, "turn"))
                 _state.update { HermesAskReducer.failed(it, id, HermesAskReducer.plain(e)) }
             }
             if (_state.value.exchanges.any { it.id == id && it.status == ExchangeStatus.Running }) {
@@ -180,6 +188,7 @@ class HermesAsk(
             try {
                 l.gateway.answerApproval(request, choice)
             } catch (e: IOException) {
+                Telemetry.warn("hermes.ask", null, askAttrs(e, "approval"))
                 _state.update { it.copy(approval = request, error = "Couldn’t send that to Hermes. Try again.") }
             }
         }
@@ -194,6 +203,7 @@ class HermesAsk(
             try {
                 l.gateway.answerClarify(request, answers)
             } catch (e: IOException) {
+                Telemetry.warn("hermes.ask", null, askAttrs(e, "clarify"))
                 _state.update { it.copy(clarify = request, error = "Couldn’t send that to Hermes. Try again.") }
             }
         }
@@ -239,6 +249,14 @@ class HermesAsk(
 
     companion object {
         private val http by lazy { OkHttpClient() }
+
+        /** Type and codes only: Hermes's error text can echo the question. */
+        internal fun askAttrs(e: Throwable, op: String): Map<String, Any?> = mapOf(
+            "op" to op,
+            "type" to e.javaClass.simpleName,
+            "code" to (e as? HermesRpcException)?.code,
+            "http_status" to (e as? HermesAuthException.Unavailable)?.httpCode,
+        )
 
         private fun defaultGateway(config: HermesConfig, tokens: AccessTokenProvider, scope: CoroutineScope) =
             HermesGateway(config, tokens, http, scope)

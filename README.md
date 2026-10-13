@@ -56,7 +56,7 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 
 | Access | When |
 |---|---|
-| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name, plus your app labels, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. |
+| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name, plus your app labels, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. Release builds also send crash reports and errors (event names, codes, stack traces; never what you type or say, answers or keys) to the maintainer's diagnostics endpoint, set at build time from the CI variable `FOLIO_DIAGNOSTICS_URL`; Settings → Diagnostics turns it off, and builds you make yourself send nothing. |
 | Photo picker | Settings → Choose photo. No broad storage. |
 | Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny. |
 | Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Last 30 days of opens. |

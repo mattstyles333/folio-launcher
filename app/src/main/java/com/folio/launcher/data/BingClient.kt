@@ -1,10 +1,12 @@
 package com.folio.launcher.data
 
+import com.folio.hermes.telemetry.Telemetry
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -24,6 +26,9 @@ class BingClient(private val cacheFile: File? = null) {
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Mutex()
 
+    /** Last non-2xx status seen, for diagnostics (0 = no HTTP answer at all, e.g. offline). */
+    private val lastStatus = AtomicInteger(0)
+
     @Volatile
     private var cache: BingArchiveCache? = null
 
@@ -31,7 +36,9 @@ class BingClient(private val cacheFile: File? = null) {
         val key = cacheKey(LocalDate.now(), market(locale))
         cache?.let { if (it.key == key) return@withLock it.images }
         readDisk()?.let { if (it.key == key && it.images.isNotEmpty()) { cache = it; return@withLock it.images } }
+        lastStatus.set(0)
         val images = fetchArchive(locale)
+        if (images.isEmpty()) Telemetry.warn("bing.fetch_failed", null, mapOf("what" to "archive", "http_status" to lastStatus.get()))
         if (images.isNotEmpty()) {
             val fresh = BingArchiveCache(key, images)
             cache = fresh
@@ -58,6 +65,7 @@ class BingClient(private val cacheFile: File? = null) {
     }
 
     fun download(image: BingImage, dest: File, width: Int, height: Int): Boolean {
+        lastStatus.set(0)
         val tmp = File(dest.parentFile, "wallpaper.tmp")
         for (url in image.candidateUrls(width, height)) {
             if (!getToFile(url, tmp)) continue
@@ -67,6 +75,8 @@ class BingClient(private val cacheFile: File? = null) {
                 if (!tmp.renameTo(dest)) {
                     tmp.copyTo(dest, overwrite = true)
                     tmp.delete()
+        // Every candidate failed (a missing UHD size alone is normal and not reported).
+        Telemetry.warn("bing.fetch_failed", null, mapOf("what" to "image", "http_status" to lastStatus.get()))
                 }
             }.onSuccess {
                 if (dest.length() > 0L) return true
@@ -107,7 +117,10 @@ class BingClient(private val cacheFile: File? = null) {
         return runCatching {
             val conn = open(url, accept)
             try {
-                if (conn.responseCode !in 200..299) return null
+                if (conn.responseCode !in 200..299) {
+                    lastStatus.set(conn.responseCode)
+                    return null
+                }
                 conn.inputStream.use { it.readBytes() }
             } finally {
                 conn.disconnect()
@@ -120,7 +133,10 @@ class BingClient(private val cacheFile: File? = null) {
         return runCatching {
             val conn = open(url, accept = "image/*")
             try {
-                if (conn.responseCode !in 200..299) return false
+                if (conn.responseCode !in 200..299) {
+                    lastStatus.set(conn.responseCode)
+                    return false
+                }
                 conn.inputStream.use { input -> out.outputStream().use { input.copyTo(it) } }
                 true
             } finally {

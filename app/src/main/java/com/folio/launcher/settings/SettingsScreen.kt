@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,6 +56,7 @@ fun SettingsScreen(
     onNextBing: () -> Unit,
     onPreviousPrint: () -> Unit,
     onShowClock: (Boolean) -> Unit,
+    onDiagnostics: (Boolean) -> Unit = {},
     onResetPins: () -> Unit,
     onSetDefault: () -> Unit,
     onUnhideApp: (LaunchableApp) -> Unit,
@@ -120,6 +123,15 @@ fun SettingsScreen(
                     ),
                 )
             }
+            SwitchRow(
+                "Diagnostics",
+                if (state.diagnosticsBuiltIn) DIAGNOSTICS_PRIVACY else "This build has no diagnostics endpoint; nothing is sent.",
+                state.diagnostics && state.diagnosticsBuiltIn,
+                state.accent,
+                enabled = state.diagnosticsBuiltIn,
+                tag = "diagnostics",
+                onChange = onDiagnostics,
+            )
             SettingsRow("Reset pins", "Four slots fill from use") { onResetPins() }
             SettingsRow(
                 "Ask",
@@ -237,6 +249,44 @@ fun SettingsScreen(
             onDismiss = { hiddenOpen = false },
         )
     }
+    }
+}
+
+const val DIAGNOSTICS_PRIVACY = "Crash reports and errors only. Never what you say, Hermes's answers, or sign-in details."
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    accent: Color,
+    enabled: Boolean,
+    tag: String,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+            .testTag(tag),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = PrintInk, fontSize = 16.sp)
+            Text(subtitle, color = PrintInk.copy(0.4f), fontSize = 12.sp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = VoidBlack,
+                checkedTrackColor = accent,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.15f),
+            ),
+        )
     }
 }
 

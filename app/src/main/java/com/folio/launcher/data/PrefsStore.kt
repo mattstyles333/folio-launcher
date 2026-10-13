@@ -55,6 +55,8 @@ data class Prefs(
     val hermesSessionId: String = "",
     /** Pasted in Settings. Never built into the APK: the repo and its Releases are public. */
     val openRouterKey: String = "",
+    /** Crash reports and errors to the build's diagnostics endpoint (never content). On by default. */
+    val diagnostics: Boolean = true,
 ) {
     val isBingPrint: Boolean get() = bingId.isNotEmpty()
 

@@ -31,6 +31,11 @@ val releaseStoreFile: File? = releaseSigningProps.getProperty("storeFile")?.let 
     if (file.isAbsolute) file else rootProject.file(path)
 }
 
+// Default diagnostics endpoint for release builds: the FOLIO_DIAGNOSTICS_URL env var (a release
+// CI repo variable) or Gradle property folio.diagnosticsUrl. Empty = Folio sends nothing.
+val diagnosticsUrl: String =
+    (System.getenv("FOLIO_DIAGNOSTICS_URL") ?: providers.gradleProperty("folio.diagnosticsUrl").orNull).orEmpty().trim()
+
 val canSignRelease: Boolean =
     releaseStoreFile?.isFile == true &&
         !releaseSigningProps.getProperty("storePassword").isNullOrBlank() &&
@@ -44,8 +49,8 @@ android {
         applicationId = "com.folio.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 36
-        versionName = "2.3.2"
+        versionCode = 37
+        versionName = "2.3.3"
     }
 
     signingConfigs {
@@ -61,6 +66,8 @@ android {
 
     buildTypes {
         release {
+            // Never commit a URL here: release CI fills it from a repo variable; local builds get "".
+            buildConfigField("String", "DIAGNOSTICS_URL", "\"${diagnosticsUrl.replace("\"", "")}\"")
             isMinifyEnabled = true
             isShrinkResources = true
             if (canSignRelease) {
@@ -72,6 +79,8 @@ android {
             )
         }
         debug {
+            // Debug builds and unit tests never send (even when CI has the variable).
+            buildConfigField("String", "DIAGNOSTICS_URL", "\"\"")
             isMinifyEnabled = false
         }
     }

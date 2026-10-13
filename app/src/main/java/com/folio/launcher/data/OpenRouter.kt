@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import com.folio.hermes.telemetry.Telemetry
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +49,7 @@ class OpenRouter(private val key: String) {
             put("state", state)
             put("questions", questions)
         }
-        return post("$BASE/systemone", body.toString(), JEV_READ_MS)?.let(::parseAnswers)
+        return post("$BASE/systemone", body.toString(), JEV_READ_MS, "jev")?.let(::parseAnswers)
     }
 
     suspend fun write(system: String, prompt: String, maxTokens: Int = 120): String? {
@@ -69,7 +70,7 @@ class OpenRouter(private val key: String) {
             // V4.1 Flash reasons at "high" by default; a one-liner doesn't need it.
             putJsonObject("reasoning") { put("enabled", false) }
         }
-        return post("$BASE/chat/completions", body.toString(), WRITER_READ_MS)?.let(::parseChat)
+        return post("$BASE/chat/completions", body.toString(), WRITER_READ_MS, "writer")?.let(::parseChat)
     }
 
     /** True if OpenRouter accepts the key, false if it refuses it, null if it couldn't be reached. */
@@ -88,7 +89,8 @@ class OpenRouter(private val key: String) {
         }.getOrNull()
     }
 
-    private suspend fun post(url: String, body: String, readMs: Int): String? = withContext(Dispatchers.IO) {
+    /** [label] ("jev" / "writer") names the call in diagnostics; only the status or error type is reported. */
+    private suspend fun post(url: String, body: String, readMs: Int, label: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = open(url, readMs).apply {
                 requestMethod = "POST"
@@ -97,11 +99,17 @@ class OpenRouter(private val key: String) {
             }
             try {
                 conn.outputStream.use { it.write(body.toByteArray()) }
-                if (conn.responseCode !in 200..299) return@runCatching null
+                val status = conn.responseCode
+                if (status !in 200..299) {
+                    Telemetry.warn("jev.error", null, mapOf("call" to label, "http_status" to status))
+                    return@runCatching null
+                }
                 conn.inputStream.bufferedReader().use { it.readText() }
             } finally {
                 conn.disconnect()
             }
+        }.onFailure { e ->
+            if (e !is kotlinx.coroutines.CancellationException) Telemetry.warn("jev.error", null, mapOf("call" to label, "type" to e.javaClass.simpleName))
         }.getOrNull()
     }
 

@@ -62,6 +62,8 @@ jobs:
           FOLIO_STORE_PASSWORD: ${{ secrets.FOLIO_STORE_PASSWORD }}
           FOLIO_KEY_ALIAS: folio
           FOLIO_KEY_PASSWORD: ${{ secrets.FOLIO_KEY_PASSWORD }}
+          # Default diagnostics endpoint baked into release builds (repo variable; empty = off).
+          FOLIO_DIAGNOSTICS_URL: ${{ vars.FOLIO_DIAGNOSTICS_URL }}
         run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
 
       # Hermes Live (submodule pin) is its own Gradle build. Same key as Folio: both apps
@@ -73,6 +75,7 @@ jobs:
           FOLIO_STORE_PASSWORD: ${{ secrets.FOLIO_STORE_PASSWORD }}
           FOLIO_KEY_ALIAS: folio
           FOLIO_KEY_PASSWORD: ${{ secrets.FOLIO_KEY_PASSWORD }}
+          FOLIO_DIAGNOSTICS_URL: ${{ vars.FOLIO_DIAGNOSTICS_URL }}
         run: ./gradlew :live:testDebugUnitTest :live:assembleRelease --no-daemon
 
       - name: Package APKs

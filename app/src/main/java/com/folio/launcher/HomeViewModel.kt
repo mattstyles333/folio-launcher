@@ -417,6 +417,10 @@ class HomeViewModel(
         viewModelScope.launch { prefsStore.update { it.copy(showClock = show) } }
     }
 
+    fun setDiagnostics(on: Boolean) {
+        viewModelScope.launch { prefsStore.update { it.copy(diagnostics = on) } }
+    }
+
     private fun askProviders(): List<AskProvider> = AskProviders.list(
         hermesReady = extra.value.hermes == HermesAvailability.Ready,
         installed = AiApps.installed(appsRepo.apps.value),
@@ -767,6 +771,8 @@ class HomeViewModel(
             recents = recents,
             mode = visual,
             showClock = prefs.showClock,
+            diagnostics = prefs.diagnostics,
+            diagnosticsBuiltIn = BuildConfig.DIAGNOSTICS_URL.isNotBlank(),
             wallpaper = printState.photo,
             accent = printState.accent ?: PrintController.argb(prefs.accent),
             launches = launches,

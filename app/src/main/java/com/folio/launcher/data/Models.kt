@@ -39,6 +39,10 @@ data class HomeUiState(
     val recents: List<RecentItem> = emptyList(),
     val mode: RingerVisual = RingerVisual.Sound,
     val showClock: Boolean = true,
+    /** Send crash reports and errors (Settings switch; on by default). */
+    val diagnostics: Boolean = true,
+    /** This build has a diagnostics endpoint (release CI); false in local and debug builds. */
+    val diagnosticsBuiltIn: Boolean = false,
     val wallpaper: ImageBitmap? = null,
     val accent: Color = Color(0xFFC4B8A8),
     val onboarding: OnboardingStep? = null,
