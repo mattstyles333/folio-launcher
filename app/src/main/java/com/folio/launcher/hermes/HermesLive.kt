@@ -3,6 +3,7 @@ package com.folio.launcher.hermes
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.net.Uri
 import android.os.Bundle
 import androidx.core.net.toUri
@@ -102,6 +103,20 @@ object HermesLive {
         // IllegalArgumentException (unknown authority), SecurityException (not our signature),
         // or Hermes Live dying mid-call. All mean "not available now".
         null
+    }
+
+    /**
+     * Get [observer] called when Hermes Live signs in or out. False when Android refuses: it
+     * throws SecurityException for a provider that isn't installed, isn't signed by our key, or
+     * that Folio may not read. Never throws.
+     */
+    fun observe(context: Context, observer: ContentObserver): Boolean = try {
+        context.contentResolver.registerContentObserver(CONNECTION_URI, true, observer)
+        true
+    } catch (e: SecurityException) {
+        false
+    } catch (e: IllegalArgumentException) {
+        false
     }
 
     /** Start a Hermes Live voice call, with [prompt] as its first request when not blank. */

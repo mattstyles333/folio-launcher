@@ -134,6 +134,7 @@ class HomeViewModel(
     private val hermesObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) = refreshHermes(force = true)
     }
+    private var hermesObserved = false
     private var hermesVisible = false
     private var started = false
 
@@ -176,9 +177,11 @@ class HomeViewModel(
             // Hermes Live installed, updated or removed: check again.
             appsRepo.apps.map { list -> list.any { it.packageName == HermesLive.PACKAGE } }
                 .distinctUntilChanged()
-                .collect { refreshHermes(force = true) }
+                .collect { installed ->
+                    watchHermes(installed)
+                    refreshHermes(force = true)
+                }
         }
-        app.contentResolver.registerContentObserver(HermesLive.CONNECTION_URI, true, hermesObserver)
         viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
@@ -192,8 +195,21 @@ class HomeViewModel(
         }
     }
 
+    /**
+     * Watch Hermes Live's sign-in only while it's installed: Android throws if Folio registers an
+     * observer for a provider that isn't there (that crashed Folio 2.3.0 at launch).
+     */
+    private fun watchHermes(installed: Boolean) {
+        if (installed && !hermesObserved) {
+            hermesObserved = HermesLive.observe(app, hermesObserver)
+        } else if (!installed && hermesObserved) {
+            app.contentResolver.unregisterContentObserver(hermesObserver)
+            hermesObserved = false
+        }
+    }
+
     override fun onCleared() {
-        app.contentResolver.unregisterContentObserver(hermesObserver)
+        if (hermesObserved) app.contentResolver.unregisterContentObserver(hermesObserver)
         hermesAsk.close()
         appsRepo.stop()
         ringer.stop()
