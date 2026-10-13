@@ -75,14 +75,14 @@ class BingClient(private val cacheFile: File? = null) {
                 if (!tmp.renameTo(dest)) {
                     tmp.copyTo(dest, overwrite = true)
                     tmp.delete()
-        // Every candidate failed (a missing UHD size alone is normal and not reported).
-        Telemetry.warn("bing.fetch_failed", null, mapOf("what" to "image", "http_status" to lastStatus.get()))
                 }
             }.onSuccess {
                 if (dest.length() > 0L) return true
             }
         }
         tmp.delete()
+        // Every candidate failed (a missing UHD size alone is normal and not reported).
+        Telemetry.warn("bing.fetch_failed", null, mapOf("what" to "image", "http_status" to lastStatus.get()))
         return false
     }
 
