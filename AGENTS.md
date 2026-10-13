@@ -77,6 +77,7 @@ Hermes Live (`com.folio.hermeslive`) is the companion app that signs in to the u
 - Don't edit `hermes-live/` here. Change `:hermes` in hermes-live, then bump the pin: `git -C hermes-live pull origin main && git add hermes-live`.
 - `:hermes` builds with Folio's version catalog, so its aliases (`okhttp`, `okhttp-mockwebserver`, `kotlinx-coroutines-core`, `kotlinx-coroutines-test`, plugin `android-library`) must stay in `gradle/libs.versions.toml`.
 - Both apps must be signed with the Folio release key: they share the signature permission `com.folio.permission.HERMES`.
+- Folio's release workflow also builds Hermes Live from the submodule pin (`cd hermes-live && ./gradlew :live:assembleRelease`) and attaches `hermes-live-A.B.C.apk` to the Folio Release, checking both share a signer. To ship a Hermes Live change: bump the pin, bump Folio's version, tag.
 
 ## Ship
 

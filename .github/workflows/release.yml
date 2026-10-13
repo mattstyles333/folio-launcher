@@ -45,6 +45,9 @@ jobs:
           VERSION="$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -1)"
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          LIVE_VERSION="$(sed -n 's/.*versionName = "\(.*\)"/\1/p' hermes-live/live/build.gradle.kts | head -1)"
+          test -n "$LIVE_VERSION"
+          echo "live_version=$LIVE_VERSION" >> "$GITHUB_OUTPUT"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             TAG_VERSION="${GITHUB_REF_NAME#v}"
             if [[ "$TAG_VERSION" != "$VERSION" ]]; then
@@ -61,7 +64,18 @@ jobs:
           FOLIO_KEY_PASSWORD: ${{ secrets.FOLIO_KEY_PASSWORD }}
         run: ./gradlew testDebugUnitTest assembleRelease --no-daemon
 
-      - name: Package APK
+      # Hermes Live (submodule pin) is its own Gradle build. Same key as Folio: both apps
+      # declare the signature permission com.folio.permission.HERMES.
+      - name: Test and assemble Hermes Live
+        working-directory: hermes-live
+        env:
+          FOLIO_STORE_FILE: ${{ runner.temp }}/folio-release.keystore
+          FOLIO_STORE_PASSWORD: ${{ secrets.FOLIO_STORE_PASSWORD }}
+          FOLIO_KEY_ALIAS: folio
+          FOLIO_KEY_PASSWORD: ${{ secrets.FOLIO_KEY_PASSWORD }}
+        run: ./gradlew :live:testDebugUnitTest :live:assembleRelease --no-daemon
+
+      - name: Package APKs
         id: pkg
         run: |
           set -euo pipefail
@@ -74,6 +88,13 @@ jobs:
           SIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort | tail -1)"
           "$SIGNER" verify --verbose --print-certs "$APK"
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          LIVE_APK="hermes-live-${{ steps.ver.outputs.live_version }}.apk"
+          cp hermes-live/live/build/outputs/apk/release/live-release.apk "$LIVE_APK"
+          sha256sum "$LIVE_APK" | tee "${LIVE_APK}.sha256"
+          "$SIGNER" verify --verbose --print-certs "$LIVE_APK"
+          # Same signer, or Folio can't read Hermes Live's connection.
+          test "$("$SIGNER" verify --print-certs "$APK" | grep SHA-256)" = "$("$SIGNER" verify --print-certs "$LIVE_APK" | grep SHA-256)"
+          echo "live_apk=$LIVE_APK" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -81,6 +102,8 @@ jobs:
           path: |
             folio-${{ steps.ver.outputs.version }}.apk
             folio-${{ steps.ver.outputs.version }}.apk.sha256
+            ${{ steps.pkg.outputs.live_apk }}
+            ${{ steps.pkg.outputs.live_apk }}.sha256
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -92,4 +115,6 @@ jobs:
             --title "${{ steps.ver.outputs.version }}" \
             --generate-notes \
             "${{ steps.pkg.outputs.apk }}" \
-            "${{ steps.pkg.outputs.apk }}.sha256"
+            "${{ steps.pkg.outputs.apk }}.sha256" \
+            "${{ steps.pkg.outputs.live_apk }}" \
+            "${{ steps.pkg.outputs.live_apk }}.sha256"
