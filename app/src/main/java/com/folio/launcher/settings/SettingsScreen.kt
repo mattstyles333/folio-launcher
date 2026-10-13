@@ -25,6 +25,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.hermes.HermesAvailability
 import com.folio.launcher.search.AppPicker
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
@@ -58,8 +60,11 @@ fun SettingsScreen(
     onCycleAi: () -> Unit,
     onSetOpenRouterKey: (String) -> Boolean,
     onClearOpenRouterKey: () -> Unit,
+    onOpenHermesLive: () -> Unit = {},
+    onRefreshHermes: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    LaunchedEffect(Unit) { onRefreshHermes() }
     var hiddenOpen by remember { mutableStateOf(false) }
     var keyMissing by remember { mutableStateOf(false) }
     val hiddenApps = remember(state.apps, state.hiddenPackages) {
@@ -119,12 +124,27 @@ fun SettingsScreen(
             SettingsRow(
                 "Ask",
                 when {
-                    state.aiInstalled.isEmpty() ->
+                    state.aiLabel.isEmpty() ->
                         "Install Grok, ChatGPT, Gemini or Claude"
+                    state.askHermes ->
+                        "Hermes · triple-tap or hold Search; swipe left to talk"
                     else ->
                         "${state.aiLabel} · swipe left, or triple-tap"
                 },
             ) { onCycleAi() }
+            SettingsRow(
+                "Hermes",
+                when (state.hermes) {
+                    HermesAvailability.NotInstalled -> "Install Hermes Live from the Folio release to talk to your Hermes"
+                    HermesAvailability.SignedOut -> "Open Hermes Live to sign in"
+                    HermesAvailability.Unreachable -> "Signed in, but your Hermes isn't answering. Check the connection"
+                    HermesAvailability.Ready -> if (state.askHermes) {
+                        "Hermes answers Ask; swipe left to talk"
+                    } else {
+                        "Ready. Tap Ask until it says Hermes."
+                    }
+                },
+            ) { onOpenHermesLive() }
             SettingsRow(
                 "Jev",
                 when {

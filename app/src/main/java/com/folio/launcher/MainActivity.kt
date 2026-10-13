@@ -31,6 +31,7 @@ import androidx.navigation.compose.rememberNavController
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.home.HomeScreen
 import com.folio.launcher.onboarding.AccessScreen
+import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.settings.SettingsScreen
 import com.folio.launcher.ui.FolioTheme
 import kotlinx.coroutines.flow.collectLatest
@@ -58,6 +59,18 @@ class MainActivity : ComponentActivity() {
             FolioTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
                 val searchHint by viewModel.searchHint.collectAsStateWithLifecycle()
+                val hermes by viewModel.hermes.collectAsStateWithLifecycle()
+                val hermesActions = remember {
+                    HermesAskActions(
+                        ask = viewModel::askHermes,
+                        stop = viewModel::stopHermes,
+                        newSession = viewModel::newHermesSession,
+                        approve = viewModel::answerHermesApproval,
+                        clarify = viewModel::answerHermesClarify,
+                        call = { viewModel.callHermes(this@MainActivity, it) },
+                        visible = viewModel::onHermesVisible,
+                    )
+                }
                 val nav = rememberNavController()
                 var idleEpoch by remember { mutableIntStateOf(0) }
 
@@ -141,6 +154,8 @@ class MainActivity : ComponentActivity() {
                             searchHint = searchHint,
                             onSearchQuery = viewModel::onSearchQuery,
                             onSearchRoute = { route, query -> viewModel.follow(this@MainActivity, route, query) },
+                            hermes = hermes,
+                            hermesActions = hermesActions,
                         )
                     }
                     composable("settings") {
@@ -157,6 +172,8 @@ class MainActivity : ComponentActivity() {
                             onCycleAi = { viewModel.cycleAi() },
                             onSetOpenRouterKey = viewModel::setOpenRouterKey,
                             onClearOpenRouterKey = { viewModel.clearOpenRouterKey() },
+                            onOpenHermesLive = { viewModel.openHermesLive(this@MainActivity) },
+                            onRefreshHermes = { viewModel.refreshHermes() },
                         )
                     }
                 }
@@ -174,6 +191,17 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         viewModel.requestIdle()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.onStarted(true)
+    }
+
+    override fun onStop() {
+        // Battery: the Hermes socket never outlives a visible Folio.
+        viewModel.onStarted(false)
+        super.onStop()
     }
 
     override fun onResume() {

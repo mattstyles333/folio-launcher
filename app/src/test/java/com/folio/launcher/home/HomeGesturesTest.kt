@@ -3,6 +3,12 @@ package com.folio.launcher.home
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onRoot
@@ -13,6 +19,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.OnboardingStep
 import com.folio.launcher.data.RingerVisual
+import com.folio.launcher.data.SearchHint
+import com.folio.launcher.data.SearchRoute
+import com.folio.launcher.hermes.HermesAvailability
+import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.ui.FolioTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -29,7 +39,28 @@ class HomeGesturesTest {
 
     private val calls = mutableListOf<String>()
 
-    private fun show(state: HomeUiState = HomeUiState()) {
+    private val hermesActions = HermesAskActions(
+        ask = { calls += "hermesAsk:$it" },
+        stop = { calls += "hermesStop" },
+        newSession = { calls += "hermesNew" },
+        approve = { calls += "hermesApprove:$it" },
+        clarify = { calls += "hermesClarify:$it" },
+        call = { calls += "callHermes:$it" },
+        visible = { calls += "hermesVisible:$it" },
+    )
+
+    /** Hermes Live installed, signed in and chosen for Ask. */
+    private val hermesState = HomeUiState(
+        aiLabel = "Hermes",
+        aiPackage = "com.folio.hermeslive",
+        hermes = HermesAvailability.Ready,
+        askHermes = true,
+    )
+
+    /** No Hermes Live: Grok answers Ask, as in 2.1.0. */
+    private val grokState = HomeUiState(aiLabel = "Grok", aiPackage = "ai.x.grok")
+
+    private fun show(state: HomeUiState = HomeUiState(), searchHint: SearchHint = SearchHint()) {
         compose.setContent {
             FolioTheme {
                 HomeScreen(
@@ -59,6 +90,9 @@ class HomeGesturesTest {
                     onHideApp = { calls += "hide" },
                     onAskAi = { calls += "askAi:$it" },
                     onOpenGoogleSearch = { calls += "google" },
+                    searchHint = searchHint,
+                    onSearchRoute = { route, query -> calls += "route:$route:$query" },
+                    hermesActions = hermesActions,
                 )
             }
         }
@@ -140,5 +174,82 @@ class HomeGesturesTest {
         }
         compose.waitForIdle()
         assertEquals(emptyList<String>(), calls.filter { it == "nextBing" || it.startsWith("askAi") })
+    }
+
+    @Test
+    fun swipeLeftOnPrint_withHermes_startsAHermesLiveCall() {
+        show(hermesState)
+        compose.onRoot().performTouchInput {
+            swipeLeft(startX = width * 0.9f, endX = width * 0.1f, durationMillis = 200)
+        }
+        compose.waitForIdle()
+        assertEquals(listOf("callHermes:"), calls)
+    }
+
+    @Test
+    fun longPressSearch_withoutHermes_isTheAppAskOverlay() {
+        show(grokState)
+        compose.onNodeWithContentDescription("Search").performTouchInput { longClick() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Grok").assertExists()
+        compose.onNodeWithContentDescription("Talk to Hermes").assertDoesNotExist()
+        compose.onNodeWithText("Open Grok").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("askAi:"), calls)
+    }
+
+    @Test
+    fun longPressSearch_withHermes_opensHermesOverlayAndConnectsOnlyWhileShown() {
+        show(hermesState)
+        compose.onNodeWithContentDescription("Search").performTouchInput { longClick() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertExists()
+        compose.onNodeWithContentDescription("Talk to Hermes").assertExists()
+        assertEquals(listOf("hermesVisible:true"), calls)
+        compose.onNodeWithText("Cancel").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("hermesVisible:true", "hermesVisible:false"), calls)
+    }
+
+    @Test
+    fun tripleTapPrint_withHermes_opensHermesOverlay() {
+        show(hermesState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            click(at)
+            advanceEventTime(90)
+            click(at)
+            advanceEventTime(90)
+            click(at)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertExists()
+        assertEquals(listOf("hermesVisible:true"), calls)
+    }
+
+    @Test
+    fun searchAskRoute_withHermes_asksHermesInTheOverlay() {
+        show(hermesState, SearchHint("what is stoicism", SearchRoute.Ask))
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("what is stoicism")
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        assertEquals(listOf("hermesAsk:what is stoicism", "hermesVisible:true"), calls)
+        compose.onNodeWithText("Ask Hermes").assertExists()
+    }
+
+    @Test
+    fun searchAskRoute_withoutHermes_isUnchanged() {
+        show(grokState, SearchHint("what is stoicism", SearchRoute.Ask))
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("what is stoicism")
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        assertEquals(listOf("route:Ask:what is stoicism"), calls)
     }
 }

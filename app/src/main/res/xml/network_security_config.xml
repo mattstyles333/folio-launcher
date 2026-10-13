@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HTTPS everywhere (Bing, OpenRouter, the user's Hermes). Plain http only for the user's own
+     Hermes on a Tailscale name, which HermesEndpoint also allows; Tailscale encrypts that hop. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">ts.net</domain>
+    </domain-config>
+</network-security-config>

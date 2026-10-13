@@ -44,8 +44,8 @@ android {
         applicationId = "com.folio.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 33
-        versionName = "2.1.0"
+        versionCode = 34
+        versionName = "2.3.0"
     }
 
     signingConfigs {
@@ -100,6 +100,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":hermes"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
@@ -119,6 +120,8 @@ dependencies {
     implementation(libs.androidx.profileinstaller)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

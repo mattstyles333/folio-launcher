@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.ui.PrintInk
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -59,6 +60,9 @@ fun AskOverlay(
     accent: Color,
     onAsk: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Non-null when Hermes answers: the overlay streams its reply instead of launching an app. */
+    hermes: HermesAskState? = null,
+    hermesActions: HermesAskActions = HermesAskActions(),
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -85,86 +89,99 @@ fun AskOverlay(
                 .imePadding()
                 .padding(horizontal = 22.dp, vertical = 18.dp),
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Text(
-                    if (ready) aiLabel else "Ask",
-                    color = PrintInk.copy(alpha = 0.5f),
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = FontWeight.Light,
-                    fontSize = 28.sp,
+            if (hermes != null) {
+                HermesAskPane(
+                    state = hermes,
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    suggestions = suggestions,
+                    accent = accent,
+                    focus = focus,
+                    actions = hermesActions,
+                    onDismiss = onDismiss,
                 )
-                Spacer(Modifier.height(18.dp))
-                if (!ready) {
+            } else {
+                Column(Modifier.fillMaxSize()) {
                     Text(
-                        "Install Grok, ChatGPT, Gemini or Claude, then pick it in Settings.",
-                        color = PrintInk.copy(alpha = 0.55f),
-                        fontSize = 16.sp,
+                        if (ready) aiLabel else "Ask",
+                        color = PrintInk.copy(alpha = 0.5f),
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Light,
+                        fontSize = 28.sp,
                     )
-                } else {
-                    BasicTextField(
-                        value = query,
-                        onValueChange = onQueryChange,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focus),
-                        singleLine = true,
-                        cursorBrush = SolidColor(accent),
-                        textStyle = TextStyle(
-                            color = PrintInk,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Light,
-                        ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(
-                            onGo = { onAsk(query) },
-                        ),
-                        decorationBox = { inner ->
-                            Box {
-                                if (query.isEmpty()) {
-                                    Text(
-                                        "Ask $aiLabel",
-                                        color = PrintInk.copy(alpha = 0.32f),
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Light,
-                                    )
-                                }
-                                inner()
-                            }
-                        },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(accent.copy(alpha = 0.4f)))
                     Spacer(Modifier.height(18.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        suggestions.forEach { (label, prompt) ->
-                            Text(
-                                text = label,
-                                color = PrintInk.copy(alpha = 0.88f),
-                                fontSize = 14.sp,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(Color.White.copy(alpha = 0.12f))
-                                    .clickable { onAsk(prompt) }
-                                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                            )
+                    if (!ready) {
+                        Text(
+                            "Install Grok, ChatGPT, Gemini or Claude, then pick it in Settings.",
+                            color = PrintInk.copy(alpha = 0.55f),
+                            fontSize = 16.sp,
+                        )
+                    } else {
+                        BasicTextField(
+                            value = query,
+                            onValueChange = onQueryChange,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focus),
+                            singleLine = true,
+                            cursorBrush = SolidColor(accent),
+                            textStyle = TextStyle(
+                                color = PrintInk,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Light,
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(
+                                onGo = { onAsk(query) },
+                            ),
+                            decorationBox = { inner ->
+                                Box {
+                                    if (query.isEmpty()) {
+                                        Text(
+                                            "Ask $aiLabel",
+                                            color = PrintInk.copy(alpha = 0.32f),
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Light,
+                                        )
+                                    }
+                                    inner()
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(accent.copy(alpha = 0.4f)))
+                        Spacer(Modifier.height(18.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            suggestions.forEach { (label, prompt) ->
+                                Text(
+                                    text = label,
+                                    color = PrintInk.copy(alpha = 0.88f),
+                                    fontSize = 14.sp,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(Color.White.copy(alpha = 0.12f))
+                                        .clickable { onAsk(prompt) }
+                                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                                )
+                            }
                         }
                     }
-                }
-                Spacer(Modifier.weight(1f))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Cancel",
-                        color = accent.copy(alpha = 0.92f),
-                        fontSize = 16.sp,
-                        modifier = Modifier.clickable(onClick = onDismiss),
-                    )
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Cancel",
+                            color = accent.copy(alpha = 0.92f),
+                            fontSize = 16.sp,
+                            modifier = Modifier.clickable(onClick = onDismiss),
+                        )
+                    }
                 }
             }
         }

@@ -49,7 +49,10 @@ data class Prefs(
     val quoteFit: Int = -1,
     val quotePrevFit: Int = -1,
     val hiddenPackages: List<String> = emptyList(),
+    /** Explicit Ask choice: an AI app package, or Hermes Live's. Empty = never picked (Hermes first). */
     val aiPackage: String = "",
+    /** Hermes's stored session id for Folio's Ask (not a credential). Empty = start a new one. */
+    val hermesSessionId: String = "",
     /** Pasted in Settings. Never built into the APK: the repo and its Releases are public. */
     val openRouterKey: String = "",
 ) {

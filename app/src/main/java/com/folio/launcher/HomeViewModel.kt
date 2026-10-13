@@ -2,13 +2,19 @@ package com.folio.launcher
 
 import android.app.Application
 import android.content.Context
+import android.database.ContentObserver
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.AppIndex
+import com.folio.launcher.data.AskProvider
+import com.folio.launcher.data.AskProviders
 import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.DefaultApps
 import com.folio.launcher.data.FolioBuzz
@@ -34,12 +40,18 @@ import com.folio.launcher.data.SlotPref
 import com.folio.launcher.data.Spotify
 import com.folio.launcher.data.UsageData
 import com.folio.launcher.data.WallpaperRepository
+import com.folio.launcher.hermes.HermesAsk
+import com.folio.launcher.hermes.HermesAskState
+import com.folio.launcher.hermes.HermesAvailability
+import com.folio.launcher.hermes.HermesLive
+import com.folio.hermes.ApprovalChoice
 import com.folio.launcher.onboarding.AccessGrants
 import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.onboarding.AccessWalk
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -51,7 +63,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -102,6 +116,27 @@ class HomeViewModel(
     /** Jev's route (and DeepSeek's line) for what's typed in search. Empty without a key. */
     val searchHint: StateFlow<SearchHint> = _searchHint.asStateFlow()
 
+    private val hermesAsk = HermesAsk(
+        parent = viewModelScope,
+        connection = { withContext(Dispatchers.IO) { hermesConnection() } },
+        renewedConnection = { withContext(Dispatchers.IO) { hermesConnection(forceRefresh = true) } },
+        loadSessionId = { prefsStore.data.first().hermesSessionId },
+        saveSessionId = { id -> prefsStore.update { it.copy(hermesSessionId = id) } },
+    )
+
+    /** The Hermes Ask overlay: exchanges, tool line, approvals. */
+    val hermes: StateFlow<HermesAskState> = hermesAsk.state
+
+    private var hermesJob: Job? = null
+    private var hermesCheckedAt = 0L
+
+    /** Hermes Live signed in or out: check again now, not on the next resume. */
+    private val hermesObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = refreshHermes(force = true)
+    }
+    private var hermesVisible = false
+    private var started = false
+
     /** Screen currently open in Settings, and whether it's part of the onboarding walk. */
     private var pendingAccess: AccessScreen?
         get() = saved.get<String>(KEY_PENDING_ACCESS)?.let { name -> AccessScreen.entries.find { it.name == name } }
@@ -137,6 +172,13 @@ class HomeViewModel(
                     recomputeRail(prefs, usage, apps, force = false)
                 }
         }
+        viewModelScope.launch {
+            // Hermes Live installed, updated or removed: check again.
+            appsRepo.apps.map { list -> list.any { it.packageName == HermesLive.PACKAGE } }
+                .distinctUntilChanged()
+                .collect { refreshHermes(force = true) }
+        }
+        app.contentResolver.registerContentObserver(HermesLive.CONNECTION_URI, true, hermesObserver)
         viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
@@ -151,6 +193,8 @@ class HomeViewModel(
     }
 
     override fun onCleared() {
+        app.contentResolver.unregisterContentObserver(hermesObserver)
+        hermesAsk.close()
         appsRepo.stop()
         ringer.stop()
         super.onCleared()
@@ -213,6 +257,7 @@ class HomeViewModel(
             systemWallpaperReadable = app.wallpaper.systemWallpaperReadable(),
         )
         app.signals.refresh()
+        refreshHermes(force = false)
         viewModelScope.launch {
             val stats = if (grants.usage) {
                 withContext(Dispatchers.IO) { RingerController.queryUsageTimestamps(app) }
@@ -356,23 +401,91 @@ class HomeViewModel(
         viewModelScope.launch { prefsStore.update { it.copy(showClock = show) } }
     }
 
+    private fun askProviders(): List<AskProvider> = AskProviders.list(
+        hermesReady = extra.value.hermes == HermesAvailability.Ready,
+        installed = AiApps.installed(appsRepo.apps.value),
+    )
+
     fun cycleAi() {
         viewModelScope.launch {
-            val installed = AiApps.installed(appsRepo.apps.value)
+            val providers = askProviders()
             prefsStore.update { prefs ->
-                prefs.copy(aiPackage = AiApps.cyclePackage(prefs.aiPackage, installed))
+                prefs.copy(aiPackage = AskProviders.cycle(prefs.aiPackage, providers))
             }
         }
     }
 
+    /** Hand [prompt] to the chosen Ask provider. With Hermes chosen this is a Hermes Live call, never another app. */
     fun openAi(host: Context, prompt: String) {
         val packages = appsRepo.apps.value.map { it.packageName }.toSet()
-        val kind = AiApps.resolve(state.value.aiPackage, AiApps.installedFrom(packages)) ?: return
-        val pkg = AiApps.matchedPackage(kind, packages) ?: return
-        if (AiApps.open(host, kind, prompt, pkg)) {
-            viewModelScope.launch { usageStore.record(pkg) }
+        // state.aiPackage is the resolved provider's key, so this lands on the same provider the UI shows.
+        when (val provider = AskProviders.resolve(state.value.aiPackage, askProviders()) ?: return) {
+            AskProvider.Hermes -> callHermes(host, prompt)
+            is AskProvider.App -> {
+                val pkg = AiApps.matchedPackage(provider.kind, packages) ?: return
+                if (AiApps.open(host, provider.kind, prompt, pkg)) {
+                    viewModelScope.launch { usageStore.record(pkg) }
+                }
+            }
         }
     }
+
+    /** Start a Hermes Live voice call, with [prompt] as its first request when typed. */
+    fun callHermes(host: Context, prompt: String) {
+        if (HermesLive.startCall(host, prompt)) {
+            viewModelScope.launch { usageStore.record(HermesLive.PACKAGE) }
+        }
+    }
+
+    /** Settings → Hermes: open Hermes Live (to sign in), or its release page when absent. */
+    fun openHermesLive(host: Context) {
+        if (!HermesLive.open(host)) HermesLive.openReleases(host)
+    }
+
+    /** Re-read whether Hermes Live is installed and signed in. Off the main thread; never blocks resume. */
+    fun refreshHermes(force: Boolean = true) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - hermesCheckedAt < HERMES_RECHECK_MS) return
+        if (hermesJob?.isActive == true) return
+        hermesCheckedAt = now
+        hermesJob = viewModelScope.launch {
+            val availability = withContext(Dispatchers.IO) {
+                val installed = HermesLive.isInstalled(app)
+                HermesLive.availability(installed, if (installed) HermesLive.query(app) else null)
+            }
+            extra.value = extra.value.copy(hermes = availability)
+        }
+    }
+
+    /** Only Hermes Live's own provider; nothing when it is not installed. */
+    private fun hermesConnection(forceRefresh: Boolean = false) =
+        if (HermesLive.isInstalled(app)) HermesLive.query(app, forceRefresh) else null
+
+    /** The Hermes overlay is on screen (or gone). The gateway is connected only while it is, and Folio is started. */
+    fun onHermesVisible(visible: Boolean) {
+        hermesVisible = visible
+        if (visible) refreshHermes(force = true)
+        syncHermes()
+    }
+
+    fun onStarted(isStarted: Boolean) {
+        started = isStarted
+        syncHermes()
+    }
+
+    private fun syncHermes() {
+        if (hermesVisible && started) hermesAsk.attach() else hermesAsk.detach()
+    }
+
+    fun askHermes(text: String) = hermesAsk.ask(text)
+
+    fun stopHermes() = hermesAsk.stop()
+
+    fun newHermesSession() = hermesAsk.newSession()
+
+    fun answerHermesApproval(choice: ApprovalChoice) = hermesAsk.approve(choice)
+
+    fun answerHermesClarify(answers: Map<String, String?>) = hermesAsk.clarify(answers)
 
     fun openGoogleSearch(host: Context) {
         if (GoogleSearch.open(host)) {
@@ -430,6 +543,7 @@ class HomeViewModel(
         when (route) {
             is SearchRoute.App -> Unit
             SearchRoute.Web -> openWeb(host, query)
+            // HomeScreen sends these to the Hermes overlay when Hermes is chosen; openAi never opens another app then.
             SearchRoute.Answer, SearchRoute.Ask ->
                 if (state.value.aiLabel.isNotEmpty()) openAi(host, query) else openWeb(host, query)
             is SearchRoute.Music -> if (Spotify.search(host, route.term)) {
@@ -610,8 +724,15 @@ class HomeViewModel(
             ?: QuoteBank.pick(bank, QuoteBank.todayIndex(), prefs.quoteSalt)
         val packages = apps.mapTo(HashSet()) { it.packageName }
         val aiInstalled = AiApps.installedFrom(packages)
-        val ai = AiApps.resolve(prefs.aiPackage, aiInstalled)
-        val aiPackage = ai?.let { AiApps.matchedPackage(it, packages) }.orEmpty()
+        val provider = AskProviders.resolve(
+            prefs.aiPackage,
+            AskProviders.list(extraState.hermes == HermesAvailability.Ready, aiInstalled),
+        )
+        val aiPackage = when (provider) {
+            AskProvider.Hermes -> HermesLive.PACKAGE
+            is AskProvider.App -> AiApps.matchedPackage(provider.kind, packages).orEmpty()
+            null -> ""
+        }
 
         val grants = extraState.grants
         val roleDone = prefs.skippedRole || extraState.isDefaultHome
@@ -653,8 +774,10 @@ class HomeViewModel(
             quoteAuthor = quote?.author.orEmpty(),
             hiddenPackages = hidden,
             aiPackage = aiPackage,
-            aiLabel = ai?.label.orEmpty(),
+            aiLabel = provider?.label.orEmpty(),
             aiInstalled = aiInstalled,
+            hermes = extraState.hermes,
+            askHermes = provider == AskProvider.Hermes,
             brain = if (prefs.openRouterKey.isEmpty()) BrainStatus.Off else extraState.brain ?: BrainStatus.Ready,
         )
     }
@@ -669,11 +792,13 @@ class HomeViewModel(
         val musicPlaying: Boolean = false,
         /** Result of checking a key pasted this session; null means trust the saved key. */
         val brain: BrainStatus? = null,
+        val hermes: HermesAvailability = HermesAvailability.NotInstalled,
     )
 
     companion object {
         private const val KEY_PENDING_ACCESS = "pending_access"
         private const val KEY_WALKING = "access_walking"
+        private const val HERMES_RECHECK_MS = 10_000L
 
         private fun today(): Int = LocalDate.now(ZoneId.systemDefault()).toEpochDay().toInt()
     }
