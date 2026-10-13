@@ -66,6 +66,8 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 
 JDK 17, Android SDK 37 (compile) / 35 (target).
 
+Hermes support builds the `:hermes` library from the [hermes-live](https://github.com/mattstyles333/hermes-live) submodule, so clone with `git clone --recurse-submodules` (or run `git submodule update --init`).
+
 ```bash
 ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease
 ```

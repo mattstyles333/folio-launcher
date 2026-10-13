@@ -1,0 +1,3 @@
+[submodule "hermes-live"]
+	path = hermes-live
+	url = https://github.com/mattstyles333/hermes-live.git

@@ -76,6 +76,8 @@ fun SearchOverlay(
     webApp: LaunchableApp? = null,
     musicApp: LaunchableApp? = null,
     onRoute: (SearchRoute) -> Unit = {},
+    /** Who Ask/Answer rows name, when it isn't [aiApp]'s label (Hermes answers inside Folio). */
+    aiName: String? = null,
 ) {
     val typed = query.trim()
     val live = hint.takeIf { typed.isNotEmpty() && it.query == typed }
@@ -185,6 +187,7 @@ fun SearchOverlay(
                                     hint = live,
                                     accent = accent,
                                     aiApp = aiApp,
+                                    aiName = aiName ?: aiApp?.label,
                                     webApp = webApp,
                                     musicApp = musicApp,
                                     saturation = iconSaturation,
@@ -253,6 +256,7 @@ private fun RouteRow(
     hint: SearchHint?,
     accent: Color,
     aiApp: LaunchableApp?,
+    aiName: String?,
     webApp: LaunchableApp?,
     musicApp: LaunchableApp?,
     saturation: Float,
@@ -262,12 +266,12 @@ private fun RouteRow(
         SearchRoute.Answer -> AnswerLine(
             answer = hint?.answer.orEmpty(),
             answering = hint?.answering == true,
-            next = aiApp?.let { "Continue in ${it.label}" } ?: "Search the web",
+            next = aiName?.let { "Continue in $it" } ?: "Search the web",
             accent = accent,
             onClick = { onRoute(route) },
         )
         SearchRoute.Web -> ActionRow(webApp?.icon, "Search the web", "“$typed”", saturation) { onRoute(route) }
-        SearchRoute.Ask -> ActionRow(aiApp?.icon, "Ask ${aiApp?.label ?: "AI"}", "“$typed”", saturation) {
+        SearchRoute.Ask -> ActionRow(aiApp?.icon, "Ask ${aiName ?: "AI"}", "“$typed”", saturation) {
             onRoute(route)
         }
         is SearchRoute.Music -> ActionRow(musicApp?.icon, "Play on Spotify", "“${route.term}”", saturation) {

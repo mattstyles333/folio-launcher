@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +34,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.folio.launcher.data.AiApps
+import com.folio.launcher.data.AskProviders
 import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
@@ -61,7 +64,9 @@ import com.folio.launcher.onboarding.Onboarding
 import com.folio.launcher.recents.DockRowHeight
 import com.folio.launcher.recents.ExpandingDock
 import com.folio.launcher.search.AppPicker
+import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.search.AskOverlay
+import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.search.SearchOverlay
 import com.folio.launcher.ui.ChargeGreen
 import com.folio.launcher.ui.PrintInk
@@ -101,6 +106,8 @@ fun HomeScreen(
     searchHint: SearchHint = SearchHint(),
     onSearchQuery: (String) -> Unit = {},
     onSearchRoute: (SearchRoute, String) -> Unit = { _, _ -> },
+    hermes: HermesAskState = HermesAskState(),
+    hermesActions: HermesAskActions = HermesAskActions(),
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -118,6 +125,14 @@ fun HomeScreen(
     var revealOrigin by remember { mutableStateOf(Offset.Zero) }
     var revealTarget by remember { mutableStateOf<RingerVisual?>(null) }
     val revealProgress = remember { Animatable(0f) }
+
+    // The Hermes gateway is connected only while its overlay is on screen.
+    val hermesShown = askOpen && state.askHermes
+    val hermesNow by rememberUpdatedState(hermesActions)
+    DisposableEffect(hermesShown) {
+        if (hermesShown) hermesNow.visible(true)
+        onDispose { if (hermesShown) hermesNow.visible(false) }
+    }
 
     val look = lookOverride ?: state.mode
     val developing = revealTarget != null
@@ -312,7 +327,7 @@ fun HomeScreen(
                     onSwipeLeft = {
                         if (pull.px < 8f) {
                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            onAskAi("")
+                            if (state.askHermes) hermesActions.call("") else onAskAi("")
                         }
                     },
                     onSwipeRight = {
@@ -471,10 +486,19 @@ fun HomeScreen(
             aiApp = aiApp,
             webApp = webApp,
             musicApp = musicApp,
+            aiName = if (state.askHermes) state.aiLabel else null,
             onRoute = { route ->
-                onSearchRoute(route, query.trim())
+                val typed = query.trim()
                 searchOpen = false
                 query = ""
+                if (state.askHermes && (route == SearchRoute.Ask || route == SearchRoute.Answer)) {
+                    // Hermes answers in its overlay: open it and send what was typed.
+                    askQuery = ""
+                    askOpen = true
+                    hermesActions.ask(typed)
+                } else {
+                    onSearchRoute(route, typed)
+                }
             },
             onLaunch = {
                 onLaunch(it)
@@ -491,9 +515,12 @@ fun HomeScreen(
             },
         )
 
-        val askChips = remember(state.aiLabel, state.quote) {
-            if (state.aiLabel.isEmpty()) emptyList()
-            else AiApps.suggestions(state.aiLabel, state.quote)
+        val askChips = remember(state.aiLabel, state.quote, state.askHermes) {
+            when {
+                state.aiLabel.isEmpty() -> emptyList()
+                state.askHermes -> AskProviders.hermesSuggestions(state.quote)
+                else -> AiApps.suggestions(state.aiLabel, state.quote)
+            }
         }
         AskOverlay(
             visible = askOpen,
@@ -511,6 +538,8 @@ fun HomeScreen(
                 askOpen = false
                 askQuery = ""
             },
+            hermes = if (state.askHermes) hermes else null,
+            hermesActions = hermesActions,
         )
 
         if (pinSlot >= 0) {

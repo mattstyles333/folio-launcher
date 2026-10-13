@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          # hermes-live/ holds the :hermes client library.
+          submodules: true
 
       - uses: actions/setup-java@v4
         with:
@@ -41,4 +44,5 @@ jobs:
           path: |
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
+            hermes-live/hermes/build/reports/tests/
           if-no-files-found: ignore

@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          # hermes-live/ holds the :hermes client library.
+          submodules: true
 
       - uses: actions/setup-java@v4
         with:

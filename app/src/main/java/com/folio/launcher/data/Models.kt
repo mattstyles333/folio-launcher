@@ -3,6 +3,7 @@ package com.folio.launcher.data
 import android.os.UserHandle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import com.folio.launcher.hermes.HermesAvailability
 
 enum class RingerVisual { Sound, Vibrate, Silent }
 
@@ -63,5 +64,9 @@ data class HomeUiState(
     val aiPackage: String = "",
     val aiLabel: String = "",
     val aiInstalled: List<AiKind> = emptyList(),
+    /** Hermes Live installed and signed in? Never holds the token. */
+    val hermes: HermesAvailability = HermesAvailability.NotInstalled,
+    /** Ask is answered by Hermes (in the overlay; swipe left calls it). */
+    val askHermes: Boolean = false,
     val brain: BrainStatus = BrainStatus.Off,
 )
