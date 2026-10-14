@@ -90,6 +90,6 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag must match `versionName` (`v1.2.8` ↔ `1.2.8`). Actions runs tests, signs `folio-X.Y.Z.apk` with the release key, and publishes the GitHub Release plus a SHA-256. Local `assembleRelease` needs `keystore.properties` (see `keystore.properties.example`).
+The tag must match `versionName` (`v1.2.8` ↔ `1.2.8`). Actions builds (no tests in CI/CD, user 2026-10-14: run them locally before merging), signs `folio-X.Y.Z.apk` with the release key, and publishes the GitHub Release plus a SHA-256. Local `assembleRelease` needs `keystore.properties` (see `keystore.properties.example`).
 
 v1.2.7 and earlier were debug-signed. The first release-keyed APK will not overlay those installs — uninstall Folio on the phone, then install from the new Release and set Home again.
