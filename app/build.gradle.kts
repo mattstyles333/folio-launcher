@@ -49,8 +49,8 @@ android {
         applicationId = "com.folio.launcher"
         minSdk = 31
         targetSdk = 35
-        versionCode = 40
-        versionName = "2.3.6"
+        versionCode = 41
+        versionName = "2.3.7"
     }
 
     signingConfigs {
