@@ -2,6 +2,7 @@ package com.folio.launcher.home
 
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,6 +28,32 @@ class ClockCopyTest {
         assertEquals("17:45", copy.time)
         assertNull(copy.ampm)
         assertEquals("Thursday, August 27", copy.date)
+    }
+
+    @Test
+    fun amPm_followsThePassedLocale_notTheJvmDefault() {
+        val saved = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.JAPAN)
+            assertEquals("pm", ClockCopy.of(zoned, is24 = false, locale = Locale.US).ampm)
+            Locale.setDefault(Locale.US)
+            val japanese = zoned.format(DateTimeFormatter.ofPattern("a", Locale.JAPAN)).lowercase(Locale.JAPAN)
+            assertEquals(japanese, ClockCopy.of(zoned, is24 = false, locale = Locale.JAPAN).ampm)
+        } finally {
+            Locale.setDefault(saved)
+        }
+    }
+
+    @Test
+    fun date_isTheHouseOrderInEnglish_andTheLocalOrderElsewhere() {
+        assertEquals(ClockCopy.EnglishDate, ClockCopy.datePattern(Locale.UK) { error("English keeps the house order") })
+        val german = ClockCopy.datePattern(Locale.GERMANY) { "EEEE, d. MMMM" }
+        assertEquals(
+            "Donnerstag, 27. August",
+            ClockCopy.of(zoned, is24 = true, locale = Locale.GERMANY, datePattern = german).date,
+        )
+        // A pattern java.time can't read keeps the house order rather than take the clock down.
+        assertEquals(ClockCopy.EnglishDate, ClockCopy.datePattern(Locale.GERMANY) { "EEEE {d}" })
     }
 
     @Test

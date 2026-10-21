@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
@@ -108,6 +109,8 @@ fun HomeScreen(
     onSearchRoute: (SearchRoute, String) -> Unit = { _, _ -> },
     hermes: HermesAskState = HermesAskState(),
     hermesActions: HermesAskActions = HermesAskActions(),
+    /** Swipe down on idle: the notification shade, unless a test listens in. */
+    onExpandShade: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -155,6 +158,9 @@ fun HomeScreen(
         query = ""
         askQuery = ""
         pinSlot = -1
+        // snapTo cancels a develop mid-way, before it lets go of the look and its name.
+        lookOverride = null
+        flashLook = false
         revealTarget = null
         revealProgress.snapTo(0f)
         pull.cancelSettle()
@@ -221,7 +227,7 @@ fun HomeScreen(
             maxPx = maxSheetPx,
             onGrab = { grabSheet() },
             onSettle = { settleSheet(it) },
-            onSwipeDownShade = { StatusShade.expand(context) },
+            onSwipeDownShade = { if (onExpandShade != null) onExpandShade() else StatusShade.expand(context) },
         )
 
         fun collapse() {
@@ -249,7 +255,8 @@ fun HomeScreen(
             scope.launch {
                 revealProgress.snapTo(0f)
                 revealProgress.animateTo(1f, developSpec())
-                lookOverride = next
+                // The ringer already reads `next`: from here the hardware drives the look again.
+                lookOverride = null
                 revealTarget = null
                 revealProgress.snapTo(0f)
                 delay(1100)
@@ -355,36 +362,72 @@ fun HomeScreen(
                 },
         )
 
-        if (!searchOpen &&
-            !askOpen &&
-            state.onboarding == null &&
-            (state.showClock || state.wallpaperCaption.isNotEmpty() || developing || flashLook || state.quote.isNotEmpty())
+        val hint = when {
+            state.silentHint &&
+                state.mode == RingerVisual.Silent &&
+                state.onboarding == null &&
+                !searchOpen &&
+                !askOpen &&
+                !pull.showing ->
+                "Tap to let Silent mute the ringer." to onSilentHint
+            state.mediaHint &&
+                state.onboarding == null &&
+                !searchOpen &&
+                !askOpen &&
+                !pull.showing ->
+                "Tap so Folio can see what’s playing." to onMediaHint
+            else -> null
+        }
+        // The hint stacks under the clock: on the clock's own top anchor it covered the quote.
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ClockCluster(
-                showClock = state.showClock,
-                dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
-                showCharge = chargeHairlineVisible(state.charging, state.charge),
-                charge = state.charge,
-                chargeColor = if (state.charging && namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
-                quote = state.quote,
-                quoteAuthor = state.quoteAuthor,
-                lookName = if (developing || flashLook) namedLook.label() else null,
-                caption = state.wallpaperCaption,
-                captionBusy = state.wallpaperBusy,
-                onClockTap = { },
-                onClockLongPress = onOpenSettings,
-                onPrintLongPress = { cycleRingerFrom(it) },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                    .padding(top = (paneHeight * 0.045f).coerceIn(18.dp, 32.dp))
-                    .graphicsLayer {
-                        val span = (maxSheetPx - peekSheetPx).coerceAtLeast(1f)
-                        val pastPeek = ((pull.px - peekSheetPx) / span).coerceIn(0f, 1f)
-                        alpha = 1f - pastPeek * 0.92f
-                        translationY = -pastPeek * 18f
-                    },
-            )
+            // Composed whenever home is idle: with Show clock off, the clock's slot is still the way into Settings.
+            if (!searchOpen && !askOpen && state.onboarding == null) {
+                ClockCluster(
+                    showClock = state.showClock,
+                    dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
+                    showCharge = chargeHairlineVisible(state.charging, state.charge),
+                    charge = state.charge,
+                    chargeColor = if (state.charging && namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
+                    quote = state.quote,
+                    quoteAuthor = state.quoteAuthor,
+                    lookName = if (developing || flashLook) namedLook.label() else null,
+                    caption = state.wallpaperCaption,
+                    captionBusy = state.wallpaperBusy,
+                    onClockTap = { },
+                    onClockLongPress = onOpenSettings,
+                    onPrintLongPress = { cycleRingerFrom(it) },
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                        .padding(top = (paneHeight * 0.045f).coerceIn(18.dp, 32.dp))
+                        .graphicsLayer {
+                            val span = (maxSheetPx - peekSheetPx).coerceAtLeast(1f)
+                            val pastPeek = ((pull.px - peekSheetPx) / span).coerceIn(0f, 1f)
+                            alpha = 1f - pastPeek * 0.92f
+                            translationY = -pastPeek * 18f
+                        },
+                )
+            }
+            hint?.let { (text, action) ->
+                Box(
+                    Modifier
+                        .padding(top = 10.dp, start = 20.dp, end = 20.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(VoidBlack.copy(alpha = 0.75f))
+                        .clickable(onClick = action)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text,
+                        color = PrintInk.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         }
 
         Box(
@@ -395,6 +438,27 @@ fun HomeScreen(
                     WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
                 ),
         ) {
+            // Under the dock: once the sheet rises over the faded strip, taps there are for the apps.
+            if (state.onboarding == null && !searchOpen && !askOpen) {
+                val namedLook = targetLook ?: look
+                PlaybackStrip(
+                    playing = state.musicPlaying,
+                    dim = namedLook == RingerVisual.Silent,
+                    onPrevious = onPreviousTrack,
+                    onPlayPause = onPlayPause,
+                    onNext = onSkipTrack,
+                    onOpen = onOpenPlayer,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 156.dp)
+                        .graphicsLayer {
+                            val cover = if (peekSheetPx <= 0f) 0f else (pull.px / peekSheetPx).coerceIn(0f, 1f)
+                            alpha = 1f - cover * 0.95f
+                            translationY = cover * 28f
+                        },
+                )
+            }
             ExpandingDock(
                 pull = pull,
                 maxSheetPx = maxSheetPx,
@@ -423,26 +487,6 @@ fun HomeScreen(
                     .padding(bottom = 64.dp)
                     .then(if (pull.locked) Modifier else sheetDrag()),
             )
-            if (state.onboarding == null && !searchOpen && !askOpen) {
-                val namedLook = targetLook ?: look
-                PlaybackStrip(
-                    playing = state.musicPlaying,
-                    dim = namedLook == RingerVisual.Silent,
-                    onPrevious = onPreviousTrack,
-                    onPlayPause = onPlayPause,
-                    onNext = onSkipTrack,
-                    onOpen = onOpenPlayer,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(bottom = 156.dp)
-                        .graphicsLayer {
-                            val cover = if (peekSheetPx <= 0f) 0f else (pull.px / peekSheetPx).coerceIn(0f, 1f)
-                            alpha = 1f - cover * 0.95f
-                            translationY = cover * 28f
-                        },
-                )
-            }
             if (state.onboarding == null) {
                 SearchButton(
                     onClick = { if (!searchOpen && !askOpen && pinSlot < 0) openSearch() },
@@ -576,6 +620,7 @@ fun HomeScreen(
                     hasUsageAccess = state.hasUsageAccess,
                     hasNowPlayingAccess = state.hasNowPlayingAccess,
                     wallpaperBusy = state.wallpaperBusy,
+                    wallpaperCaption = state.wallpaperCaption,
                     onSetDefault = onSetDefault,
                     onSkipRole = onSkipRole,
                     onPickPhoto = onPickPhoto,
@@ -584,41 +629,6 @@ fun HomeScreen(
                     onSkipWallpaper = onSkipWallpaper,
                     onAllowAccess = onOpenDnd,
                     onSkipAccess = onSkipAccess,
-                )
-            }
-        }
-
-        val hint = when {
-            state.silentHint &&
-                state.mode == RingerVisual.Silent &&
-                state.onboarding == null &&
-                !searchOpen &&
-                !askOpen &&
-                !pull.showing ->
-                "Tap to let Silent mute the ringer." to onSilentHint
-            state.mediaHint &&
-                state.onboarding == null &&
-                !searchOpen &&
-                !askOpen &&
-                !pull.showing ->
-                "Tap so Folio can see what’s playing." to onMediaHint
-            else -> null
-        }
-        hint?.let { (text, action) ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                    .padding(top = 10.dp, start = 20.dp, end = 20.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(VoidBlack.copy(alpha = 0.75f))
-                    .clickable(onClick = action)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text,
-                    color = PrintInk.copy(alpha = 0.7f),
-                    fontSize = 12.sp,
                 )
             }
         }

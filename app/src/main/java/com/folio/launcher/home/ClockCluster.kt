@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -26,6 +27,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,7 +74,8 @@ fun ClockCluster(
                 style = QuoteStyle.copy(shadow = PrintShadow),
                 color = PrintInk.copy(alpha = if (dimClock) 0.78f else 1f),
                 textAlign = TextAlign.Center,
-                maxLines = 2,
+                // Two lines cut about a fifth of the bank at 16sp on the S23; every quote fits in three.
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .widthIn(max = 340.dp)
@@ -88,24 +94,39 @@ fun ClockCluster(
                     color = PrintInk.copy(alpha = if (dimClock) 0.52f else 0.78f),
                 )
             }
-            if (showClock) Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(10.dp))
         }
-        if (showClock) {
-            Box(contentAlignment = Alignment.Center) {
-                if (showCharge) {
-                    ChargeHairline(
-                        color = chargeColor,
-                        fraction = charge,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
-                ClockDisplay(
-                    dim = dimClock,
-                    onTap = onClockTap,
-                    onLongPress = onClockLongPress,
-                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 20.dp),
+        Box(contentAlignment = Alignment.Center) {
+            if (showClock && showCharge) {
+                ChargeHairline(
+                    color = chargeColor,
+                    fraction = charge,
+                    modifier = Modifier.matchParentSize(),
                 )
             }
+            // Hidden, the clock keeps its slot and long-press: it is the only way into Settings.
+            // TalkBack doesn't read the hidden time, but still finds Settings there.
+            ClockDisplay(
+                dim = dimClock,
+                onTap = onClockTap,
+                onLongPress = onClockLongPress,
+                modifier = Modifier
+                    .padding(horizontal = 28.dp, vertical = 20.dp)
+                    .testTag("clock")
+                    .then(
+                        if (showClock) {
+                            Modifier
+                        } else {
+                            Modifier.alpha(0f).clearAndSetSemantics {
+                                contentDescription = "Settings"
+                                onLongClick(label = "Open Settings") {
+                                    onClockLongPress()
+                                    true
+                                }
+                            }
+                        },
+                    ),
+            )
         }
         if (lookName != null) {
             Spacer(Modifier.height(10.dp))
