@@ -21,6 +21,17 @@ class QuoteFitTest {
     }
 
     @Test
+    fun shortlist_staysFullWhateverTheBankSize() {
+        // A fixed stride of 97 cycled early whenever the bank was a multiple of it (873 gave nine).
+        for (size in 1..1200) {
+            val sized = List(size) { Quote("Line $it") }
+            val list = QuoteFit.shortlist(size, epochDay = 20_000, salt = 3)
+            assertEquals("size $size", minOf(QuoteFit.SHORTLIST, size), list.size)
+            assertEquals("size $size", sized.indexOf(QuoteBank.pick(sized, 20_000, 3)), list.first())
+        }
+    }
+
+    @Test
     fun shortlist_smallOrEmptyBanks() {
         assertEquals(emptyList<Int>(), QuoteFit.shortlist(0, 1, 0))
         assertEquals(setOf(0, 1, 2), QuoteFit.shortlist(3, 1, 0).toSet())

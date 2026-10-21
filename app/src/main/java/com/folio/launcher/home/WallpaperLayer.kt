@@ -267,6 +267,15 @@ private fun farthestCorner(origin: Offset, size: Size): Float {
     return hypot(dx, dy)
 }
 
+/**
+ * Parallax [shift] kept inside the overhang that [scale] (about the centre) leaves past each edge
+ * of [extent]: past it a hard tilt shows the black behind the print, at any density or zoom.
+ */
+internal fun printShift(shift: Float, extent: Float, scale: Float): Float {
+    val overhang = ((scale - 1f) / 2f * extent).coerceAtLeast(0f)
+    return shift.coerceIn(-overhang, overhang)
+}
+
 @Composable
 private fun GradedPrint(
     photo: ImageBitmap?,
@@ -284,10 +293,10 @@ private fun GradedPrint(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            translationX = parallax?.x ?: 0f
-                            translationY = parallax?.y ?: 0f
                             scaleX = 1.08f
                             scaleY = 1.08f
+                            translationX = printShift(parallax?.x ?: 0f, size.width, scaleX)
+                            translationY = printShift(parallax?.y ?: 0f, size.height, scaleY)
                         },
                     contentScale = ContentScale.Crop,
                     colorFilter = filter,

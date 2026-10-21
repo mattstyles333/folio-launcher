@@ -21,13 +21,31 @@ data class PrintState(
     val hasPrevious: Boolean = false,
 )
 
+/** The print files [PrintController] changes: [WallpaperRepository] on the phone, a fake in tests. */
+interface PrintFiles {
+    fun exists(): Boolean
+
+    fun prevExists(): Boolean
+
+    suspend fun load(): WallpaperRepository.LoadedWallpaper?
+
+    /** A Bing print that isn't one of [avoid] (Bing identities), now the current print. */
+    suspend fun importBing(avoid: Set<String>): WallpaperRepository.BingShot?
+
+    suspend fun importFromUri(uri: Uri): Boolean
+
+    suspend fun importSystem(): Boolean
+
+    suspend fun swapWithPrev(): Boolean
+}
+
 /**
  * Owns the print on the idle screen: the first Bing, the daily Bing, double-tap for another,
  * Previous print, and local photos. Reads prefs fresh from the store rather than a cached copy.
  */
 class PrintController(
     private val scope: CoroutineScope,
-    private val repo: WallpaperRepository,
+    private val repo: PrintFiles,
     private val prefsStore: PrefsStore,
     /** Marks onboarding steps done once a print is in place. */
     private val finishOnboarding: (Prefs) -> Prefs,
@@ -63,14 +81,22 @@ class PrintController(
         }
     }
 
+    /** Previous print is a swap: a second tap while one is on its way would only swap back. */
+    private var previousPending = false
+
     fun previous() {
-        if (!claim()) return
+        if (previousPending) return
+        previousPending = true
         scope.launch {
+            claimWhenFree()
             if (repo.swapWithPrev()) {
+                val day = today()
                 prefsStore.update {
                     it.copy(
                         bingId = it.bingPrevId,
                         bingPrevId = it.bingId,
+                        // A Bing brought back is today's print: the daily fetch mustn't replace it.
+                        bingDay = if (it.bingPrevId.isNotEmpty()) day else it.bingDay,
                         quoteFit = it.quotePrevFit,
                         quotePrevFit = it.quoteFit,
                     )
@@ -78,6 +104,7 @@ class PrintController(
                 load()
             }
             release()
+            previousPending = false
         }
     }
 
@@ -91,9 +118,10 @@ class PrintController(
     fun useSystem() = importLocal { repo.importSystem() }
 
     private fun importLocal(import: suspend () -> Boolean) {
-        if (!claim()) return
         scope.launch {
-            if (import()) {
+            claimWhenFree()
+            val ok = import()
+            if (ok) {
                 prefsStore.update {
                     finishOnboarding(
                         it.copy(
@@ -107,7 +135,7 @@ class PrintController(
                 }
                 load()
             }
-            release()
+            release(if (ok) null else PHOTO_FAILED)
         }
     }
 
@@ -185,8 +213,14 @@ class PrintController(
     private fun claim(caption: String? = null): Boolean {
         if (_state.value.busy) return false
         captionJob?.cancel()
-        _state.update { it.copy(busy = true, caption = caption ?: it.caption) }
+        // A title still showing names the print this change replaces.
+        _state.update { it.copy(busy = true, caption = caption ?: "") }
         return true
+    }
+
+    /** A picked photo or Previous print waits out a change already running (often the quiet daily Bing). */
+    private suspend fun claimWhenFree() {
+        while (!claim()) _state.first { !it.busy }
     }
 
     private fun release(caption: String? = null) {
@@ -200,6 +234,9 @@ class PrintController(
 
     companion object {
         private const val CAPTION_MS = 2_000L
+
+        /** The caption for a picked photo (or the current wallpaper) that couldn't be read. */
+        const val PHOTO_FAILED = "Couldn't open that photo"
 
         fun argb(color: Int): Color = Color(color.toLong() and 0xFFFFFFFFL)
     }

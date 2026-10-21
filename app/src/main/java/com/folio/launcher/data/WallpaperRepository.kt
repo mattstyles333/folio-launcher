@@ -22,15 +22,15 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class WallpaperRepository(private val context: Context) {
+class WallpaperRepository(private val context: Context) : PrintFiles {
     val file: File get() = File(context.filesDir, "wallpaper.jpg")
     private val prevFile: File get() = File(context.filesDir, "wallpaper.prev.jpg")
     private val nextFile: File get() = File(context.filesDir, "wallpaper.next.jpg")
     private val bing = BingClient(File(context.filesDir, "bing-archive.json"))
 
-    fun exists(): Boolean = file.exists() && file.length() > 0L
+    override fun exists(): Boolean = file.exists() && file.length() > 0L
 
-    fun prevExists(): Boolean = prevFile.exists() && prevFile.length() > 0L
+    override fun prevExists(): Boolean = prevFile.exists() && prevFile.length() > 0L
 
     /** Full panel in portrait (1080×2340 on the S23), independent of bars or window insets. */
     fun panelSize(): Pair<Int, Int> {
@@ -66,7 +66,7 @@ class WallpaperRepository(private val context: Context) {
      * Re-encodes the picked photo upright (EXIF applied) and no larger than the print needs,
      * so a 50 MP original never has to be decoded at full size again.
      */
-    suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val (w, h) = printSize()
             val source = ImageDecoder.createSource(context.contentResolver, uri)
@@ -89,7 +89,7 @@ class WallpaperRepository(private val context: Context) {
     }
 
     /** Downloads a Bing print that isn't one of [avoid] (Bing identities). */
-    suspend fun importBing(avoid: Set<String>): BingShot? = withContext(Dispatchers.IO) {
+    override suspend fun importBing(avoid: Set<String>): BingShot? = withContext(Dispatchers.IO) {
         runCatching {
             val (w, h) = panelSize()
             val image = BingClient.pickNext(bing.archive(), avoid) ?: return@runCatching null
@@ -103,7 +103,7 @@ class WallpaperRepository(private val context: Context) {
         }.getOrNull()
     }
 
-    suspend fun swapWithPrev(): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun swapWithPrev(): Boolean = withContext(Dispatchers.IO) {
         if (!prevExists()) return@withContext false
         val tmp = File(context.filesDir, "wallpaper.swap.jpg")
         if (tmp.exists()) tmp.delete()
@@ -118,7 +118,7 @@ class WallpaperRepository(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    suspend fun importSystem(): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun importSystem(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val wm = WallpaperManager.getInstance(context)
             val drawable = wm.peekFastDrawable() ?: wm.peekDrawable() ?: wm.drawable
@@ -157,7 +157,7 @@ class WallpaperRepository(private val context: Context) {
         }
     }
 
-    suspend fun load(): LoadedWallpaper? = withContext(Dispatchers.IO) {
+    override suspend fun load(): LoadedWallpaper? = withContext(Dispatchers.IO) {
         if (!exists()) return@withContext null
         val (w, h) = printSize()
         val photo = decodeRegion(file, w, h) ?: decodeWhole(file, w, h) ?: return@withContext null
