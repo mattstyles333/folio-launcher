@@ -31,6 +31,13 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -63,6 +70,8 @@ fun ExpandingDock(
     onReorder: (Int, Int) -> Unit,
     onHide: (LaunchableApp) -> Unit,
     modifier: Modifier = Modifier,
+    /** The icons' accessibility actions; off while an overlay covers the dock and takes its taps. */
+    accessibilityActions: Boolean = true,
 ) {
     val gridState = rememberLazyGridState()
     val settle = rememberUpdatedState(onSettle)
@@ -112,6 +121,7 @@ fun ExpandingDock(
                 onReorder = onReorder,
                 onHide = onHide,
                 modifier = Modifier.fillMaxWidth(),
+                accessibilityActions = accessibilityActions,
             )
             Box(
                 Modifier
@@ -134,6 +144,7 @@ fun ExpandingDock(
                                 onLaunch = onLaunch,
                                 onAppInfo = onAppInfo,
                                 onHide = onHide,
+                                accessibilityActions = accessibilityActions,
                             )
                         }
                     }
@@ -166,12 +177,32 @@ private fun DrawerCell(
     onLaunch: (LaunchableApp) -> Unit,
     onAppInfo: (LaunchableApp) -> Unit,
     onHide: (LaunchableApp) -> Unit,
+    accessibilityActions: Boolean,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
             .height(DockRowHeight)
+            // Tap, hold and swipe are pointer input only: assistive tech gets them as actions.
+            .semantics(mergeDescendants = true) {
+                if (!accessibilityActions) return@semantics
+                role = Role.Button
+                onClick(label = "Open") {
+                    onLaunch(app)
+                    true
+                }
+                onLongClick(label = "App info") {
+                    onAppInfo(app)
+                    true
+                }
+                customActions = listOf(
+                    CustomAccessibilityAction("Hide from home") {
+                        onHide(app)
+                        true
+                    },
+                )
+            }
             .swipeAwayToHide(app.key) { onHide(app) }
             .pointerInput(app.key) {
                 detectTapGestures(
@@ -185,6 +216,7 @@ private fun DrawerCell(
             bitmap = app.icon,
             contentDescription = app.label,
             saturation = iconSaturation,
+            paused = app.paused,
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape),

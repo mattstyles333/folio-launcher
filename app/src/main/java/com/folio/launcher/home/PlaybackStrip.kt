@@ -27,6 +27,12 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.folio.launcher.ui.PrintInk
@@ -54,14 +60,14 @@ fun PlaybackStrip(
             horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SkipButton(onClick = { tap(onPrevious) }) { prevGlyph(ink) }
+            SkipButton(label = "Previous track", onClick = { tap(onPrevious) }) { prevGlyph(ink) }
             PlayPauseButton(
                 playing = playing,
                 ink = ink,
                 onPlayPause = { tap(onPlayPause) },
                 onOpen = { tap(onOpen) },
             )
-            SkipButton(onClick = { tap(onNext) }) { nextGlyph(ink) }
+            SkipButton(label = "Next track", onClick = { tap(onNext) }) { nextGlyph(ink) }
         }
     }
 }
@@ -76,6 +82,19 @@ private fun PlayPauseButton(
     Canvas(
         Modifier
             .size(52.dp)
+            // The taps below are pointer input only: TalkBack, Switch Access and Voice Access act here.
+            .semantics {
+                contentDescription = if (playing) "Pause" else "Play"
+                role = Role.Button
+                onClick {
+                    onPlayPause()
+                    true
+                }
+                onLongClick(label = "Open player") {
+                    onOpen()
+                    true
+                }
+            }
             .pointerInput(playing) {
                 detectTapGestures(
                     onLongPress = { onOpen() },
@@ -89,15 +108,18 @@ private fun PlayPauseButton(
 
 @Composable
 private fun SkipButton(
+    label: String,
     onClick: () -> Unit,
     glyph: DrawScope.() -> Unit,
 ) {
     Canvas(
         Modifier
             .size(48.dp)
+            .semantics { contentDescription = label }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                role = Role.Button,
                 onClick = onClick,
             ),
     ) { glyph() }

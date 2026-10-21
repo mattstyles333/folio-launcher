@@ -1,5 +1,11 @@
 package com.folio.launcher.home
 
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.unit.Density
+import com.folio.launcher.data.RingerVisual
+import com.folio.launcher.ui.ChargeGreen
+import com.folio.launcher.ui.PrintInk
+import com.folio.launcher.ui.printShadow
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -63,5 +69,37 @@ class ClockCopyTest {
         assertTrue(chargeHairlineVisible(charging = false, fraction = 0.04f))
         assertFalse(chargeHairlineVisible(charging = false, fraction = 0.16f))
         assertFalse(chargeHairlineVisible(charging = false, fraction = 1f))
+    }
+
+    @Test
+    fun chargeOval_isGreenOnlyWhileChargingOnSound() {
+        assertEquals(ChargeGreen, chargeOvalColor(charging = true, look = RingerVisual.Sound))
+        assertEquals(PrintInk, chargeOvalColor(charging = true, look = RingerVisual.Vibrate))
+        assertEquals(PrintInk, chargeOvalColor(charging = true, look = RingerVisual.Silent))
+        // Low and unplugged: the same oval, in ink, even on Sound.
+        assertEquals(PrintInk, chargeOvalColor(charging = false, look = RingerVisual.Sound))
+    }
+
+    @Test
+    fun chargeOval_isClosedAtFull() {
+        assertEquals(StrokeCap.Butt, chargeCap(sweep = 360f))
+        assertEquals(StrokeCap.Butt, chargeCap(sweep = 359.5f))
+        assertEquals(StrokeCap.Round, chargeCap(sweep = 0.4f * 360f))
+    }
+
+    @Test
+    fun grades_areFullColourHalfAndGrey() {
+        assertEquals(1f, RingerVisual.Sound.saturation(), 0f)
+        assertEquals(0.5f, RingerVisual.Vibrate.saturation(), 0f)
+        assertEquals(0f, RingerVisual.Silent.saturation(), 0f)
+    }
+
+    @Test
+    fun printShadow_isAHardDropInDp_notPixels() {
+        val xxhdpi = printShadow(Density(3f))
+        assertEquals(3.6f, xxhdpi.offset.y, 0.001f)
+        assertEquals(0f, xxhdpi.offset.x, 0f)
+        assertEquals(0f, xxhdpi.blurRadius, 0f)
+        assertEquals(1.2f, printShadow(Density(1f)).offset.y, 0.001f)
     }
 }

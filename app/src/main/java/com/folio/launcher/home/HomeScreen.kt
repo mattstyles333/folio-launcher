@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,6 +48,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -69,7 +74,6 @@ import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.search.AskOverlay
 import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.search.SearchOverlay
-import com.folio.launcher.ui.ChargeGreen
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
 import kotlin.math.abs
@@ -291,9 +295,9 @@ fun HomeScreen(
 
         val targetLook = revealTarget
         val iconSat = if (targetLook != null) {
-            lerp(look.iconSaturation(), targetLook.iconSaturation(), revealProgress.value)
+            lerp(look.saturation(), targetLook.saturation(), revealProgress.value)
         } else {
-            look.iconSaturation()
+            look.saturation()
         }
 
         val parallax = rememberParallax(
@@ -315,19 +319,59 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
+        // The scrim under the sheet is drawn, not layered: a layer's alpha filled a full-screen
+        // offscreen buffer every frame the sheet was open. pull.px is still read only in draw.
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer {
+                .drawBehind {
                     val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
-                    alpha = open * 0.38f
-                }
-                .background(Color.Black),
+                    if (open > 0f) drawRect(Color.Black, alpha = open * 0.38f)
+                },
         )
+
+        // The print's gestures are pointer input only. Assistive tech gets the everyday ones as
+        // actions, on the gestures' own guards, while the print is home's to touch.
+        val printActions = if (gesturesEnabled && !pull.showing) {
+            val center = Offset(constraints.maxWidth / 2f, constraints.maxHeight / 2f)
+            listOf(
+                CustomAccessibilityAction("Next print") {
+                    if (pull.px < 8f) {
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        onNextBing()
+                    }
+                    true
+                },
+                CustomAccessibilityAction("Set ringer to ${look.nextRinger().label()}") {
+                    cycleRingerFrom(center)
+                    true
+                },
+                CustomAccessibilityAction(if (state.aiLabel.isEmpty()) "Ask" else "Ask ${state.aiLabel}") {
+                    if (pull.px < 8f) openAsk()
+                    true
+                },
+                CustomAccessibilityAction("Open Settings") {
+                    onOpenSettings()
+                    true
+                },
+            )
+        } else {
+            emptyList()
+        }
 
         Box(
             Modifier
                 .fillMaxSize()
+                .then(
+                    if (printActions.isEmpty()) {
+                        Modifier
+                    } else {
+                        Modifier.semantics {
+                            contentDescription = "Print"
+                            customActions = printActions
+                        }
+                    },
+                )
                 .then(sheetDrag())
                 .detectPrintSwipe(
                     enabled = gesturesEnabled,
@@ -392,7 +436,7 @@ fun HomeScreen(
                     dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
                     showCharge = chargeHairlineVisible(state.charging, state.charge),
                     charge = state.charge,
-                    chargeColor = if (state.charging && namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
+                    chargeColor = chargeOvalColor(state.charging, namedLook),
                     quote = state.quote,
                     quoteAuthor = state.quoteAuthor,
                     lookName = if (developing || flashLook) namedLook.label() else null,
@@ -439,7 +483,8 @@ fun HomeScreen(
                 ),
         ) {
             // Under the dock: once the sheet rises over the faded strip, taps there are for the apps.
-            if (state.onboarding == null && !searchOpen && !askOpen) {
+            // Under an overlay (the pin picker too) there is no strip, so TalkBack can't reach it either.
+            if (state.onboarding == null && !searchOpen && !askOpen && pinSlot < 0) {
                 val namedLook = targetLook ?: look
                 PlaybackStrip(
                     playing = state.musicPlaying,
@@ -481,6 +526,8 @@ fun HomeScreen(
                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                     onHideApp(app)
                 },
+                // Under an overlay a tap on the dock is the overlay's; so is TalkBack's.
+                accessibilityActions = gesturesEnabled,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -644,12 +691,6 @@ private fun RingerVisual.nextRinger(): RingerVisual = when (this) {
     RingerVisual.Sound -> RingerVisual.Vibrate
     RingerVisual.Vibrate -> RingerVisual.Silent
     RingerVisual.Silent -> RingerVisual.Sound
-}
-
-private fun RingerVisual.iconSaturation(): Float = when (this) {
-    RingerVisual.Sound -> 1f
-    RingerVisual.Vibrate -> 0.5f
-    RingerVisual.Silent -> 0f
 }
 
 private fun RingerVisual.label(): String = when (this) {

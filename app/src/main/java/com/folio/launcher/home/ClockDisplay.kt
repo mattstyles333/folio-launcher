@@ -26,7 +26,7 @@ import com.folio.launcher.ui.ClockAmPmStyle
 import com.folio.launcher.ui.ClockDateStyle
 import com.folio.launcher.ui.ClockTimeStyle
 import com.folio.launcher.ui.PrintInk
-import com.folio.launcher.ui.PrintShadow
+import com.folio.launcher.ui.printShadow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -64,6 +64,7 @@ fun ClockDisplay(
     val copy = remember(now, is24, locale, datePattern) {
         ClockCopy.of(now, is24, locale, datePattern = datePattern)
     }
+    val shadow = printShadow()
     val timeAlpha = if (dim) 0.72f else 1f
     val dateAlpha = if (dim) 0.54f else 0.90f
     Column(
@@ -80,14 +81,14 @@ fun ClockDisplay(
         Row {
             Text(
                 text = copy.time,
-                style = ClockTimeStyle.copy(shadow = PrintShadow),
+                style = ClockTimeStyle.copy(shadow = shadow),
                 color = PrintInk.copy(alpha = timeAlpha),
                 modifier = Modifier.alignByBaseline(),
             )
             if (copy.ampm != null) {
                 Text(
                     text = copy.ampm,
-                    style = ClockAmPmStyle.copy(shadow = PrintShadow),
+                    style = ClockAmPmStyle.copy(shadow = shadow),
                     color = PrintInk.copy(alpha = timeAlpha * 0.86f),
                     modifier = Modifier
                         .alignByBaseline()
@@ -98,7 +99,7 @@ fun ClockDisplay(
         Spacer(Modifier.height(2.dp))
         Text(
             text = copy.date,
-            style = ClockDateStyle.copy(shadow = PrintShadow),
+            style = ClockDateStyle.copy(shadow = shadow),
             color = PrintInk.copy(alpha = dateAlpha),
         )
     }

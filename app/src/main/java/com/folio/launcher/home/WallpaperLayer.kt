@@ -69,8 +69,8 @@ fun WallpaperLayer(
     val grain = remember(resources) {
         BitmapFactory.decodeResource(resources, R.drawable.grain).asImageBitmap()
     }
-    val halfColor = remember { ColorFilter.colorMatrix(saturationMatrix(0.5f)) }
-    val blackWhite = remember { ColorFilter.colorMatrix(saturationMatrix(0f)) }
+    val halfColor = remember { ColorFilter.colorMatrix(saturationMatrix(RingerVisual.Vibrate.saturation())) }
+    val blackWhite = remember { ColorFilter.colorMatrix(saturationMatrix(RingerVisual.Silent.saturation())) }
     val developing = reveal?.takeIf { it.progress > 0.001f }
     Box(modifier.fillMaxSize().background(VoidBlack)) {
         if (developing != null) {
@@ -358,6 +358,13 @@ private fun FallbackGradient(accent: Color) {
                 ),
             ),
     )
+}
+
+/** The ringer's grade: full colour, half, grey. The print and the app icons both take it from here. */
+fun RingerVisual.saturation(): Float = when (this) {
+    RingerVisual.Sound -> 1f
+    RingerVisual.Vibrate -> 0.5f
+    RingerVisual.Silent -> 0f
 }
 
 private fun saturationMatrix(amount: Float): ColorMatrix {

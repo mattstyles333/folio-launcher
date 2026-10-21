@@ -67,7 +67,7 @@ import com.folio.launcher.hermes.ExchangeStatus
 import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.hermes.HermesExchange
 import com.folio.launcher.ui.PrintInk
-import com.folio.launcher.ui.PrintShadow
+import com.folio.launcher.ui.printShadow
 
 /** What the Hermes overlay can do. Defaults do nothing, so screens without Hermes need not care. */
 class HermesAskActions(
@@ -88,7 +88,6 @@ private val ReplyStyle = TextStyle(
     fontWeight = FontWeight.Light,
     fontSize = 19.sp,
     lineHeight = 27.sp,
-    shadow = PrintShadow,
 )
 
 /** The Ask overlay's body when Hermes answers: field + mic, chips or the exchange, approvals, Stop. */
@@ -250,7 +249,8 @@ private fun Exchange(exchange: HermesExchange, thinking: Boolean, live: Boolean)
     )
     Spacer(Modifier.height(6.dp))
     when {
-        exchange.reply.isNotEmpty() -> Text(exchange.reply, style = ReplyStyle)
+        // The print's hard shadow, in dp: a top-level style has no density to set it from.
+        exchange.reply.isNotEmpty() -> Text(exchange.reply, style = ReplyStyle.copy(shadow = printShadow()))
         thinking -> Quiet("Hermes is thinking…", italic = true)
     }
     exchange.note?.let { Quiet(it, live = live) }

@@ -201,8 +201,10 @@ class HomeScreenStateTest {
         }
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
-        // At peek, row 1's labels run under the faded play button.
-        compose.onNodeWithText("Bravo").performTouchInput { click(Offset(width - 10.dp.toPx(), centerY)) }
+        // At peek, row 1's labels run under the faded play button. The label itself, not its whole
+        // cell (which TalkBack reads as one): its middle is under the button.
+        compose.onNodeWithText("Bravo", useUnmergedTree = true)
+            .performTouchInput { click(Offset(width - 10.dp.toPx(), centerY)) }
         compose.waitForIdle()
         assertEquals(listOf("launch:Bravo"), calls)
     }
@@ -221,6 +223,22 @@ class HomeScreenStateTest {
         compose.onRoot().performTouchInput { click(Offset(centerX - 78.dp.toPx(), height - 182.dp.toPx())) }
         compose.waitForIdle()
         assertEquals(listOf("previousTrack"), calls)
+    }
+
+    @Test
+    fun caption_fadesOutWhenItClears() {
+        show(HomeUiState(wallpaperCaption = "Lavender fields, Provence"))
+        compose.onNodeWithText("Lavender fields, Provence").assertExists()
+        compose.mainClock.autoAdvance = false
+        // Two seconds after the new print's title showed, PrintController clears it.
+        state = state.copy(wallpaperCaption = "")
+        // Hands the clear to the recomposer; the paused clock holds its frame until we advance.
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(150)
+        // On its way out, still reading the same words: a fade, not a cut.
+        compose.onNodeWithText("Lavender fields, Provence").assertExists()
+        compose.mainClock.advanceTimeBy(2_000)
+        compose.onNodeWithText("Lavender fields, Provence").assertDoesNotExist()
     }
 
     @Test

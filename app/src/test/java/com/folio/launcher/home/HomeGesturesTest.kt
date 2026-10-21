@@ -2,7 +2,12 @@ package com.folio.launcher.home
 
 import android.graphics.Bitmap
 import android.os.Process
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -20,6 +25,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -50,6 +56,10 @@ class HomeGesturesTest {
     val compose = createComposeRule()
 
     private val calls = mutableListOf<String>()
+
+    /** Bumped by MainActivity when Home is pressed (or the screen comes back on). */
+    private var idleEpoch by mutableIntStateOf(0)
+    private var back: OnBackPressedDispatcher? = null
 
     private val hermesActions = HermesAskActions(
         ask = { calls += "hermesAsk:$it" },
@@ -82,10 +92,11 @@ class HomeGesturesTest {
 
     private fun show(state: HomeUiState = HomeUiState(), searchHint: SearchHint = SearchHint()) {
         compose.setContent {
+            back = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
             FolioTheme {
                 HomeScreen(
                     state = state,
-                    idleEpoch = 0,
+                    idleEpoch = idleEpoch,
                     launches = emptyMap(),
                     onLaunch = { calls += "launch" },
                     onAppInfo = { calls += "appInfo" },
@@ -124,6 +135,29 @@ class HomeGesturesTest {
     private fun printPoint() = compose.onRoot().fetchSemanticsNode().size.let {
         Offset(it.width / 2f, it.height * 0.45f)
     }
+
+    /** The system Back, as the activity hands it to HomeScreen's BackHandler. */
+    private fun pressBack() {
+        compose.runOnIdle { checkNotNull(back).onBackPressed() }
+        compose.waitForIdle()
+    }
+
+    /** A quick pull up from the print: from idle it lands on the peek, from the peek on the full grid. */
+    private fun pullUp() {
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            swipe(start = at, end = at - Offset(0f, 100.dp.toPx()), durationMillis = 200)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
+    /** Six rows A–Z: the peek shows the first two and a sliver, the full grid row five (Quebec) too. */
+    private val sixRows = listOf(
+        "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+        "India", "Juliett", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa",
+        "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "Xray",
+    ).map { app(it, "com.example.${it.lowercase()}") }
 
     @Test
     fun doubleTapPrint_fetchesNextBing() {
@@ -511,6 +545,62 @@ class HomeGesturesTest {
         }
         compose.waitForIdle()
         assertEquals(listOf("1>2"), moves)
+    }
+
+    @Test
+    fun back_closesSearch_andForgetsTheQuery() {
+        show()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("zebra")
+        pressBack()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("zebra").assertDoesNotExist()
+    }
+
+    @Test
+    fun back_stepsTheSheet_fullThenPeekThenClosed() {
+        show(HomeUiState(apps = sixRows))
+        pullUp()
+        pullUp()
+        compose.onNodeWithContentDescription("Quebec").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithContentDescription("Quebec").assertIsNotDisplayed()
+        compose.onNodeWithContentDescription("Alpha").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithContentDescription("Alpha").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun home_closesSearchAndTheSheet_andForgetsTheQuery() {
+        show(HomeUiState(apps = sixRows))
+        pullUp()
+        compose.onNodeWithContentDescription("Alpha").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("zebra")
+        // Home pressed: MainActivity bumps idleEpoch.
+        idleEpoch++
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Alpha").assertIsNotDisplayed()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("zebra").assertDoesNotExist()
+    }
+
+    @Test
+    fun home_closesTheHermesOverlay_andDisconnects() {
+        show(hermesState)
+        compose.onNodeWithContentDescription("Search").performTouchInput { longClick() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertExists()
+        idleEpoch++
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertDoesNotExist()
+        assertEquals(listOf("hermesVisible:true", "hermesVisible:false"), calls)
     }
 
     @Test
