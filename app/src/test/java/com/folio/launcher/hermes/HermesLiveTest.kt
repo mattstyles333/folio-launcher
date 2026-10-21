@@ -1,6 +1,7 @@
 package com.folio.launcher.hermes
 
 import android.content.pm.PackageInfo
+import android.content.pm.PermissionInfo
 import android.content.pm.Signature
 import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
@@ -99,6 +100,10 @@ class HermesLiveTest {
     fun manifest_declaresAndUsesTheHermesPermission() {
         val info = app.packageManager.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
         assertTrue(info.requestedPermissions.orEmpty().contains(HermesLive.PERMISSION))
+        // It guards Hermes Live's token, and Folio's declaration is the one in force when Folio is
+        // installed first: signature only, or any app could ask for the token.
+        val declared = info.permissions.orEmpty().single { it.name == HermesLive.PERMISSION }
+        assertEquals(PermissionInfo.PROTECTION_SIGNATURE, declared.protection)
     }
 
     private companion object {

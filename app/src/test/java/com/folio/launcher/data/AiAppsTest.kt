@@ -57,10 +57,35 @@ class AiAppsTest {
     }
 
     @Test
-    fun viewUris_encodeQuery() {
+    fun viewUris_carryTheEncodedQuery() {
         val uris = AiApps.viewUris(AiKind.ChatGpt, "hello%20world")
         assertTrue(uris.any { it.contains("chatgpt://") })
         assertTrue(uris.any { it.contains("chatgpt.com/?q=hello%20world") })
+    }
+
+    @Test
+    fun open_encodesThePromptOnce() {
+        val app: Application = ApplicationProvider.getApplicationContext()
+        val pm = shadowOf(app.packageManager)
+        // This ChatGPT build claims https links, not chatgpt://.
+        val chatGpt = ComponentName("com.openai.chatgpt", "com.openai.chatgpt.Main")
+        pm.addActivityIfNotPresent(chatGpt)
+        pm.addIntentFilterForActivity(
+            chatGpt,
+            IntentFilter(Intent.ACTION_VIEW).apply {
+                addCategory(Intent.CATEGORY_DEFAULT)
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addDataScheme("https")
+            },
+        )
+
+        assertTrue(AiApps.open(app, AiKind.ChatGpt, " a b&c ", "com.openai.chatgpt"))
+
+        val started = shadowOf(app).nextStartedActivity
+        assertEquals(Intent.ACTION_VIEW, started.action)
+        assertEquals("com.openai.chatgpt", started.`package`)
+        // A space is %20 (not %2520), and & can't cut the question short.
+        assertEquals("https://chatgpt.com/?q=a%20b%26c", started.dataString)
     }
 
     @Test
