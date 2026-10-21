@@ -46,7 +46,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer; media stays on). Next grade develops from your finger. |
 | Long-press the clock | Settings — pick your own photo here too. With Show clock off, long-press where it sat. |
 | Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. Same oval when the battery is at 15% or below, even unplugged. |
-| Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens Spotify. |
+| Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens the player (Spotify if there is none). |
 | Settings → Hidden apps | Unhide. |
 
 Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page; with an OpenRouter key, Jev picks the line that suits the photograph (only its Bing title and caption are sent). The print itself refreshes on the first unlock after midnight; Settings → Previous print goes back one.
@@ -57,9 +57,9 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 
 | Access | When |
 |---|---|
-| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name (or that have a space), plus your app labels and package names, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. With Hermes chosen, what you ask Hermes (in its overlay, or a search Jev routes there) goes to your own Hermes server, at the address Hermes Live hands over, only while that overlay is open. Release builds also send crash reports, errors and start-up time (event names, codes, stack traces; tagged with app version, phone model, Android version and a random install ID; never what you type or say, answers or keys) to the maintainer's diagnostics endpoint, set at build time from the CI variable `FOLIO_DIAGNOSTICS_URL`; Settings → Diagnostics turns it off, and builds you make yourself send nothing. |
+| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name (or that have a space), plus your app labels and package names, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. With Hermes chosen, what you ask Hermes (in its overlay, or a search Jev routes there) goes to your own Hermes server, at the address Hermes Live hands over, only while that overlay is open; a Tailscale (`*.ts.net`) address is used only while Tailscale is on (Folio reads the phone's network state to check). Release builds also send crash reports, errors and start-up time (event names, codes, stack traces; tagged with app version, phone model, Android version and a random install ID; never what you type or say, answers or keys) to the maintainer's diagnostics endpoint, set at build time from the CI variable `FOLIO_DIAGNOSTICS_URL`; Settings → Diagnostics turns it off, and builds you make yourself send nothing. |
 | Photo picker | Settings → Choose photo. No broad storage. |
-| Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny. |
+| Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny, until the ringer changes. |
 | Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Ranking then counts opens outside Folio too, as far back as Android keeps them (roughly a week to ten days). |
 | Notification access | Optional. Settings → Now playing. Needed for Spotify controls on the print. Folio's switch greyed out? Android 13+ restricts it for APKs installed from a browser or file manager: Settings → Apps → Folio → ⋮ → Allow restricted settings first. |
 
