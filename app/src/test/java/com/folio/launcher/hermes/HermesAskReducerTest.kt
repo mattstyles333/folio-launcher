@@ -106,6 +106,31 @@ class HermesAskReducerTest {
     }
 
     @Test
+    fun reopenedWhileThatTurnRuns_theWholeReplyReplacesTheNote() {
+        val closed = r.closed(asked().apply(TurnUpdate.Started, TurnUpdate.Text("Two", "Two meetings")))
+        val back = r.resumed(closed, 1)
+        assertTrue(back.running)
+        assertNull(back.exchanges.single().note)
+        assertEquals("Two meetings", back.exchanges.single().reply)
+        assertEquals("Hermes is still answering…", back.working)
+        val done = back.apply(TurnUpdate.Completed("Two meetings and a parcel.", TurnStatus.Complete, null))
+        assertEquals(ExchangeStatus.Done, done.exchanges.single().status)
+        assertEquals("Two meetings and a parcel.", done.exchanges.single().reply)
+        assertNull(done.exchanges.single().note)
+        assertNull(done.working)
+    }
+
+    @Test
+    fun aStopThatFailsLate_leavesTheNextQuestionRunning() {
+        val two = r.asked(asked("one"), 2, "two")
+        assertEquals(two, r.stopped(two, 1))
+        val stopped = r.stopped(two, 2)
+        assertEquals(ExchangeStatus.Stopped, stopped.exchanges.last().status)
+        assertEquals("Stopped.", stopped.exchanges.last().note)
+        assertEquals(two, r.stopped(two, null))
+    }
+
+    @Test
     fun connectionLines() {
         assertNull(r.connectionLine(GatewayConnection.Ready(1, "e")))
         assertNull(r.connectionLine(GatewayConnection.Waiting(1, 1000, "x")))

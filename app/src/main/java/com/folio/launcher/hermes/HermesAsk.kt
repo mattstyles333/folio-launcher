@@ -3,6 +3,7 @@ package com.folio.launcher.hermes
 import com.folio.hermes.AccessTokenProvider
 import com.folio.hermes.ApprovalChoice
 import com.folio.hermes.ClarifyRequest
+import com.folio.hermes.GatewayConnection
 import com.folio.hermes.GatewayEvent
 import com.folio.hermes.HermesAuthException
 import com.folio.hermes.HermesConfig
@@ -11,7 +12,10 @@ import com.folio.hermes.HermesEndpoint
 import com.folio.hermes.HermesGateway
 import com.folio.hermes.HermesRpcException
 import com.folio.hermes.SessionOptions
+import com.folio.hermes.TurnStatus
 import com.folio.hermes.TurnUpdate
+import com.folio.hermes.cascade.ports.GatewaySessionRecovery
+import com.folio.hermes.cascade.registry.SessionProbe
 import com.folio.hermes.telemetry.Telemetry
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -19,9 +23,14 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -69,38 +78,22 @@ class HermesAsk(
     private var link: Link? = null
     private var attached = false
     private var attachJob: Job? = null
+
+    /** The link whose events the overlay hears while attached ([listen]). */
+    private var listening: Link? = null
+    private var listenJob: Job? = null
     private var turnJob: Job? = null
+
+    /** The exchange [detach] cut off mid-turn: the next attach reads how it ended. */
+    private var cut: HermesExchange? = null
     private var nextId = 1L
 
     /** The overlay is showing: connect, listen for approvals, and re-bind a stored session. */
     fun attach() {
         if (attached) return
         attached = true
-        attachJob = scope.launch {
-            val l = prepare() ?: return@launch
-            l.gateway.connect()
-            launch {
-                l.gateway.events.collect { event ->
-                    when (event) {
-                        is GatewayEvent.ApprovalRequested -> _state.update { HermesAskReducer.request(it, event.request) }
-                        is GatewayEvent.ClarifyRequested -> _state.update { HermesAskReducer.request(it, event.request) }
-                        is GatewayEvent.RequestCancelled -> _state.update { HermesAskReducer.withdrawn(it, event.id) }
-                        else -> Unit
-                    }
-                }
-            }
-            launch {
-                l.gateway.connection.collect { c -> _state.update { it.copy(error = HermesAskReducer.connectionLine(c)) } }
-            }
-            // Resuming re-delivers approvals left open when the overlay last closed.
-            if (l.conversation.storedSessionId != null) {
-                try {
-                    l.conversation.ensureSession()
-                } catch (e: IOException) {
-                    // Shown by the connection line, or by the next question.
-                }
-            }
-        }
+        // prepare() starts listening once Hermes Live hands over a connection: now, or at the next question.
+        attachJob = scope.launch { prepare() }
     }
 
     /** The overlay went away (or Folio stopped): drop the socket. A running turn goes on server-side. */
@@ -109,9 +102,17 @@ class HermesAsk(
         attached = false
         attachJob?.cancel()
         attachJob = null
-        if (turnJob?.isActive == true) _state.update(HermesAskReducer::closed)
+        listenJob?.cancel()
+        listenJob = null
+        listening = null
+        if (turnJob?.isActive == true) {
+            _state.value.exchanges.lastOrNull { it.status == ExchangeStatus.Running }?.let { cut = it }
+            _state.update(HermesAskReducer::closed)
+        }
         turnJob?.cancel()
         turnJob = null
+        // Cards are answered through this socket; the next attach's resume re-delivers those still open.
+        _state.update { it.copy(approval = null, clarify = null) }
         link?.gateway?.disconnect()
     }
 
@@ -120,14 +121,14 @@ class HermesAsk(
         if (question.isEmpty()) return
         val interruptFirst = turnJob?.isActive == true
         turnJob?.cancel()
+        cut = null
         val id = nextId++
         _state.update { HermesAskReducer.asked(it, id, question) }
         turnJob = scope.launch {
-            val l = prepare() ?: run {
-                Telemetry.warn("hermes.ask", null, mapOf("op" to "turn", "type" to "signed_out"))
-                _state.update { HermesAskReducer.failed(it, id, LiveTokenProvider.SIGNED_OUT) }
-                return@launch
-            }
+            val l = prepare { line, type ->
+                Telemetry.warn("hermes.ask", null, mapOf("op" to "turn", "type" to type))
+                _state.update { HermesAskReducer.failed(it, id, line) }
+            } ?: return@launch
             try {
                 l.conversation.turn(question, interruptFirst = interruptFirst).collect { update ->
                     if (update is TurnUpdate.Failed) Telemetry.warn("hermes.ask", null, mapOf("op" to "turn", "type" to "turn_failed"))
@@ -148,18 +149,14 @@ class HermesAsk(
     /** Stop button: interrupt the turn; if Hermes can't be told, stop listening. */
     fun stop() {
         val l = link
+        // What was tapped: an interrupt that fails late must not stop a question asked after it.
+        val job = turnJob
+        val id = _state.value.exchanges.lastOrNull { it.status == ExchangeStatus.Running }?.id
         scope.launch {
             val sent = l?.conversation?.interrupt() == true
             if (!sent) {
-                turnJob?.cancel()
-                _state.update { s ->
-                    s.copy(
-                        working = null,
-                        exchanges = s.exchanges.map {
-                            if (it.status == ExchangeStatus.Running) it.copy(status = ExchangeStatus.Stopped, note = "Stopped.") else it
-                        },
-                    )
-                }
+                job?.cancel()
+                _state.update { HermesAskReducer.stopped(it, id) }
             }
         }
     }
@@ -170,14 +167,14 @@ class HermesAsk(
         val wasRunning = turnJob?.isActive == true
         turnJob?.cancel()
         turnJob = null
+        cut = null
         _state.value = HermesAskState()
-        scope.launch {
-            if (l != null) {
-                if (wasRunning) l.conversation.interrupt()
-                l.conversation = conversation(l, stored = null)
-            }
-            saveSessionId("")
-        }
+        // Swap now, so a question asked straight after New never lands in the old session. The old
+        // id is forgotten before the new session can save its own.
+        val old = l?.conversation
+        if (l != null) l.conversation = conversation(l, stored = null)
+        scope.launch { saveSessionId("") }
+        if (wasRunning && old != null) scope.launch { old.interrupt() }
     }
 
     fun approve(choice: ApprovalChoice) {
@@ -189,7 +186,10 @@ class HermesAsk(
                 l.gateway.answerApproval(request, choice)
             } catch (e: IOException) {
                 Telemetry.warn("hermes.ask", null, askAttrs(e, "approval"))
-                _state.update { it.copy(approval = request, error = "Couldn’t send that to Hermes. Try again.") }
+                // Closed meanwhile: the card went with the socket, and the next attach re-delivers it if still open.
+                if (attached && link === l) {
+                    _state.update { it.copy(approval = request, error = "Couldn’t send that to Hermes. Try again.") }
+                }
             }
         }
     }
@@ -204,7 +204,9 @@ class HermesAsk(
                 l.gateway.answerClarify(request, answers)
             } catch (e: IOException) {
                 Telemetry.warn("hermes.ask", null, askAttrs(e, "clarify"))
-                _state.update { it.copy(clarify = request, error = "Couldn’t send that to Hermes. Try again.") }
+                if (attached && link === l) {
+                    _state.update { it.copy(clarify = request, error = "Couldn’t send that to Hermes. Try again.") }
+                }
             }
         }
     }
@@ -216,15 +218,29 @@ class HermesAsk(
         link = null
     }
 
-    /** The gateway for Hermes Live's current server, built on first need; null when Hermes is off. */
-    private suspend fun prepare(): Link? = setup.withLock {
-        val endpoint = connection()?.takeIf { it.usable }?.endpoint
+    /**
+     * The gateway for Hermes Live's current server, built on first need; null when Hermes is off,
+     * with [off] told the line shown and its telemetry type.
+     */
+    private suspend fun prepare(off: (line: String, type: String) -> Unit = { _, _ -> }): Link? = setup.withLock {
+        val c = connection()
+        val endpoint = c?.takeIf { it.usable }?.endpoint
         if (endpoint == null) {
-            _state.update { it.copy(error = LiveTokenProvider.SIGNED_OUT) }
+            // Signed in without a token or a usable address: out of reach for now, not signed out.
+            val (line, type) = if (c?.signedIn == true) {
+                HermesAskReducer.REACH to "unreachable"
+            } else {
+                LiveTokenProvider.SIGNED_OUT to "signed_out"
+            }
+            _state.update { it.copy(error = line) }
+            off(line, type)
             return null
         }
         link?.let { existing ->
-            if (existing.endpoint == endpoint) return existing
+            if (existing.endpoint == endpoint) {
+                listen(existing)
+                return existing
+            }
             existing.gateway.disconnect()
         }
         val config = HermesConfig(endpoint = endpoint)
@@ -233,7 +249,96 @@ class HermesAsk(
         l.conversation = conversation(l, stored)
         _state.update { it.copy(hasSession = stored != null, error = null) }
         link = l
+        listen(l)
         l
+    }
+
+    /**
+     * While attached: connect [l], show its connection line and requests, and re-bind a stored
+     * session. Started by whichever [prepare] first finds the link, so an attach that got no
+     * connection still listens once a question builds one.
+     */
+    private fun listen(l: Link) {
+        if (!attached || (listening === l && listenJob?.isActive == true)) return
+        listenJob?.cancel()
+        listening = l
+        listenJob = scope.launch {
+            l.gateway.connect()
+            launch {
+                l.gateway.events.collect { event ->
+                    when (event) {
+                        is GatewayEvent.ApprovalRequested -> _state.update { HermesAskReducer.request(it, event.request) }
+                        is GatewayEvent.ClarifyRequested -> _state.update { HermesAskReducer.request(it, event.request) }
+                        is GatewayEvent.RequestCancelled -> _state.update { HermesAskReducer.withdrawn(it, event.id) }
+                        else -> Unit
+                    }
+                }
+            }
+            launch {
+                l.gateway.connection.collect { c -> _state.update { it.copy(error = HermesAskReducer.connectionLine(c)) } }
+            }
+            // Resuming re-delivers approvals left open when the overlay last closed.
+            val stored = l.conversation.storedSessionId ?: return@launch
+            try {
+                l.conversation.ensureSession()
+            } catch (e: IOException) {
+                // Shown by the connection line, or by the next question.
+                return@launch
+            }
+            if (l.conversation.storedSessionId == stored) recover(l, stored)
+        }
+    }
+
+    /**
+     * Back after [detach] cut a turn off: read how it went, sending nothing. A finished turn's reply
+     * replaces the closed note; one still running is followed to its end.
+     */
+    private fun recover(l: Link, stored: String) {
+        val exchange = cut ?: return
+        if (turnJob?.isActive == true) return
+        turnJob = scope.launch {
+            val probe = try {
+                GatewaySessionRecovery(l.gateway, l.config).probe(RECOVERY_TASK, stored)
+            } catch (e: IOException) {
+                return@launch // The closed note stays; the next attach asks again.
+            }
+            cut = null
+            // The cut question must be the session's last prompt, or the reply found answers another.
+            if (probe.prompts?.lastOrNull()?.trim() != exchange.question) return@launch
+            when (probe) {
+                is SessionProbe.Ended -> if (probe.status == TurnStatus.Complete) {
+                    val done = TurnUpdate.Completed(probe.text, probe.status, null)
+                    _state.update { HermesAskReducer.reduce(HermesAskReducer.resumed(it, exchange.id), exchange.id, done) }
+                }
+                is SessionProbe.Running -> follow(l, exchange, probe.updates)
+                else -> Unit
+            }
+        }
+    }
+
+    /** A turn still running on return, followed on this socket to its end. */
+    private suspend fun follow(l: Link, exchange: HermesExchange, updates: Flow<TurnUpdate>) {
+        _state.update { HermesAskReducer.resumed(it, exchange.id) }
+        // Its events come through this socket only: a drop ends the follow.
+        val generation = (l.gateway.connection.value as? GatewayConnection.Ready)?.generation
+        val dropped = l.gateway.connection.filter { !(it is GatewayConnection.Ready && it.generation == generation) }.map { null }
+        try {
+            merge<TurnUpdate?>(updates, dropped)
+                .transformWhile<TurnUpdate?, TurnUpdate> { update ->
+                    if (update != null) emit(update)
+                    update != null && update !is TurnUpdate.Completed && update !is TurnUpdate.Failed
+                }
+                .collect { update ->
+                    // Deltas sent while Folio was away never arrive: keep the partial reply until Completed.
+                    if (update !is TurnUpdate.Text) _state.update { HermesAskReducer.reduce(it, exchange.id, update) }
+                }
+        } catch (e: IOException) {
+            // Lost on the way: back to the closed note below.
+        }
+        if (_state.value.exchanges.any { it.id == exchange.id && it.status == ExchangeStatus.Running }) {
+            cut = exchange
+            _state.update(HermesAskReducer::closed)
+        }
     }
 
     private fun conversation(l: Link, stored: String?) = HermesConversation(
@@ -249,6 +354,9 @@ class HermesAsk(
 
     companion object {
         private val http by lazy { OkHttpClient() }
+
+        /** Names the probe; Folio has one session, so one task. */
+        private const val RECOVERY_TASK = "folio-ask"
 
         /** Type and codes only: Hermes's error text can echo the question. */
         internal fun askAttrs(e: Throwable, op: String): Map<String, Any?> = mapOf(

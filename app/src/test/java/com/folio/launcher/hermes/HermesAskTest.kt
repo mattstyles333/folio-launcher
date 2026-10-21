@@ -1,6 +1,7 @@
 package com.folio.launcher.hermes
 
 import com.folio.hermes.ApprovalChoice
+import com.folio.launcher.hermes.HermesAskReducer.REACH
 import com.folio.launcher.hermes.LiveTokenProvider.Companion.SIGNED_OUT
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -23,25 +24,26 @@ class HermesAskTest {
         gatewayFactory = { _, _, _ -> built++; error("must not build a gateway while Hermes is off") },
     )
 
+    /** Each off connection and the line it shows: signed in without a usable token is out of reach, not signed out. */
     private val offConnections = listOf(
-        null,
-        HermesConnection(signedIn = false, baseUrl = "https://hermes.example.com", accessToken = "", expiresAtMs = 0),
-        HermesConnection(signedIn = true, baseUrl = "https://hermes.example.com", accessToken = "", expiresAtMs = 0),
-        HermesConnection(signedIn = true, baseUrl = "http://hermes.example.com", accessToken = "fake", expiresAtMs = 0),
+        null to SIGNED_OUT,
+        HermesConnection(signedIn = false, baseUrl = "https://hermes.example.com", accessToken = "", expiresAtMs = 0) to SIGNED_OUT,
+        HermesConnection(signedIn = true, baseUrl = "https://hermes.example.com", accessToken = "", expiresAtMs = 0) to REACH,
+        HermesConnection(signedIn = true, baseUrl = "http://hermes.example.com", accessToken = "fake", expiresAtMs = 0) to REACH,
     )
 
     @Test
     fun attachAskApprove_neverBuildAGatewayWhileOff() = runTest {
-        for (connection in offConnections) {
+        for ((connection, line) in offConnections) {
             val hermes = ask(CoroutineScope(StandardTestDispatcher(testScheduler)), connection)
             hermes.attach()
             advanceUntilIdle()
-            assertEquals("attach $connection", SIGNED_OUT, hermes.state.value.error)
+            assertEquals("attach $connection", line, hermes.state.value.error)
             hermes.ask("What's the weather?")
             advanceUntilIdle()
             val exchange = hermes.state.value.exchanges.single()
             assertEquals(ExchangeStatus.Failed, exchange.status)
-            assertEquals(SIGNED_OUT, exchange.note)
+            assertEquals(line, exchange.note)
             hermes.approve(ApprovalChoice.Once)
             hermes.stop()
             hermes.detach()

@@ -1,6 +1,7 @@
 package com.folio.launcher.hermes
 
 import com.folio.hermes.AccessTokenProvider
+import com.folio.hermes.GatewayUnavailableException
 import com.folio.hermes.HermesAuthException
 import com.folio.hermes.HermesEndpoint
 
@@ -20,10 +21,11 @@ class LiveTokenProvider(
     override suspend fun accessToken(): String = tokenFrom(source())
 
     private fun tokenFrom(found: HermesConnection?): String {
-        val connection = found ?: throw HermesAuthException.SignInRequired(SIGNED_OUT)
-        if (!connection.signedIn || connection.accessToken.isEmpty()) {
-            throw HermesAuthException.SignInRequired(SIGNED_OUT)
-        }
+        // No answer (Hermes Live restarting), or signed in with no token right now (offline, server
+        // down): out of reach, so the gateway backs off and tries again. Only signed out stops it.
+        val connection = found ?: throw GatewayUnavailableException(NO_TOKEN)
+        if (!connection.signedIn) throw HermesAuthException.SignInRequired(SIGNED_OUT)
+        if (connection.accessToken.isEmpty()) throw GatewayUnavailableException(NO_TOKEN)
         if (connection.endpoint != endpoint) throw HermesAuthException.SignInRequired(MOVED)
         return connection.accessToken
     }
@@ -42,5 +44,6 @@ class LiveTokenProvider(
         const val SIGNED_OUT = "Hermes Live is signed out. Open it to sign in."
         const val MOVED = "Hermes Live now points at another server. Close Ask and open it again."
         const val REFUSED = "Your Hermes server turned down Hermes Live's session. Open Hermes Live to renew it."
+        private const val NO_TOKEN = "Hermes Live has no token for Hermes right now."
     }
 }

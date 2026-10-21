@@ -1,6 +1,7 @@
 package com.folio.launcher.hermes
 
 import android.content.pm.PackageInfo
+import android.content.pm.Signature
 import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -26,12 +27,37 @@ class HermesLiveTest {
         assertEquals(HermesAvailability.NotInstalled, HermesLive.availability(false, null))
     }
 
+    /** Installs Hermes Live signed with [key]; Folio is signed with [FOLIO_KEY], as the release key signs both. */
+    @Suppress("DEPRECATION") // Robolectric's checkSignatures compares the legacy signatures field.
+    private fun installHermesLive(key: String = FOLIO_KEY) {
+        val pm = shadowOf(app.packageManager)
+        pm.getInternalMutablePackageInfo(app.packageName).apply {
+            signatures = arrayOf(Signature(FOLIO_KEY))
+            signingInfo = null
+        }
+        pm.installPackage(
+            PackageInfo().apply {
+                packageName = HermesLive.PACKAGE
+                signatures = arrayOf(Signature(key))
+            },
+        )
+    }
+
     @Test
     fun installedWithoutAnAnswer_isSignedOut() {
-        shadowOf(app.packageManager).installPackage(PackageInfo().apply { packageName = HermesLive.PACKAGE })
+        installHermesLive()
         assertTrue(HermesLive.isInstalled(app))
         val connection = HermesLive.query(app)
         assertEquals(HermesAvailability.SignedOut, HermesLive.availability(true, connection))
+    }
+
+    @Test
+    fun anAppWithHermesLivesNameButAnotherKey_isNotHermes() {
+        installHermesLive(key = "0badc0de")
+        assertFalse(HermesLive.isInstalled(app))
+        // Whatever its provider hands over, Folio treats Hermes as absent.
+        val usable = HermesConnection(signedIn = true, baseUrl = "https://hermes.example.com", accessToken = "fake-token", expiresAtMs = 0)
+        assertEquals(HermesAvailability.NotInstalled, HermesLive.availability(HermesLive.isInstalled(app), usable))
     }
 
     @Test
@@ -73,5 +99,10 @@ class HermesLiveTest {
     fun manifest_declaresAndUsesTheHermesPermission() {
         val info = app.packageManager.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
         assertTrue(info.requestedPermissions.orEmpty().contains(HermesLive.PERMISSION))
+    }
+
+    private companion object {
+        /** A stand-in for the Folio release key's certificate (hex). */
+        const val FOLIO_KEY = "f0110f0110"
     }
 }

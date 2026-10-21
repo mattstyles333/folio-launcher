@@ -17,6 +17,10 @@ enum class HermesAvailability {
     /** Signed in, but Hermes Live can't reach the server (down, or off the tailnet). */
     Unreachable,
     Ready,
+    ;
+
+    /** Installed and signed in: Hermes stays the Ask provider while its server is out of reach. */
+    val signedIn: Boolean get() = this == Ready || this == Unreachable
 }
 
 /**
@@ -84,24 +88,24 @@ object HermesLive {
         else -> HermesAvailability.SignedOut
     }
 
-    fun isInstalled(context: Context): Boolean = try {
-        context.packageManager.getPackageInfo(PACKAGE, 0)
-        true
-    } catch (e: PackageManager.NameNotFoundException) {
-        false
-    }
+    /**
+     * Hermes Live is installed and signed with Folio's own key (the release key signs both). An
+     * app that only takes its package name is not Hermes: its provider could name any server.
+     */
+    fun isInstalled(context: Context): Boolean =
+        context.packageManager.checkSignatures(context.packageName, PACKAGE) == PackageManager.SIGNATURE_MATCH
 
     /**
      * Ask Hermes Live for the connection. IPC that may start Hermes Live's process and refresh its
-     * token: call off the main thread. Null when it is absent, refuses (signature mismatch) or
-     * answers nothing; never throws.
+     * token: call off the main thread, and only after [isInstalled] (this call trusts whichever app
+     * answers). Null when it is absent, refuses or answers nothing; never throws.
      */
     fun query(context: Context, forceRefresh: Boolean = false): HermesConnection? = try {
         val extras = if (forceRefresh) Bundle().apply { putBoolean(EXTRA_FORCE_REFRESH, true) } else null
         HermesConnection.from(context.contentResolver.call(CONNECTION_URI, METHOD_CONNECTION, null, extras))
     } catch (e: Exception) {
-        // IllegalArgumentException (unknown authority), SecurityException (not our signature),
-        // or Hermes Live dying mid-call. All mean "not available now".
+        // IllegalArgumentException (unknown authority), SecurityException (Hermes Live turned the
+        // caller down), or Hermes Live dying mid-call. All mean "not available now".
         null
     }
 

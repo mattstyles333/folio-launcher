@@ -1,5 +1,6 @@
 package com.folio.launcher.hermes
 
+import com.folio.hermes.GatewayUnavailableException
 import com.folio.hermes.HermesAuthException
 import com.folio.hermes.HermesEndpoint
 import kotlinx.coroutines.test.runTest
@@ -31,11 +32,27 @@ class LiveTokenProviderTest {
         assertEquals("fake-token-1", provider.accessToken())
     }
 
+    private suspend fun expectUnavailable(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: GatewayUnavailableException) {
+            return
+        }
+        fail("expected GatewayUnavailableException")
+    }
+
     @Test
-    fun signedOutOrAbsent_needsSignIn() = runTest {
-        assertEquals(LiveTokenProvider.SIGNED_OUT, expectSignIn { LiveTokenProvider(home, { null }).accessToken() })
+    fun signedOut_needsSignIn() = runTest {
         assertEquals(LiveTokenProvider.SIGNED_OUT, expectSignIn { LiveTokenProvider(home, { conn("t", signedIn = false) }).accessToken() })
-        assertEquals(LiveTokenProvider.SIGNED_OUT, expectSignIn { LiveTokenProvider(home, { conn("") }).accessToken() })
+    }
+
+    @Test
+    fun noAnswerOrNoTokenYet_isOutOfReachNotSignedOut() = runTest {
+        // Hermes Live not answering, or signed in but unable to renew (offline, server down): the
+        // gateway backs off and tries again instead of stopping on "signed out".
+        expectUnavailable { LiveTokenProvider(home, { null }).accessToken() }
+        expectUnavailable { LiveTokenProvider(home, { conn("") }).accessToken() }
+        expectUnavailable { LiveTokenProvider(home, { conn("fake-old") }, { conn("") }).refreshAfterUnauthorized("fake-old") }
     }
 
     @Test
