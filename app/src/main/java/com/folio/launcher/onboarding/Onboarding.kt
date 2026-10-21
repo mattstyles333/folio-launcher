@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +44,8 @@ fun Onboarding(
     hasUsageAccess: Boolean,
     hasNowPlayingAccess: Boolean = false,
     wallpaperBusy: Boolean = false,
+    /** The print's caption: here, Bing out of reach or a photo that couldn't be read. */
+    wallpaperCaption: String = "",
     onSetDefault: () -> Unit,
     onSkipRole: () -> Unit,
     onPickPhoto: () -> Unit,
@@ -55,6 +59,8 @@ fun Onboarding(
         Modifier
             .fillMaxSize()
             .background(VoidBlack.copy(alpha = 0.72f))
+            // Hit-testing stops here, so a tap on the copy can't launch or hide the rail app underneath.
+            .pointerInput(Unit) {}
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 28.dp, vertical = 36.dp),
@@ -78,8 +84,12 @@ fun Onboarding(
                     Text(
                         text = when (current) {
                             OnboardingStep.Role -> "Idle is a print. Make it Home."
-                            OnboardingStep.Wallpaper ->
-                                if (wallpaperBusy) "Today's print is on the way." else "Choose a print."
+                            OnboardingStep.Wallpaper -> when {
+                                wallpaperBusy -> "Today's print is on the way."
+                                // The clock and its caption aren't shown during onboarding.
+                                wallpaperCaption.isNotEmpty() -> wallpaperCaption
+                                else -> "Choose a print."
+                            }
                             OnboardingStep.Access ->
                                 "Find Folio in the next list, switch it on, press Back. Silent, ranking, then Spotify."
                         },
@@ -181,7 +191,7 @@ fun Onboarding(
 
 private fun accessStatus(dnd: Boolean, usage: Boolean, media: Boolean): String {
     val mute = if (dnd) "Silent mutes the ringer" else "Silent needs Do Not Disturb"
-    val rank = if (usage) "Ranking uses the last 30 days" else "Ranking starts from Folio until usage access"
+    val rank = if (usage) "Ranking uses your recent opens" else "Ranking starts from Folio until usage access"
     val spotify = if (media) "Spotify can sit on the print" else "Spotify needs notification access"
     return "$mute. $rank. $spotify."
 }
@@ -196,10 +206,12 @@ private fun PrimaryButton(
     Box(
         Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            // A label that wraps at a large font size grows the button instead of losing its second line.
+            .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(if (filled) accent else Color.White.copy(alpha = 0.08f))
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -207,6 +219,8 @@ private fun PrimaryButton(
             color = if (filled) VoidBlack else PrintInk,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center,
         )
     }
 }

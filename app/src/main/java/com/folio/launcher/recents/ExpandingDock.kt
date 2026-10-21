@@ -194,6 +194,8 @@ private fun DrawerCell(
             text = app.label,
             color = PrintInk.copy(alpha = 0.42f + 0.30f * iconSaturation),
             fontSize = 10.sp,
+            // Not bodyLarge's 24 sp line: in the 19 dp under the icon that clips the label from font size 1.15.
+            lineHeight = 12.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,

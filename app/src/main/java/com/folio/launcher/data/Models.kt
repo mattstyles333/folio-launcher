@@ -39,7 +39,7 @@ data class HomeUiState(
     val recents: List<RecentItem> = emptyList(),
     val mode: RingerVisual = RingerVisual.Sound,
     val showClock: Boolean = true,
-    /** Send crash reports and errors (Settings switch; on by default). */
+    /** Send crash reports, errors and start-up time (Settings switch; on by default). */
     val diagnostics: Boolean = true,
     /** This build has a diagnostics endpoint (release CI); false in local and debug builds. */
     val diagnosticsBuiltIn: Boolean = false,

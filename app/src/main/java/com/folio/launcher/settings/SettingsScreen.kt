@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.PrintController
+import com.folio.launcher.data.Ranking
 import com.folio.launcher.hermes.HermesAvailability
 import com.folio.launcher.search.AppPicker
 import com.folio.launcher.ui.PrintInk
@@ -73,7 +75,7 @@ fun SettingsScreen(
     val hiddenApps = remember(state.apps, state.hiddenPackages) {
         state.apps.filter { it.packageName in state.hiddenPackages }
             .distinctBy { it.packageName }
-            .sortedBy { it.label.lowercase() }
+            .sortedWith(compareBy(Ranking.labelOrder()) { it.label })
     }
     BackHandler(enabled = !hiddenOpen, onBack = onBack)
     Box(Modifier.fillMaxSize().background(VoidBlack)) {
@@ -97,7 +99,11 @@ fun SettingsScreen(
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SettingsRow("Choose photo", "Replace the print") { onPickPhoto() }
+            // The picker comes back here, not to the clock, so a photo that can't be read says so here.
+            SettingsRow(
+                "Choose photo",
+                state.wallpaperCaption.takeIf { it == PrintController.PHOTO_FAILED } ?: "Replace the print",
+            ) { onPickPhoto() }
             SettingsRow("Bing print", "Double-tap the print for the next one") { onNextBing() }
             if (state.hasPreviousPrint) {
                 SettingsRow("Previous print", "The one before this") { onPreviousPrint() }
@@ -178,9 +184,13 @@ fun SettingsScreen(
                     }
                 },
             ) {
-                val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-                val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                keyMissing = !onSetOpenRouterKey(text)
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                // The clip's own text only: coerceToText reads a URI clip's whole stream on the main thread.
+                val text = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString().orEmpty()
+                val saved = onSetOpenRouterKey(text)
+                keyMissing = !saved
+                // The key lives only in Prefs now; don't leave it on the clipboard for the next paste.
+                if (saved) clipboard?.clearPrimaryClip()
             }
             SettingsRow(
                 "Hidden apps",
@@ -193,7 +203,7 @@ fun SettingsScreen(
             SettingsRow(
                 "Better ranking",
                 if (state.hasUsageAccess) {
-                    "Last 30 days of opens, including before Folio"
+                    "Recent opens (Android keeps about a week to ten days), including before Folio"
                 } else {
                     "Without this, ranking is only apps you open from Folio"
                 },
@@ -207,7 +217,9 @@ fun SettingsScreen(
                 if (state.hasNowPlayingAccess) {
                     "Previous, play, next above the four icons. Play starts Spotify."
                 } else {
-                    "Allow notification access so Folio can see what’s playing"
+                    // Android 13+ greys the switch out for an APK installed from a browser or file manager.
+                    "Allow notification access so Folio can see what’s playing. Switch greyed out? " +
+                        "Settings › Apps › Folio › ⋮ › Allow restricted settings."
                 },
             ) {
                 context.startActivity(
@@ -252,7 +264,9 @@ fun SettingsScreen(
     }
 }
 
-const val DIAGNOSTICS_PRIVACY = "Crash reports and errors only. Never what you say, Hermes's answers, or sign-in details."
+const val DIAGNOSTICS_PRIVACY =
+    "Crashes, errors and start-up time, with app version, phone model, Android version and a random install ID. " +
+        "Never what you type or say, answers, or sign-in details."
 
 @Composable
 private fun SwitchRow(
