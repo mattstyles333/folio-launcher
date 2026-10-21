@@ -130,6 +130,9 @@ class HomeViewModel(
     private var hermesJob: Job? = null
     private var hermesCheckedAt = 0L
 
+    /** When system usage was last read (elapsedRealtime); null until the first read. */
+    private var usageQueriedAt: Long? = null
+
     /** Hermes Live signed in or out: check again now, not on the next resume. */
     private val hermesObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) = refreshHermes(force = true)
@@ -159,12 +162,12 @@ class HomeViewModel(
         .stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
-            HomeUiState(versionName = BuildConfig.VERSION_NAME),
+            // The ringer is known now. A Sound placeholder would flash "Vibrate" or "Silent"
+            // under the clock when the real state lands.
+            HomeUiState(versionName = BuildConfig.VERSION_NAME, mode = ringer.visual.value),
         )
 
     init {
-        appsRepo.start()
-        ringer.start()
         print.start()
         viewModelScope.launch {
             combine(prefsStore.data, usageStore.data, appsRepo.apps) { p, u, a -> Triple(p, u, a) }
@@ -208,11 +211,10 @@ class HomeViewModel(
         }
     }
 
+    // The app list and ringer listeners stay: they are FolioApp's, and another MainActivity may still need them.
     override fun onCleared() {
         if (hermesObserved) app.contentResolver.unregisterContentObserver(hermesObserver)
         hermesAsk.close()
-        appsRepo.stop()
-        ringer.stop()
         super.onCleared()
     }
 
@@ -274,13 +276,22 @@ class HomeViewModel(
         )
         app.signals.refresh()
         refreshHermes(force = false)
+        // Each read makes the system parse every day of events it keeps, and Home resumes all day.
+        val now = SystemClock.elapsedRealtime()
+        val readUsage = grants.usage && usageQueryDue(now, usageQueriedAt, justGranted = !wasGranted)
+        if (readUsage) usageQueriedAt = now
         viewModelScope.launch {
-            val stats = if (grants.usage) {
-                withContext(Dispatchers.IO) { RingerController.queryUsageTimestamps(app) }
-            } else {
-                emptyMap()
+            // Wall clock, as Folio's own launch stamps are: a launch after it is not in this read.
+            val readAt = System.currentTimeMillis()
+            val stats = when {
+                readUsage -> withContext(Dispatchers.IO) { RingerController.queryUsageTimestamps(app, now = readAt) }
+                grants.usage -> extra.value.usageTimestamps
+                else -> emptyMap()
             }
-            extra.value = extra.value.copy(usageTimestamps = stats)
+            extra.value = extra.value.copy(
+                usageTimestamps = stats,
+                usageReadAt = if (readUsage) readAt else extra.value.usageReadAt,
+            )
             recomputeRail(
                 prefsStore.data.first(),
                 usageStore.data.first(),
@@ -422,7 +433,8 @@ class HomeViewModel(
     }
 
     private fun askProviders(): List<AskProvider> = AskProviders.list(
-        hermesReady = extra.value.hermes == HermesAvailability.Ready,
+        // Signed in counts while the server is out of reach: Ask stays on Hermes and says so.
+        hermesReady = extra.value.hermes.signedIn,
         installed = AiApps.installed(appsRepo.apps.value),
     )
 
@@ -687,7 +699,7 @@ class HomeViewModel(
             val ranked = withContext(Dispatchers.Default) {
                 Ranking.rankForRail(
                     apps,
-                    Ranking.combinedLaunches(usage.launches, extra.value.usageTimestamps),
+                    Ranking.combinedLaunches(usage.launches, extra.value.usageTimestamps, extra.value.usageReadAt),
                     prefs.firstSeen,
                     DefaultApps.pick(apps, app.packageManager),
                     hidden = prefs.hiddenPackages.toSet(),
@@ -717,7 +729,7 @@ class HomeViewModel(
     ): HomeUiState {
         val index = AppIndex(apps)
         val hidden = prefs.hiddenPackages.toSet()
-        val launches = Ranking.combinedLaunches(usage.launches, extraState.usageTimestamps)
+        val launches = Ranking.combinedLaunches(usage.launches, extraState.usageTimestamps, extraState.usageReadAt)
 
         val recents = launches.entries
             .asSequence()
@@ -746,7 +758,7 @@ class HomeViewModel(
         val aiInstalled = AiApps.installedFrom(packages)
         val provider = AskProviders.resolve(
             prefs.aiPackage,
-            AskProviders.list(extraState.hermes == HermesAvailability.Ready, aiInstalled),
+            AskProviders.list(extraState.hermes.signedIn, aiInstalled),
         )
         val aiPackage = when (provider) {
             AskProvider.Hermes -> HermesLive.PACKAGE
@@ -809,6 +821,8 @@ class HomeViewModel(
         val grants: AccessGrants = AccessGrants(dnd = false, usage = false, media = false),
         val systemWallpaperReadable: Boolean = false,
         val usageTimestamps: Map<String, List<Long>> = emptyMap(),
+        /** When [usageTimestamps] was read (wall clock): launches from Folio since then aren't in it. */
+        val usageReadAt: Long = 0L,
         val charging: Boolean = false,
         val charge: Float = 0f,
         val musicPlaying: Boolean = false,
@@ -821,7 +835,12 @@ class HomeViewModel(
         private const val KEY_PENDING_ACCESS = "pending_access"
         private const val KEY_WALKING = "access_walking"
         private const val HERMES_RECHECK_MS = 10_000L
+        private const val USAGE_RECHECK_MS = 60_000L
 
         private fun today(): Int = LocalDate.now(ZoneId.systemDefault()).toEpochDay().toInt()
+
+        /** System usage on resume: the first time, then at most once a minute; at once when access was just granted. */
+        internal fun usageQueryDue(now: Long, queriedAt: Long?, justGranted: Boolean): Boolean =
+            justGranted || queriedAt == null || now - queriedAt >= USAGE_RECHECK_MS
     }
 }
