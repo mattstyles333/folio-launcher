@@ -124,6 +124,8 @@ fun Modifier.folioSheetPull(
     pointerInput(enabled, maxPx, shadeSlop) {
         if (!enabled) return@pointerInput
         val slop = touchSlop.coerceAtLeast(4.dp.toPx())
+        // A pull down this far is a drag, not a hold: the same give PrintSwipe allows.
+        val holdSlop = viewConfiguration.touchSlop * 4f
         val tracker = VelocityTracker()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -138,6 +140,12 @@ fun Modifier.folioSheetPull(
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                // The system taking the gesture (Home, Recents) arrives as an up Compose copies from
+                // the last sample: already consumed, no time passed, no move. A real lift comes
+                // later, even one a detector inside this one (PrintSwipe) has consumed.
+                val cancelled = !change.pressed && change.isConsumed &&
+                    change.uptimeMillis == change.previousUptimeMillis &&
+                    change.position == change.previousPosition
                 tracker.addPosition(change.uptimeMillis, change.position)
                 val dy = change.positionChange().y
                 totalDy += dy
@@ -161,9 +169,13 @@ fun Modifier.folioSheetPull(
                     change.consume()
                     pull.px = rubberBand(startPull - (change.position.y - originY), maxPx)
                 }
+                // Consuming the pull for the shade lets go of the print's long-press,
+                // so a slow pull down can't also cycle the ringer.
+                if (shading && change.position.y - originY > holdSlop) change.consume()
                 if (!change.pressed) {
                     if (dragging) {
-                        settle.value(tracker.calculateVelocity().y)
+                        // Taken by the system: settle to the nearest rest, not where the finger flung.
+                        settle.value(if (cancelled) 0f else tracker.calculateVelocity().y)
                     } else if (shading && (change.position.y - originY) > shadeSlop) {
                         shade.value()
                     }

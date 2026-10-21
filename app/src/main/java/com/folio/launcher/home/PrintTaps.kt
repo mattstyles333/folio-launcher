@@ -27,12 +27,21 @@ fun Modifier.detectPrintTaps(
     pointerInput(enabled) {
         if (!enabled) return@pointerInput
         val timeout = viewConfiguration.doubleTapTimeoutMillis
+        val longPress = viewConfiguration.longPressTimeoutMillis
         val slop = viewConfiguration.touchSlop
         var taps = 0
         var lastUp = 0L
         var pending: Job? = null
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            // The window runs from the last lift to this touch, as the platform's does.
+            if (down.uptimeMillis - lastUp > timeout) {
+                taps = 0
+            } else if (taps == 2) {
+                // A third touch in time stops the waiting double: it ends as the triple or as nothing.
+                pending?.cancel()
+                pending = null
+            }
             val origin = down.position
             var moved = false
             while (true) {
@@ -40,11 +49,11 @@ fun Modifier.detectPrintTaps(
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if ((change.position - origin).getDistance() > slop) moved = true
                 if (!change.pressed) {
-                    if (!moved) {
-                        val now = change.uptimeMillis
-                        if (now - lastUp > timeout) taps = 0
+                    // Held into a long-press (the ringer): not a tap.
+                    val held = change.uptimeMillis - down.uptimeMillis >= longPress
+                    if (!moved && !held) {
                         taps += 1
-                        lastUp = now
+                        lastUp = change.uptimeMillis
                         pending?.cancel()
                         pending = null
                         when (taps) {

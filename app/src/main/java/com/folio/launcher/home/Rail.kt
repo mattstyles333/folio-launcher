@@ -1,5 +1,6 @@
 package com.folio.launcher.home
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -26,7 +27,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.RailSlot
@@ -44,6 +48,9 @@ fun Rail(
     onHide: (LaunchableApp) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
+    // Pointer deltas run left to right; slot order (and offset) follow the layout direction.
+    val dir = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
     var widthPx by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf<Int?>(null) }
     var dragX by remember { mutableFloatStateOf(0f) }
@@ -77,9 +84,10 @@ fun Rail(
                     .pointerInput(app?.key) {
                         detectTapGestures(onTap = { app?.let(onLaunch) })
                     }
-                    .pointerInput(index, slotWidth) {
+                    .pointerInput(index, slotWidth, dir) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                 dragging = index
                                 origin = index
                                 dragX = 0f
@@ -98,8 +106,9 @@ fun Rail(
                             },
                             onDrag = { change, amount ->
                                 change.consume()
-                                dragX += amount.x
-                                if (abs(dragX) > 8f) moved = true
+                                dragX += amount.x * dir
+                                // A finger rolls a little as it lifts; that is still a hold to pin.
+                                if (abs(dragX) > viewConfiguration.touchSlop) moved = true
                                 val from = dragging ?: index
                                 val target = (origin + (dragX / slotWidth.coerceAtLeast(1f)))
                                     .roundToInt()
