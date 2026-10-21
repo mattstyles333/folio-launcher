@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.ui.FolioTheme
 import java.io.FileNotFoundException
@@ -62,6 +63,7 @@ class SettingsScreenTest {
                         text.startsWith("sk-or-")
                     },
                     onClearOpenRouterKey = { calls += "clearKey" },
+                    onRetryOpenRouterKey = { calls += "retry" },
                     onOpenHermesLive = { calls += "hermesLive" },
                 )
             }
@@ -110,6 +112,16 @@ class SettingsScreenTest {
         assertEquals(listOf("key:milk, eggs"), calls)
         assertTrue(clipboard.hasPrimaryClip())
         compose.onNodeWithText("No OpenRouter key on the clipboard").assertExists()
+    }
+
+    @Test fun jevOutOfCredit_aTapWithNoNewKeyTriesTheSavedOneAgain() {
+        // OpenRouter shows a key only once: after a top-up there may be nothing to copy again.
+        clipboard.setPrimaryClip(ClipData.newPlainText("note", "milk, eggs"))
+        show(HomeUiState(brain = BrainStatus.NoCredit))
+        tapJev()
+        assertEquals(listOf("key:milk, eggs", "retry"), calls)
+        assertTrue(clipboard.hasPrimaryClip())
+        compose.onNodeWithText("No OpenRouter key on the clipboard").assertDoesNotExist()
     }
 
     @Test fun jevNeverOpensAUriClip() {

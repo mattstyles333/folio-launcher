@@ -32,6 +32,9 @@ class PrintControllerTest {
         var bingFetches = 0
         var photoReadable = true
 
+        /** What the last Bing fetch was told to stay away from, in order. */
+        var lastAvoid: Set<String>? = null
+
         override fun exists() = current.isNotEmpty()
 
         override fun prevExists() = prev.isNotEmpty()
@@ -40,6 +43,7 @@ class PrintControllerTest {
 
         override suspend fun importBing(avoid: Set<String>): WallpaperRepository.BingShot? {
             bingFetches++
+            lastAvoid = avoid
             return bing()?.also { promote(it.id) }
         }
 
@@ -68,7 +72,6 @@ class PrintControllerTest {
         scope = backgroundScope,
         repo = files,
         prefsStore = prefsStore,
-        finishOnboarding = { it },
         today = { day },
     )
 
@@ -177,5 +180,35 @@ class PrintControllerTest {
         val prefs = prefsStore.data.first()
         assertEquals("A", prefs.bingId)
         assertEquals(day, prefs.bingDay)
+    }
+
+    @Test
+    fun nextPrint_staysAwayFromTheRecentOnes_newestFirst() = runTest {
+        prefsStore.update {
+            Prefs(wallpaperSet = true, bingId = "A", bingPrevId = "Z", bingDay = day, recentBingIds = listOf("A", "Z", "Y"))
+        }
+        val files = FakeFiles(current = "A", prev = "Z")
+        files.bing = { WallpaperRepository.BingShot("B", "Title B", "Credit") }
+        val print = controller(files)
+
+        print.next()
+        settle()
+
+        assertEquals(listOf("A", "Z", "Y"), files.lastAvoid?.toList())
+        assertEquals(listOf("B", "A", "Z", "Y"), prefsStore.data.first().recentBingIds)
+    }
+
+    @Test
+    fun nextPrint_withNoPrintYet_isTodays() = runTest {
+        // Onboarding's "Today's Bing print" after the first fetch failed: nothing to avoid, so today's.
+        val files = FakeFiles(current = "")
+        files.bing = { WallpaperRepository.BingShot("Today", "Title", "Credit") }
+        val print = controller(files)
+
+        print.next()
+        settle()
+
+        assertEquals(emptySet<String>(), files.lastAvoid)
+        assertEquals("Today", files.current)
     }
 }

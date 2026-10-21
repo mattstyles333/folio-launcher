@@ -23,6 +23,13 @@ class RankingTest {
     }
 
     @Test
+    fun score_countsOpensInsideTheUsageWindowOnly() {
+        // The same window UsageStore keeps opens for.
+        assertEquals(1, Ranking.score(listOf(noon - Ranking.USAGE_WINDOW_MS + 1), noon))
+        assertEquals(0, Ranking.score(listOf(noon - Ranking.USAGE_WINDOW_MS - 1), noon))
+    }
+
+    @Test
     fun match_prefix_word_acronym_fuzzy() {
         assertEquals(Ranking.MatchKind.Prefix, Ranking.match("gma", "Gmail"))
         assertEquals(Ranking.MatchKind.Prefix, Ranking.match("gm", "Gmail"))

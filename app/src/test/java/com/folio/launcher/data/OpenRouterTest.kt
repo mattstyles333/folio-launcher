@@ -70,6 +70,37 @@ class OpenRouterTest {
     }
 
     @Test
+    fun decide_saysWhyItCameBackEmpty() = runBlocking {
+        val server = MockWebServer()
+        // Out of credit (the key's limit, or the account's), then topped up.
+        server.enqueue(MockResponse.Builder().code(402).body("""{"error":{"code":402}}""").build())
+        server.enqueue(MockResponse.Builder().body("""{"answers":{"intent":{"type":"choice","choice":"web"}}}""").build())
+        server.start()
+        try {
+            val router = OpenRouter("sk-or-test", server.url("/api/v1").toString())
+            assertNull(router.decide(nothing, nothing))
+            assertEquals(402, router.lastStatus)
+            assertEquals("web", router.decide(nothing, nothing)!!["intent"]!!.choice)
+            assertEquals(200, router.lastStatus)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
+    fun keyStatus_refusedOrOutOfCreditStopsJev_tooManyCallsDoesNot() {
+        assertEquals(BrainStatus.Rejected, OpenRouter.keyStatus(401))
+        assertEquals(BrainStatus.Rejected, OpenRouter.keyStatus(403))
+        assertEquals(BrainStatus.NoCredit, OpenRouter.keyStatus(402))
+        // Too many calls is a pause, not a verdict on the key.
+        assertNull(OpenRouter.keyStatus(OpenRouter.RATE_LIMITED))
+        assertNull(OpenRouter.keyStatus(200))
+        assertNull(OpenRouter.keyStatus(502))
+        // No answer at all (offline): nothing said about the key.
+        assertNull(OpenRouter.keyStatus(0))
+    }
+
+    @Test
     fun parseAnswers_readsChoiceNoulAndScore() {
         // Shape from TypeSafe's quick start; OpenRouter adds cost to usage.
         val body = """

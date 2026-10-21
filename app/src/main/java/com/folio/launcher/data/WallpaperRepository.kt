@@ -88,7 +88,7 @@ class WallpaperRepository(private val context: Context) : PrintFiles {
         }.getOrDefault(false)
     }
 
-    /** Downloads a Bing print that isn't one of [avoid] (Bing identities). */
+    /** Downloads a Bing print that isn't one of [avoid] (Bing identities, newest first; empty means no print yet, so today's). */
     override suspend fun importBing(avoid: Set<String>): BingShot? = withContext(Dispatchers.IO) {
         runCatching {
             val (w, h) = panelSize()

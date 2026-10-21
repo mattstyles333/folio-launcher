@@ -29,7 +29,11 @@ interface PrintFiles {
 
     suspend fun load(): WallpaperRepository.LoadedWallpaper?
 
-    /** A Bing print that isn't one of [avoid] (Bing identities), now the current print. */
+    /**
+     * A Bing print that isn't one of [avoid], now the current print. [avoid] holds Bing identities
+     * newest first: the current and previous prints, then the ones before. Empty means no print
+     * yet, so today's.
+     */
     suspend fun importBing(avoid: Set<String>): WallpaperRepository.BingShot?
 
     suspend fun importFromUri(uri: Uri): Boolean
@@ -47,8 +51,6 @@ class PrintController(
     private val scope: CoroutineScope,
     private val repo: PrintFiles,
     private val prefsStore: PrefsStore,
-    /** Marks onboarding steps done once a print is in place. */
-    private val finishOnboarding: (Prefs) -> Prefs,
     /** Bank index of the quote that suits a new Bing print (with this salt), or null for the daily pick. */
     private val fitQuote: suspend (WallpaperRepository.BingShot, Int) -> Int? = { _, _ -> null },
     private val today: () -> Int = { QuoteBank.todayIndex() },
@@ -66,12 +68,13 @@ class PrintController(
         }
     }
 
-    /** Double-tap, or "Use Bing" in onboarding. */
+    /** Double-tap, or "Today's Bing print" in onboarding. */
     fun next() {
         if (!claim(caption = "New print…")) return
         scope.launch {
             val prefs = prefsStore.data.first()
-            val shot = repo.importBing(avoid = setOf(prefs.bingId, prefs.bingPrevId))
+            // No print yet (onboarding's button, after the first fetch failed): today's, as the first print is.
+            val shot = repo.importBing(avoid = if (repo.exists()) prefs.recentBing() else emptySet())
             if (shot != null) {
                 commitBing(shot)
                 release(shot.caption)
@@ -123,14 +126,12 @@ class PrintController(
             val ok = import()
             if (ok) {
                 prefsStore.update {
-                    finishOnboarding(
-                        it.copy(
-                            wallpaperSet = true,
-                            bingPrevId = it.bingId,
-                            bingId = "",
-                            quotePrevFit = it.quoteFit,
-                            quoteFit = -1,
-                        ),
+                    it.copy(
+                        wallpaperSet = true,
+                        bingPrevId = it.bingId,
+                        bingId = "",
+                        quotePrevFit = it.quoteFit,
+                        quoteFit = -1,
                     )
                 }
                 load()
@@ -152,7 +153,7 @@ class PrintController(
             return
         }
         if (prefs.bingDay == day || !claim()) return
-        val shot = repo.importBing(avoid = setOf(prefs.bingId, prefs.bingPrevId))
+        val shot = repo.importBing(avoid = prefs.recentBing())
         if (shot != null) {
             commitBing(shot)
             release(shot.caption)
@@ -163,12 +164,19 @@ class PrintController(
 
     private suspend fun ensureFirst() {
         if (repo.exists() || !claim()) return
+        // Nothing to avoid: the first print is today's, not a random one from the archive.
         val shot = repo.importBing(avoid = emptySet())
         if (shot != null) {
             val day = today()
             val fit = fitQuote(shot, prefsStore.data.first().quoteSalt) ?: -1
             prefsStore.update {
-                finishOnboarding(it.copy(wallpaperSet = true, bingId = shot.id, bingDay = day, quoteFit = fit))
+                it.copy(
+                    wallpaperSet = true,
+                    bingId = shot.id,
+                    bingDay = day,
+                    quoteFit = fit,
+                    recentBingIds = it.recentWith(shot.id),
+                )
             }
             load()
         }
@@ -181,20 +189,26 @@ class PrintController(
         val salt = prefsStore.data.first().quoteSalt + 1
         val fit = fitQuote(shot, salt) ?: -1
         prefsStore.update {
-            finishOnboarding(
-                it.copy(
-                    wallpaperSet = true,
-                    bingPrevId = it.bingId,
-                    bingId = shot.id,
-                    bingDay = day,
-                    quoteSalt = salt,
-                    quotePrevFit = it.quoteFit,
-                    quoteFit = fit,
-                ),
+            it.copy(
+                wallpaperSet = true,
+                bingPrevId = it.bingId,
+                bingId = shot.id,
+                bingDay = day,
+                recentBingIds = it.recentWith(shot.id),
+                quoteSalt = salt,
+                quotePrevFit = it.quoteFit,
+                quoteFit = fit,
             )
         }
         load()
     }
+
+    /** What a new pick stays away from, newest first: the current and previous prints, then older ones. */
+    private fun Prefs.recentBing(): Set<String> = (listOf(bingId, bingPrevId) + recentBingIds).toSet()
+
+    /** The last Bing prints with [id] in front, as many as a pick stays away from. */
+    private fun Prefs.recentWith(id: String): List<String> =
+        (listOf(id) + recentBingIds).distinct().take(BingClient.RECENT_PRINTS)
 
     private suspend fun load() {
         val loaded = repo.load()

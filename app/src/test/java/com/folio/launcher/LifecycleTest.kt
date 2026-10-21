@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.RingerVisual
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -103,6 +104,30 @@ class LifecycleTest {
         assertFalse(HomeViewModel.usageQueryDue(now = 64_999, queriedAt = 5_000, justGranted = false))
         assertTrue(HomeViewModel.usageQueryDue(now = 65_000, queriedAt = 5_000, justGranted = false))
         assertTrue(HomeViewModel.usageQueryDue(now = 5_100, queriedAt = 5_000, justGranted = true))
+    }
+
+    @Test
+    fun jevRow_aRefusedKeySaysSo_thoughNoneIsSaved() {
+        // A refused key is never saved (a restart would read it as Ready), so the row can't wait for one.
+        assertEquals(BrainStatus.Rejected, HomeViewModel.brainShown(savedKey = "", checked = null, pasted = BrainStatus.Rejected))
+        assertEquals(BrainStatus.Checking, HomeViewModel.brainShown(savedKey = "", checked = null, pasted = BrainStatus.Checking))
+        assertEquals(BrainStatus.Off, HomeViewModel.brainShown(savedKey = "", checked = null, pasted = null))
+        // A saved key is trusted after a restart, until a call says otherwise.
+        val key = "sk-or-v1-" + "a".repeat(64)
+        assertEquals(BrainStatus.Ready, HomeViewModel.brainShown(savedKey = key, checked = null, pasted = null))
+        assertEquals(BrainStatus.NoCredit, HomeViewModel.brainShown(savedKey = key, checked = BrainStatus.NoCredit, pasted = null))
+    }
+
+    @Test
+    fun jev_aRefusedPaste_leavesTheSavedKeyAsking() {
+        val saved = "sk-or-v1-" + "a".repeat(64)
+        // The row says the pasted key was refused; that verdict isn't the saved key's, so Jev goes on with it.
+        assertEquals(BrainStatus.Rejected, HomeViewModel.brainShown(savedKey = saved, checked = null, pasted = BrainStatus.Rejected))
+        assertTrue(HomeViewModel.jevMayAsk(savedKey = saved, checked = null))
+        // A call that finds the saved key refused, or out of credit, stops Jev until Settings.
+        assertFalse(HomeViewModel.jevMayAsk(savedKey = saved, checked = BrainStatus.Rejected))
+        assertFalse(HomeViewModel.jevMayAsk(savedKey = saved, checked = BrainStatus.NoCredit))
+        assertFalse(HomeViewModel.jevMayAsk(savedKey = "", checked = null))
     }
 
     @Test

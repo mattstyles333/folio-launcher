@@ -9,8 +9,8 @@ enum class RingerVisual { Sound, Vibrate, Silent }
 
 enum class OnboardingStep { Role, Wallpaper, Access }
 
-/** Jev in search: no key, key being checked, working, refused, or saved but unreachable. */
-enum class BrainStatus { Off, Checking, Ready, Rejected, Unverified }
+/** Jev in search: no key, key being checked, working, refused, saved but unreachable, or out of credit. */
+enum class BrainStatus { Off, Checking, Ready, Rejected, Unverified, NoCredit }
 
 data class LaunchableApp(
     val packageName: String,
@@ -19,6 +19,8 @@ data class LaunchableApp(
     val label: String,
     val icon: ImageBitmap,
     val isHome: Boolean = false,
+    /** Paused by an app timer, Focus mode or an admin: opening it only shows the system's "App paused". */
+    val paused: Boolean = false,
 ) {
     val key: String get() = "$packageName/$activityName"
 }
@@ -28,15 +30,9 @@ data class RailSlot(
     val pinned: Boolean = false,
 )
 
-data class RecentItem(
-    val app: LaunchableApp,
-    val lastUsed: Long,
-)
-
 data class HomeUiState(
     val apps: List<LaunchableApp> = emptyList(),
-    val rail: List<RailSlot> = List(4) { RailSlot() },
-    val recents: List<RecentItem> = emptyList(),
+    val rail: List<RailSlot> = List(Ranking.RAIL_SLOTS) { RailSlot() },
     val mode: RingerVisual = RingerVisual.Sound,
     val showClock: Boolean = true,
     /** Send crash reports, errors and start-up time (Settings switch; on by default). */

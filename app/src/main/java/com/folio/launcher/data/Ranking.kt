@@ -8,6 +8,9 @@ import java.time.ZoneId
 object Ranking {
     const val DAY_MS = 86_400_000L
 
+    /** How far back an open counts: for ranking, and for how long UsageStore keeps it. */
+    const val USAGE_WINDOW_MS = 30 * DAY_MS
+
     fun startOfDay(now: Long = System.currentTimeMillis()): Long {
         val zone = ZoneId.systemDefault()
         // LocalDate.ofInstant is API 34; minSdk is 31.
@@ -19,7 +22,7 @@ object Ranking {
 
     fun score(timestamps: List<Long>, now: Long = System.currentTimeMillis()): Int {
         val d7 = now - 7 * DAY_MS
-        val d30 = now - 30 * DAY_MS
+        val d30 = now - USAGE_WINDOW_MS
         val today = startOfDay(now)
         var opens7 = 0
         var opens30 = 0
@@ -80,7 +83,7 @@ object Ranking {
 
     /** Latest open inside the 30-day window; an older one doesn't lift an app out of the A–Z tail. */
     private fun lastUsed(timestamps: List<Long>, now: Long): Long {
-        val d30 = now - 30 * DAY_MS
+        val d30 = now - USAGE_WINDOW_MS
         return timestamps.filter { it >= d30 }.maxOrNull() ?: 0L
     }
 

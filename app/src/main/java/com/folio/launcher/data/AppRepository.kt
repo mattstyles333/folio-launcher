@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -70,6 +71,11 @@ class AppRepository(private val context: Context) {
             user: UserHandle,
             replacing: Boolean,
         ) = reload(*packageNames)
+
+        // An app timer or Focus mode pausing an app, or ending: only the paused flag changes, icons stay cached.
+        override fun onPackagesSuspended(packageNames: Array<out String>, user: UserHandle) = reload()
+
+        override fun onPackagesUnsuspended(packageNames: Array<out String>, user: UserHandle) = reload()
     }
 
     /** A new phone language (or display size) changes no package, so nothing else reloads. */
@@ -149,6 +155,7 @@ class AppRepository(private val context: Context) {
                     label = label,
                     icon = icon,
                     isHome = HomeApps.isHome(cn.packageName, homes),
+                    paused = (info.applicationInfo.flags and ApplicationInfo.FLAG_SUSPENDED) != 0,
                 )
             }.distinctBy { it.key }
                 .sortedWith(compareBy(Ranking.labelOrder()) { it.label })
@@ -199,6 +206,10 @@ class AppRepository(private val context: Context) {
             true
         }.getOrDefault(false)
     }
+
+    /** Paused right now (an app timer, Focus mode, an admin): opening it only shows the system's "App paused". */
+    fun isPaused(packageName: String): Boolean =
+        runCatching { context.packageManager.isPackageSuspended(packageName) }.getOrDefault(false)
 
     fun openAppInfo(app: LaunchableApp, bounds: Rect? = null): Boolean {
         val component = ComponentName(app.packageName, app.activityName)

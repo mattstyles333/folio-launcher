@@ -30,7 +30,6 @@ import com.folio.launcher.data.QuoteBank
 import com.folio.launcher.data.QuoteFit
 import com.folio.launcher.data.RailSlot
 import com.folio.launcher.data.Ranking
-import com.folio.launcher.data.RecentItem
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SearchBrain
@@ -44,6 +43,7 @@ import com.folio.launcher.hermes.HermesAsk
 import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.hermes.HermesAvailability
 import com.folio.launcher.hermes.HermesLive
+import com.folio.launcher.hermes.Tailnet
 import com.folio.hermes.ApprovalChoice
 import com.folio.launcher.onboarding.AccessGrants
 import com.folio.launcher.onboarding.AccessScreen
@@ -88,7 +88,6 @@ class HomeViewModel(
         scope = viewModelScope,
         repo = app.wallpaper,
         prefsStore = prefsStore,
-        finishOnboarding = ::finishOnboarding,
         fitQuote = ::fitQuote,
     )
 
@@ -122,6 +121,7 @@ class HomeViewModel(
         renewedConnection = { withContext(Dispatchers.IO) { hermesConnection(forceRefresh = true) } },
         loadSessionId = { prefsStore.data.first().hermesSessionId },
         saveSessionId = { id -> prefsStore.update { it.copy(hermesSessionId = id) } },
+        tailnet = Tailnet.of(app),
     )
 
     /** The Hermes Ask overlay: exchanges, tool line, approvals. */
@@ -132,6 +132,12 @@ class HomeViewModel(
 
     /** When system usage was last read (elapsedRealtime); null until the first read. */
     private var usageQueriedAt: Long? = null
+
+    /** OpenRouter said too many calls: Jev waits until then (elapsedRealtime). */
+    private var jevPausedUntil = 0L
+
+    /** A pasted key being checked. Removing the key, or pasting another, drops it before it's saved. */
+    private var keyCheck: Job? = null
 
     /** Hermes Live signed in or out: check again now, not on the next resume. */
     private val hermesObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -184,6 +190,16 @@ class HomeViewModel(
                     watchHermes(installed)
                     refreshHermes(force = true)
                 }
+        }
+        viewModelScope.launch {
+            // A Silent the system refused (no DND access) lasts only until the ringer moves; its hint
+            // goes with it, or it would come back over a later Silent that took.
+            ringer.visual.collect { visual ->
+                if (visual == RingerVisual.Silent || !prefsStore.data.first().silentHint) return@collect
+                prefsStore.update { p ->
+                    if (p.silentHint && ringer.visual.value != RingerVisual.Silent) p.copy(silentHint = false) else p
+                }
+            }
         }
         viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch {
@@ -303,7 +319,7 @@ class HomeViewModel(
                 prefsStore.update { it.copy(mediaHintDismissed = true) }
             }
             if (!prefs.accessOffered && grants.all) {
-                prefsStore.update { finishOnboarding(it.copy(accessOffered = true)) }
+                prefsStore.update { it.copy(accessOffered = true) }
             }
         }
     }
@@ -379,11 +395,9 @@ class HomeViewModel(
 
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {
         val ok = appsRepo.launch(app, bounds)
-        if (ok) {
-            viewModelScope.launch {
-                usageStore.record(app.packageName)
-                prefsStore.update { it.copy(dismissedRecents = it.dismissedRecents - app.packageName) }
-            }
+        // A paused app (app timer, Focus mode) only shows the system's "App paused": that isn't an open.
+        if (ok && !appsRepo.isPaused(app.packageName)) {
+            viewModelScope.launch { usageStore.record(app.packageName) }
         }
         return ok
     }
@@ -455,7 +469,7 @@ class HomeViewModel(
             AskProvider.Hermes -> callHermes(host, prompt)
             is AskProvider.App -> {
                 val pkg = AiApps.matchedPackage(provider.kind, packages) ?: return
-                if (AiApps.open(host, provider.kind, prompt, pkg)) {
+                if (AiApps.open(host, provider.kind, prompt, pkg) && !appsRepo.isPaused(pkg)) {
                     viewModelScope.launch { usageStore.record(pkg) }
                 }
             }
@@ -533,7 +547,7 @@ class HomeViewModel(
     private suspend fun think(query: String) {
         _searchHint.value = SearchHint(query = query)
         val key = prefsStore.data.first().openRouterKey
-        if (key.isEmpty() || extra.value.brain == BrainStatus.Rejected) return
+        if (!jevMayAsk(key)) return
         if (query.length < SearchBrain.MIN_CHARS) return
         delay(SearchBrain.PAUSE_MS)
         val apps = appsRepo.apps.value
@@ -547,7 +561,9 @@ class HomeViewModel(
             music = apps.any { it.packageName == Spotify.PACKAGE },
         )
         val router = OpenRouter(key)
-        val answers = router.decide(brainState, questions) ?: return
+        val answers = router.decide(brainState, questions)
+        noteJevStatus(key, router.lastStatus)
+        if (answers == null) return
         val route = when (val picked = SearchBrain.route(query, answers)) {
             SearchRoute.Ask -> if (state.value.aiLabel.isEmpty()) SearchRoute.Web else picked
             else -> picked
@@ -560,6 +576,7 @@ class HomeViewModel(
             SearchRoute.Answer -> {
                 _searchHint.value = SearchHint(query, route, answering = true)
                 val line = router.write(SearchBrain.ANSWER_SYSTEM, query)?.let(SearchBrain::cleanAnswer)
+                noteJevStatus(key, router.lastStatus)
                 _searchHint.value = if (line != null) {
                     SearchHint(query, route, answer = line)
                 } else {
@@ -593,52 +610,85 @@ class HomeViewModel(
     /** Jev's quote for a new Bing print, from the shortlist the daily pick heads. Null without a key. */
     private suspend fun fitQuote(shot: WallpaperRepository.BingShot, salt: Int): Int? {
         val key = prefsStore.data.first().openRouterKey
-        if (key.isEmpty() || extra.value.brain == BrainStatus.Rejected) return null
+        if (!jevMayAsk(key)) return null
         val quotes = QuoteBank.load(app)
         val shortlist = QuoteFit.shortlist(quotes.size, QuoteBank.todayIndex(), salt)
         val (photo, questions) = QuoteFit.request(QuoteFit.describe(shot.caption, shot.credit), quotes, shortlist)
-        val answers = OpenRouter(key).decide(photo, questions) ?: return null
-        return QuoteFit.pick(answers, shortlist)
+        val router = OpenRouter(key)
+        val answers = router.decide(photo, questions)
+        noteJevStatus(key, router.lastStatus)
+        return answers?.let { QuoteFit.pick(it, shortlist) }
+    }
+
+    /** With a key OpenRouter hasn't refused or found out of credit, and not just after "too many calls". */
+    private fun jevMayAsk(key: String): Boolean =
+        jevMayAsk(key, extra.value.brain) && SystemClock.elapsedRealtime() >= jevPausedUntil
+
+    /**
+     * After a call with [key]. A refused key, or one out of credit, stops Jev until Settings: every
+     * call would fail the same way. Too many calls pauses it for a minute.
+     */
+    private suspend fun noteJevStatus(key: String, httpStatus: Int) {
+        if (httpStatus == OpenRouter.RATE_LIMITED) jevPausedUntil = SystemClock.elapsedRealtime() + JEV_PAUSE_MS
+        val status = OpenRouter.keyStatus(httpStatus) ?: return
+        // A call that went out with the key before a new paste says nothing about the new one.
+        if (extra.value.pasted == BrainStatus.Checking || prefsStore.data.first().openRouterKey != key) return
+        // News about the saved key: the row says so over an older refused paste.
+        extra.value = extra.value.copy(brain = status, pasted = null)
     }
 
     /** Text from the clipboard in Settings. False if it isn't an OpenRouter key. */
     fun setOpenRouterKey(text: String): Boolean {
         val key = text.trim()
         if (!OpenRouter.looksLikeKey(key)) return false
-        extra.value = extra.value.copy(brain = BrainStatus.Checking)
-        viewModelScope.launch {
-            prefsStore.update { it.copy(openRouterKey = key) }
+        extra.value = extra.value.copy(pasted = BrainStatus.Checking)
+        keyCheck?.cancel()
+        keyCheck = viewModelScope.launch {
             val status = when (OpenRouter(key).check()) {
                 true -> BrainStatus.Ready
                 false -> BrainStatus.Rejected
                 null -> BrainStatus.Unverified
             }
-            extra.value = extra.value.copy(brain = status)
+            // A key OpenRouter refuses isn't kept (after a restart it would read as Ready again), and
+            // says nothing about the key already saved: Jev goes on asking with that one.
+            if (status == BrainStatus.Rejected) {
+                extra.value = extra.value.copy(pasted = status)
+            } else {
+                prefsStore.update { it.copy(openRouterKey = key) }
+                jevPausedUntil = 0L
+                extra.value = extra.value.copy(brain = status, pasted = null)
+            }
         }
         return true
     }
 
+    /** Settings › Jev tapped with no new key after OpenRouter said this one is out of credit: try it again. */
+    fun retryOpenRouterKey() {
+        if (extra.value.brain == BrainStatus.NoCredit) extra.value = extra.value.copy(brain = null)
+    }
+
     fun clearOpenRouterKey() {
-        extra.value = extra.value.copy(brain = null)
+        keyCheck?.cancel()
+        extra.value = extra.value.copy(brain = null, pasted = null)
         _searchHint.value = SearchHint()
         viewModelScope.launch { prefsStore.update { it.copy(openRouterKey = "") } }
     }
 
     fun skipRole() {
         viewModelScope.launch {
-            prefsStore.update { finishOnboarding(it.copy(skippedRole = true)) }
+            prefsStore.update { it.copy(skippedRole = true) }
         }
     }
 
     fun skipWallpaper() {
         viewModelScope.launch {
-            prefsStore.update { finishOnboarding(it.copy(skippedWallpaper = true)) }
+            prefsStore.update { it.copy(skippedWallpaper = true) }
         }
     }
 
     fun skipAccess() {
         viewModelScope.launch {
-            prefsStore.update { finishOnboarding(it.copy(accessOffered = true)) }
+            prefsStore.update { it.copy(accessOffered = true) }
         }
     }
 
@@ -651,16 +701,6 @@ class HomeViewModel(
     fun previousPrint() = print.previous()
 
     fun ensureTodaysPrint() = print.ensureToday()
-
-    private fun finishOnboarding(prefs: Prefs): Prefs {
-        val roleDone = prefs.skippedRole || RingerController.isDefaultHome(app)
-        val wallDone = prefs.wallpaperSet || prefs.skippedWallpaper
-        val accessDone = prefs.accessOffered || extra.value.grants.all
-        return prefs.copy(
-            accessOffered = if (accessDone) true else prefs.accessOffered,
-            onboardingComplete = roleDone && wallDone && accessDone,
-        )
-    }
 
     private suspend fun noteFirstSeen(apps: List<LaunchableApp>, prefs: Prefs) {
         if (apps.isEmpty()) return
@@ -731,19 +771,6 @@ class HomeViewModel(
         val hidden = prefs.hiddenPackages.toSet()
         val launches = Ranking.combinedLaunches(usage.launches, extraState.usageTimestamps, extraState.usageReadAt)
 
-        val recents = launches.entries
-            .asSequence()
-            .filter { it.key !in prefs.dismissedRecents && it.value.isNotEmpty() }
-            .map { (pkg, times) -> pkg to times.max() }
-            .sortedByDescending { it.second }
-            .mapNotNull { (pkg, t) ->
-                val item = index.find(pkg, null) ?: return@mapNotNull null
-                if (item.isHome || item.packageName in hidden) return@mapNotNull null
-                RecentItem(item, t)
-            }
-            .take(20)
-            .toList()
-
         val rail = Ranking.railSlots(prefs.slots).map { slot ->
             RailSlot(
                 app = slot.packageName?.let { index.find(it, slot.activityName) },
@@ -780,7 +807,6 @@ class HomeViewModel(
         return HomeUiState(
             apps = apps,
             rail = rail,
-            recents = recents,
             mode = visual,
             showClock = prefs.showClock,
             diagnostics = prefs.diagnostics,
@@ -812,7 +838,7 @@ class HomeViewModel(
             aiInstalled = aiInstalled,
             hermes = extraState.hermes,
             askHermes = provider == AskProvider.Hermes,
-            brain = if (prefs.openRouterKey.isEmpty()) BrainStatus.Off else extraState.brain ?: BrainStatus.Ready,
+            brain = brainShown(prefs.openRouterKey, extraState.brain, extraState.pasted),
         )
     }
 
@@ -826,8 +852,10 @@ class HomeViewModel(
         val charging: Boolean = false,
         val charge: Float = 0f,
         val musicPlaying: Boolean = false,
-        /** Result of checking a key pasted this session; null means trust the saved key. */
+        /** What OpenRouter said this session about the saved key (its check when pasted, or a call); null means trust it. */
         val brain: BrainStatus? = null,
+        /** A pasted key being checked, or refused and so never saved; null once one is saved. Jev keeps the saved key meanwhile. */
+        val pasted: BrainStatus? = null,
         val hermes: HermesAvailability = HermesAvailability.NotInstalled,
     )
 
@@ -836,11 +864,27 @@ class HomeViewModel(
         private const val KEY_WALKING = "access_walking"
         private const val HERMES_RECHECK_MS = 10_000L
         private const val USAGE_RECHECK_MS = 60_000L
+        private const val JEV_PAUSE_MS = 60_000L
 
         private fun today(): Int = LocalDate.now(ZoneId.systemDefault()).toEpochDay().toInt()
 
         /** System usage on resume: the first time, then at most once a minute; at once when access was just granted. */
         internal fun usageQueryDue(now: Long, queriedAt: Long?, justGranted: Boolean): Boolean =
             justGranted || queriedAt == null || now - queriedAt >= USAGE_RECHECK_MS
+
+        /**
+         * Jev's row in Settings. A pasted key being checked, or refused ([pasted]; a refused key is
+         * never saved), says so whatever is saved; otherwise a saved key is trusted until a call says
+         * not ([checked]).
+         */
+        internal fun brainShown(savedKey: String, checked: BrainStatus?, pasted: BrainStatus?): BrainStatus = when {
+            pasted != null -> pasted
+            savedKey.isEmpty() -> BrainStatus.Off
+            else -> checked ?: BrainStatus.Ready
+        }
+
+        /** Jev asks with [savedKey] until a call finds it refused or out of credit ([checked]); a refused paste was never saved. */
+        internal fun jevMayAsk(savedKey: String, checked: BrainStatus?): Boolean =
+            savedKey.isNotEmpty() && checked != BrainStatus.Rejected && checked != BrainStatus.NoCredit
     }
 }

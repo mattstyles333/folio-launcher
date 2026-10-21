@@ -65,6 +65,8 @@ fun SettingsScreen(
     onCycleAi: () -> Unit,
     onSetOpenRouterKey: (String) -> Boolean,
     onClearOpenRouterKey: () -> Unit,
+    /** Out of credit, tapped with no new key on the clipboard (topped up since): try the saved key again. */
+    onRetryOpenRouterKey: () -> Unit = {},
     onOpenHermesLive: () -> Unit = {},
     onRefreshHermes: () -> Unit = {},
 ) {
@@ -173,6 +175,7 @@ fun SettingsScreen(
                         BrainStatus.Ready -> "Search and quotes ask Jev; DeepSeek answers. Hold to remove the key."
                         BrainStatus.Unverified -> "Key saved. OpenRouter didn’t answer. Hold to remove."
                         BrainStatus.Rejected -> "OpenRouter refused that key. Copy another, then tap."
+                        BrainStatus.NoCredit -> "OpenRouter says the key is out of credit. Top up, then tap."
                     }
                 },
                 onLongClick = if (state.brain == BrainStatus.Off) {
@@ -188,7 +191,10 @@ fun SettingsScreen(
                 // The clip's own text only: coerceToText reads a URI clip's whole stream on the main thread.
                 val text = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString().orEmpty()
                 val saved = onSetOpenRouterKey(text)
-                keyMissing = !saved
+                // Out of credit and no new key: the saved one, after a top-up.
+                val retried = !saved && state.brain == BrainStatus.NoCredit
+                if (retried) onRetryOpenRouterKey()
+                keyMissing = !saved && !retried
                 // The key lives only in Prefs now; don't leave it on the clipboard for the next paste.
                 if (saved) clipboard?.clearPrimaryClip()
             }

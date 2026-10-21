@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
                             onCycleAi = { viewModel.cycleAi() },
                             onSetOpenRouterKey = viewModel::setOpenRouterKey,
                             onClearOpenRouterKey = { viewModel.clearOpenRouterKey() },
+                            onRetryOpenRouterKey = { viewModel.retryOpenRouterKey() },
                             onOpenHermesLive = { viewModel.openHermesLive(this@MainActivity) },
                             onRefreshHermes = { viewModel.refreshHermes() },
                         )

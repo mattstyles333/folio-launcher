@@ -237,6 +237,7 @@ fun SearchRow(
             bitmap = app.icon,
             contentDescription = null,
             saturation = saturation,
+            paused = app.paused,
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape),

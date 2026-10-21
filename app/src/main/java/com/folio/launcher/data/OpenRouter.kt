@@ -52,6 +52,11 @@ internal data class ChatMessage(val content: String? = null)
 class OpenRouter internal constructor(private val key: String, private val base: String) {
     constructor(key: String) : this(key, BASE)
 
+    /** HTTP status of the last call's answer; 0 when none came (offline, timed out). See [keyStatus]. */
+    @Volatile
+    var lastStatus: Int = 0
+        private set
+
     suspend fun decide(state: JsonElement, questions: JsonObject): Map<String, JevAnswer>? {
         val body = buildJsonObject {
             put("model", JEV)
@@ -100,6 +105,7 @@ class OpenRouter internal constructor(private val key: String, private val base:
 
     /** [label] ("jev" / "writer") names the call in diagnostics; only the status or error type is reported. */
     private suspend fun post(url: String, body: String, readMs: Int, label: String): String? = withContext(Dispatchers.IO) {
+        lastStatus = 0
         runCatching {
             val conn = open(url, readMs).apply {
                 requestMethod = "POST"
@@ -110,6 +116,7 @@ class OpenRouter internal constructor(private val key: String, private val base:
             try {
                 conn.outputStream.use { it.write(body.toByteArray()) }
                 val status = conn.responseCode
+                lastStatus = status
                 if (status !in 200..299) {
                     Telemetry.warn("jev.error", null, mapOf("call" to label, "http_status" to status))
                     return@runCatching null
@@ -161,6 +168,19 @@ class OpenRouter internal constructor(private val key: String, private val base:
         private const val WRITER_READ_MS = 12_000
 
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** Too many calls: wait a while instead of sending more. */
+        const val RATE_LIMITED = 429
+
+        /**
+         * What a call's HTTP status says about the key itself: refused (401, 403) or out of credit
+         * (402). Null for anything else; a rate limit ([RATE_LIMITED]) passes.
+         */
+        fun keyStatus(httpStatus: Int): BrainStatus? = when (httpStatus) {
+            401, 403 -> BrainStatus.Rejected
+            402 -> BrainStatus.NoCredit
+            else -> null
+        }
 
         /** OpenRouter keys are `sk-or-…` with no whitespace. */
         fun looksLikeKey(text: String): Boolean =
