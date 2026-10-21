@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.media.AudioManager
 import android.os.Build
 import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageEventsQuery
 import android.app.usage.UsageStatsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,13 +29,12 @@ class RingerController(private val context: Context) {
 
     private var overrideVisual: RingerVisual? = null
 
+    /** Where the system stayed when it ignored [overrideVisual]: the look is held only while it's still there. */
+    private var overrideFrom: RingerVisual? = null
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
-            restoreUserPolicyIfIdle()
-            val sys = readSystem()
-            if (overrideVisual != null && sys != overrideVisual) return
-            overrideVisual = null
-            _visual.value = sys
+            refresh()
         }
     }
 
@@ -41,6 +42,11 @@ class RingerController(private val context: Context) {
         val filter = IntentFilter().apply {
             addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+            // The policy alone can change the look: exceptions edited, a mode starting or ending.
+            addAction(NotificationManager.ACTION_NOTIFICATION_POLICY_CHANGED)
+            if (Build.VERSION.SDK_INT >= 35) {
+                addAction(NotificationManager.ACTION_CONSOLIDATED_NOTIFICATION_POLICY_CHANGED)
+            }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             // System ringer / DND broadcasts must be received from the OS.
@@ -58,11 +64,19 @@ class RingerController(private val context: Context) {
 
     fun refresh() {
         restoreUserPolicyIfIdle()
-        if (overrideVisual == null) {
-            _visual.value = readSystem()
-        } else {
-            _visual.value = overrideVisual!!
+        val sys = readSystem()
+        forgetSpentRingVolume(sys)
+        follow(sys)
+    }
+
+    /** Show [sys], unless the system ignored a request (Silent without DND access) and hasn't moved since. */
+    private fun follow(sys: RingerVisual) {
+        val next = nextVisual(overrideVisual, overrideFrom, sys)
+        if (next == sys) {
+            overrideVisual = null
+            overrideFrom = null
         }
+        _visual.value = next
     }
 
     fun consumeDndRequest() {
@@ -73,6 +87,7 @@ class RingerController(private val context: Context) {
         val wanted = overrideVisual
         if (wanted != null && hasPolicyAccess()) {
             overrideVisual = null
+            overrideFrom = null
             apply(wanted)
         }
         refresh()
@@ -92,7 +107,12 @@ class RingerController(private val context: Context) {
         _visual.value = visual
         apply(visual)
         val sys = readSystem()
-        if (sys == visual) overrideVisual = null
+        if (sys == visual) {
+            overrideVisual = null
+            overrideFrom = null
+        } else {
+            overrideFrom = sys
+        }
     }
 
     private fun apply(visual: RingerVisual) {
@@ -105,6 +125,8 @@ class RingerController(private val context: Context) {
                     restoreRingVolume()
                     setMode(AudioManager.RINGER_MODE_NORMAL)
                 }
+                // Used once Sound takes. A Sound the system refused (DND it can't end) keeps it for the next.
+                forgetSpentRingVolume(readSystem())
             }
             RingerVisual.Vibrate -> {
                 rememberRingVolume()
@@ -126,8 +148,6 @@ class RingerController(private val context: Context) {
         }
     }
 
-    private var lastRingVolume = 0
-
     private fun ringVolume(): Int =
         runCatching { audio.getStreamVolume(AudioManager.STREAM_RING) }.getOrDefault(0)
 
@@ -144,15 +164,24 @@ class RingerController(private val context: Context) {
         }
     }
 
+    /** Vibrate zeroes the ring, so its level is kept on disk: Sound puts it back after a kill or an update too. */
     private fun rememberRingVolume() {
         val volume = ringVolume()
-        if (volume > 0) lastRingVolume = volume
+        if (volume > 0) storeRingVolume(volume)
     }
 
     private fun restoreRingVolume() {
-        val fallback = (maxRingVolume() * 0.4f).toInt().coerceAtLeast(1)
-        val target = if (lastRingVolume > 0) lastRingVolume else fallback
-        if (ringVolume() == 0) setRingVolume(target)
+        val remembered = saved.getInt(KEY_RING_VOLUME, 0).takeIf { it > 0 }
+        ringVolumeToRestore(ringVolume(), remembered, maxRingVolume())?.let(::setRingVolume)
+    }
+
+    /**
+     * The phone rings again ([sys] is Sound), by Folio's Sound or another way (volume keys, Quick
+     * Settings): the level Vibrate zeroed is spent. Left behind, a later Sound would raise the ring
+     * over a level the user set since.
+     */
+    private fun forgetSpentRingVolume(sys: RingerVisual) {
+        if (sys == RingerVisual.Sound && saved.contains(KEY_RING_VOLUME)) storeRingVolume(null)
     }
 
     private val saved = context.getSharedPreferences("folio_dnd", Context.MODE_PRIVATE)
@@ -166,6 +195,14 @@ class RingerController(private val context: Context) {
     private fun storeSavedPolicy(policy: SavedDndPolicy?) {
         saved.edit().apply {
             if (policy == null) remove(KEY_SAVED_POLICY) else putString(KEY_SAVED_POLICY, policy.encode())
+        }.commit()
+    }
+
+    // commit() too: the level must be on disk before Vibrate zeroes the ring.
+    @SuppressLint("ApplySharedPref")
+    private fun storeRingVolume(volume: Int?) {
+        saved.edit().apply {
+            if (volume == null) remove(KEY_RING_VOLUME) else putInt(KEY_RING_VOLUME, volume)
         }.commit()
     }
 
@@ -226,7 +263,9 @@ class RingerController(private val context: Context) {
     fun hasPolicyAccess(): Boolean = notifications.isNotificationPolicyAccessGranted
 
     fun readSystem(): RingerVisual {
-        val policy = runCatching { notifications.notificationPolicy }.getOrNull()
+        // The policy in force, every active mode merged. On Android 15+ notificationPolicy is only
+        // Folio's own rule; the stash and restore above still read and write that one.
+        val policy = runCatching { notifications.consolidatedNotificationPolicy }.getOrNull()
         return ringerVisual(
             interruptionFilter = notifications.currentInterruptionFilter,
             ringerMode = audio.ringerMode,
@@ -237,6 +276,29 @@ class RingerController(private val context: Context) {
 
     companion object {
         private const val KEY_SAVED_POLICY = "saved_policy"
+        private const val KEY_RING_VOLUME = "ring_volume"
+
+        /**
+         * The look: [override], a request the system ignored (null when none), while the system is
+         * still where it stayed then ([overrideFrom]); otherwise the system's own [sys]. Volume
+         * keys, Quick Settings or a mode moving the ringer win over a request that never took.
+         */
+        internal fun nextVisual(
+            override: RingerVisual?,
+            overrideFrom: RingerVisual?,
+            sys: RingerVisual,
+        ): RingerVisual = if (override != null && sys == overrideFrom) override else sys
+
+        /**
+         * The ring level Sound sets, or null to leave the ring alone. A ring below the level Vibrate
+         * zeroed ([remembered]) goes back up to it: stock Android unmutes a zeroed ring at one step.
+         * With nothing remembered, a silent ring gets 40% of [max].
+         */
+        internal fun ringVolumeToRestore(current: Int, remembered: Int?, max: Int): Int? = when {
+            remembered != null && remembered > 0 -> if (current < remembered) remembered else null
+            current == 0 -> (max * 0.4f).toInt().coerceAtLeast(1)
+            else -> null
+        }
 
         internal fun silentMediaPolicy(user: SavedDndPolicy): NotificationManager.Policy {
             return NotificationManager.Policy(
@@ -269,11 +331,13 @@ class RingerController(private val context: Context) {
             }
         }
 
+        /** Nothing that rings gets through. Media doesn't matter: alarms-only is as silent as Folio's own. */
         internal fun isRingerSilentPolicy(priorityCategories: Int): Boolean {
-            val media = priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_MEDIA != 0
-            val calls = priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_CALLS != 0
-            val messages = priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_MESSAGES != 0
-            return media && !calls && !messages
+            val rings = NotificationManager.Policy.PRIORITY_CATEGORY_CALLS or
+                NotificationManager.Policy.PRIORITY_CATEGORY_REPEAT_CALLERS or
+                NotificationManager.Policy.PRIORITY_CATEGORY_MESSAGES or
+                NotificationManager.Policy.PRIORITY_CATEGORY_CONVERSATIONS
+            return priorityCategories and rings == 0
         }
 
         fun isDefaultHome(context: Context): Boolean {
@@ -307,29 +371,52 @@ class RingerController(private val context: Context) {
             }
         }
 
-        /** Resumes per app from [now] - [windowMs] up to [now] (wall clock). */
+        /** Opens per app ([foldOpens]) from [now] - [windowMs] up to [now] (wall clock). */
         fun queryUsageTimestamps(
             context: Context,
-            windowMs: Long = 30 * Ranking.DAY_MS,
+            windowMs: Long = Ranking.USAGE_WINDOW_MS,
             now: Long = System.currentTimeMillis(),
         ): Map<String, List<Long>> {
             if (!hasUsageAccess(context)) return emptyMap()
             return runCatching {
                 val usm = context.getSystemService(UsageStatsManager::class.java)
-                val events = usm.queryEvents(now - windowMs, now)
-                val event = android.app.usage.UsageEvents.Event()
-                val map = HashMap<String, MutableList<Long>>()
-                val self = context.packageName
+                val events = resumeEvents(usm, now - windowMs, now) ?: return emptyMap()
+                val event = UsageEvents.Event()
+                val resumes = ArrayList<Pair<String, Long>>()
                 while (events.hasNextEvent()) {
                     events.getNextEvent(event)
-                    val type = event.eventType
-                    if (type != android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED) continue
+                    if (event.eventType != UsageEvents.Event.ACTIVITY_RESUMED) continue
                     val pkg = event.packageName ?: continue
-                    if (pkg == self) continue
-                    map.getOrPut(pkg) { ArrayList() }.add(event.timeStamp)
+                    resumes += pkg to event.timeStamp
                 }
-                map
+                foldOpens(resumes, context.packageName)
             }.getOrDefault(emptyMap())
+        }
+
+        /** Activity resumes. On Android 15+ the system leaves out every other event type before they reach Folio. */
+        private fun resumeEvents(usm: UsageStatsManager, from: Long, to: Long): UsageEvents? {
+            if (Build.VERSION.SDK_INT >= 35) {
+                val query = UsageEventsQuery.Builder(from, to)
+                    .setEventTypes(UsageEvents.Event.ACTIVITY_RESUMED)
+                    .build()
+                return usm.queryEvents(query)
+            }
+            return usm.queryEvents(from, to)
+        }
+
+        /**
+         * Opens from activity resumes in time order: a resume counts only when the app resumed
+         * before it was another one, so moving between one app's own screens is a single open.
+         * Folio's resumes are never counted but still part of the order, so Home → app always counts.
+         */
+        internal fun foldOpens(resumes: List<Pair<String, Long>>, self: String): Map<String, List<Long>> {
+            val opens = HashMap<String, MutableList<Long>>()
+            var last: String? = null
+            for ((pkg, at) in resumes) {
+                if (pkg != last && pkg != self) opens.getOrPut(pkg) { ArrayList() }.add(at)
+                last = pkg
+            }
+            return opens
         }
     }
 }
