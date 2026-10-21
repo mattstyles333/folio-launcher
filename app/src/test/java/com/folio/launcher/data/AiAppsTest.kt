@@ -1,10 +1,21 @@
 package com.folio.launcher.data
 
+import android.app.Application
+import android.content.ComponentName
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [35])
 class AiAppsTest {
     @Test
     fun installedFrom_onlyKnownPackages() {
@@ -50,6 +61,39 @@ class AiAppsTest {
         val uris = AiApps.viewUris(AiKind.ChatGpt, "hello%20world")
         assertTrue(uris.any { it.contains("chatgpt://") })
         assertTrue(uris.any { it.contains("chatgpt.com/?q=hello%20world") })
+    }
+
+    @Test
+    fun open_sharesWithTheAppWhenItDoesNotClaimTheLink_neverTheBrowser() {
+        val app: Application = ApplicationProvider.getApplicationContext()
+        val pm = shadowOf(app.packageManager)
+        val browser = ComponentName("com.android.chrome", "com.android.chrome.Main")
+        pm.addActivityIfNotPresent(browser)
+        pm.addIntentFilterForActivity(
+            browser,
+            IntentFilter(Intent.ACTION_VIEW).apply {
+                addCategory(Intent.CATEGORY_DEFAULT)
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addDataScheme("https")
+            },
+        )
+        // This Claude build doesn't claim claude.ai/new, but takes shared text.
+        val claude = ComponentName("com.anthropic.claude", "com.anthropic.claude.Share")
+        pm.addActivityIfNotPresent(claude)
+        pm.addIntentFilterForActivity(
+            claude,
+            IntentFilter(Intent.ACTION_SEND).apply {
+                addCategory(Intent.CATEGORY_DEFAULT)
+                addDataType("text/plain")
+            },
+        )
+
+        assertTrue(AiApps.open(app, AiKind.Claude, " hi ", "com.anthropic.claude"))
+
+        val started = shadowOf(app).nextStartedActivity
+        assertEquals(Intent.ACTION_SEND, started.action)
+        assertEquals("com.anthropic.claude", started.`package`)
+        assertEquals("hi", started.getStringExtra(Intent.EXTRA_TEXT))
     }
 
     @Test
