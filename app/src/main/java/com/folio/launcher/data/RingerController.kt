@@ -307,14 +307,15 @@ class RingerController(private val context: Context) {
             }
         }
 
+        /** Resumes per app from [now] - [windowMs] up to [now] (wall clock). */
         fun queryUsageTimestamps(
             context: Context,
             windowMs: Long = 30 * Ranking.DAY_MS,
+            now: Long = System.currentTimeMillis(),
         ): Map<String, List<Long>> {
             if (!hasUsageAccess(context)) return emptyMap()
             return runCatching {
                 val usm = context.getSystemService(UsageStatsManager::class.java)
-                val now = System.currentTimeMillis()
                 val events = usm.queryEvents(now - windowMs, now)
                 val event = android.app.usage.UsageEvents.Event()
                 val map = HashMap<String, MutableList<Long>>()

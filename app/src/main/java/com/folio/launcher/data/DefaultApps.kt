@@ -44,17 +44,13 @@ object DefaultApps {
             if (out.none { it.packageName == app.packageName }) out += app
         }
 
-        add(PHONE.firstOrNull { it in byPkg })
-        add(resolve(pm, Intent(Intent.ACTION_DIAL)))
+        // One app per category, so a second messenger can't push the browser off the rail.
+        fun pickOne(known: List<String>, intent: Intent) = add(choose(byPkg.keys, resolve(pm, intent), known))
 
-        add(MESSAGES.firstOrNull { it in byPkg })
-        add(resolve(pm, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"))))
-
-        add(CAMERA.firstOrNull { it in byPkg })
-        add(resolve(pm, Intent(MediaStore.ACTION_IMAGE_CAPTURE)))
-
-        add(BROWSER.firstOrNull { it in byPkg })
-        add(resolve(pm, Intent(Intent.ACTION_VIEW, Uri.parse("https://"))))
+        pickOne(PHONE, Intent(Intent.ACTION_DIAL))
+        pickOne(MESSAGES, Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:")))
+        pickOne(CAMERA, Intent(MediaStore.ACTION_IMAGE_CAPTURE))
+        pickOne(BROWSER, Intent(Intent.ACTION_VIEW, Uri.parse("https://")))
 
         if (out.size < 4) {
             val fallbackLabels = listOf("phone", "dialer", "messages", "messaging", "sms", "camera", "chrome", "browser")
@@ -65,13 +61,20 @@ object DefaultApps {
             }
         }
         if (out.size < 4) {
-            for (app in apps.sortedBy { it.label.lowercase() }) {
+            for (app in apps.sortedWith(compareBy(Ranking.labelOrder()) { it.label })) {
                 if (out.size >= 4) break
                 if (out.none { it.packageName == app.packageName }) out += app
             }
         }
         return out.take(4)
     }
+
+    /**
+     * The phone's default app for a category ([resolved]) when it's on the home screen, else the
+     * first [known] one installed. With no default set, [resolved] is the system chooser.
+     */
+    internal fun choose(installed: Set<String>, resolved: String?, known: List<String>): String? =
+        resolved?.takeIf { it in installed } ?: known.firstOrNull { it in installed }
 
     private fun resolve(pm: PackageManager, intent: Intent): String? {
         return try {

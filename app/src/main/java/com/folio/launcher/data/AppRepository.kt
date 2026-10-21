@@ -1,14 +1,17 @@
 package com.folio.launcher.data
 
+import android.content.ComponentCallbacks
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.provider.Settings
 import android.graphics.Rect
 import android.os.Handler
+import android.os.LocaleList
 import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
@@ -21,10 +24,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AppRepository(private val context: Context) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
@@ -39,6 +45,15 @@ class AppRepository(private val context: Context) {
     private val icons = ConcurrentHashMap<String, ImageBitmap>()
     @Volatile
     private var iconPx = 0
+
+    /** Packages changed since the last load began; that load's icons for them may be stale. */
+    private val pending = ConcurrentHashMap.newKeySet<String>()
+
+    /** One load at a time, so an older load can't finish last and publish a stale list. */
+    private val loading = Mutex()
+
+    /** Language and density of the last load: labels are read in one, icons drawn at the other. */
+    private var loadedFor: Pair<LocaleList, Int>? = null
 
     private val callback = object : LauncherApps.Callback() {
         override fun onPackageRemoved(packageName: String, user: UserHandle) = reload(packageName)
@@ -57,25 +72,52 @@ class AppRepository(private val context: Context) {
         ) = reload(*packageNames)
     }
 
+    /** A new phone language (or display size) changes no package, so nothing else reloads. */
+    private val configCallback = object : ComponentCallbacks {
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            val now = newConfig.locales to newConfig.densityDpi
+            if (now == loadedFor) return
+            loadedFor = now
+            reload()
+        }
+
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun onLowMemory() = Unit
+    }
+
     fun start() {
         runCatching {
             launcherApps.registerCallback(callback, Handler(Looper.getMainLooper()))
         }
+        val config = context.resources.configuration
+        loadedFor = config.locales to config.densityDpi
+        runCatching { context.registerComponentCallbacks(configCallback) }
         reload()
     }
 
     fun stop() {
         runCatching { launcherApps.unregisterCallback(callback) }
+        runCatching { context.unregisterComponentCallbacks(configCallback) }
     }
 
     fun reload(vararg changed: String) {
-        if (changed.isNotEmpty()) {
-            icons.keys.removeAll { key -> changed.any { key.startsWith("$it/") } }
-        }
+        pending.addAll(changed)
         reloadJob?.cancel()
         reloadJob = scope.launch {
             delay(40)
-            _apps.value = load()
+            loading.withLock {
+                // Drop changed icons as this load starts, not when the event came: a load
+                // already running then could draw them again from the old package.
+                val done = pending.toList()
+                pending.removeAll(done)
+                if (done.isNotEmpty()) {
+                    icons.keys.removeAll { key -> done.any { key.startsWith("$it/") } }
+                }
+                val list = load()
+                // Cancelled while loading: a newer reload is coming with a fresher list.
+                ensureActive()
+                _apps.value = list
+            }
         }
     }
 
@@ -109,20 +151,20 @@ class AppRepository(private val context: Context) {
                     isHome = HomeApps.isHome(cn.packageName, homes),
                 )
             }.distinctBy { it.key }
-                .sortedBy { it.label.lowercase() }
+                .sortedWith(compareBy(Ranking.labelOrder()) { it.label })
                 .also { icons.keys.retainAll(live) }
         }.getOrElse { emptyList() }
     }
 
     private fun homePackages(): Set<String> {
-        val out = HashSet<String>()
+        val found = ArrayList<Pair<String, Int>>()
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         fun query(flags: Int) {
             @Suppress("DEPRECATION")
             runCatching {
                 context.packageManager.queryIntentActivities(intent, flags)
             }.getOrNull().orEmpty().forEach { info ->
-                info.activityInfo?.packageName?.let(out::add)
+                info.activityInfo?.packageName?.let { found += it to info.priority }
             }
         }
         query(PackageManager.MATCH_DEFAULT_ONLY)
@@ -131,12 +173,15 @@ class AppRepository(private val context: Context) {
         runCatching {
             context.packageManager
                 .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                ?.let { info -> info.activityInfo?.packageName?.let { found += it to info.priority } }
+        }
+        val settings = runCatching {
+            context.packageManager
+                .resolveActivity(Intent(Settings.ACTION_SETTINGS), PackageManager.MATCH_DEFAULT_ONLY)
                 ?.activityInfo
                 ?.packageName
-                ?.let(out::add)
-        }
-        out.remove(ownPackage)
-        return out
+        }.getOrNull()
+        return HomeApps.homeSet(found, settings, ownPackage)
     }
 
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {
