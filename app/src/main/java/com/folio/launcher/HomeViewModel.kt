@@ -13,6 +13,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.AppIndex
+import com.folio.launcher.data.AppShortcut
 import com.folio.launcher.data.AskProvider
 import com.folio.launcher.data.AskProviders
 import com.folio.launcher.data.BrainStatus
@@ -412,6 +413,20 @@ class HomeViewModel(
 
     fun openAppInfo(app: LaunchableApp, bounds: Rect? = null): Boolean {
         return appsRepo.openAppInfo(app, bounds)
+    }
+
+    /** A held app's shortcuts for its menu: none unless Folio is Home. Binder calls, read off the main thread. */
+    suspend fun shortcuts(app: LaunchableApp): List<AppShortcut> =
+        withContext(Dispatchers.IO) { appsRepo.shortcuts(app) }
+
+    /** A shortcut from an app's long-press menu: an open of that app, as a tap on its icon is. */
+    fun startShortcut(shortcut: AppShortcut, bounds: Rect? = null): Boolean {
+        val ok = appsRepo.startShortcut(shortcut, bounds)
+        // A paused app (app timer, Focus mode) only shows the system's "App paused": that isn't an open.
+        if (ok && !appsRepo.isPaused(shortcut.packageName)) {
+            viewModelScope.launch { usageStore.record(shortcut.packageName) }
+        }
+        return ok
     }
 
     fun pin(slotIndex: Int, app: LaunchableApp) {

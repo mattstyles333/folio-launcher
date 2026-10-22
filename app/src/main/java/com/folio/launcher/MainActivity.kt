@@ -175,6 +175,8 @@ class MainActivity : ComponentActivity() {
                             onSearchRoute = { route, query -> viewModel.follow(this@MainActivity, route, query) },
                             hermes = hermes,
                             hermesActions = hermesActions,
+                            shortcuts = { viewModel.shortcuts(it) },
+                            onShortcut = { viewModel.startShortcut(it) },
                         )
                     }
                     composable("settings") {

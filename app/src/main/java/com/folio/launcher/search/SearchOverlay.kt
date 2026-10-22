@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -57,6 +58,8 @@ import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.SearchHint
 import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.home.SearchGlyph
+import com.folio.launcher.home.menuAnchor
+import com.folio.launcher.home.rememberMenuAnchor
 import com.folio.launcher.ui.AppIcon
 import com.folio.launcher.ui.PrintInk
 
@@ -68,7 +71,8 @@ fun SearchOverlay(
     results: List<LaunchableApp>,
     accent: Color,
     onLaunch: (LaunchableApp) -> Unit,
-    onAppInfo: (LaunchableApp) -> Unit = {},
+    /** A result held: its long-press menu, by where its row is (root pixels). */
+    onMenu: (LaunchableApp, Rect) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     iconSaturation: Float = 1f,
     hint: SearchHint = SearchHint(),
@@ -200,7 +204,7 @@ fun SearchOverlay(
                     }
                     items(shown, key = { it.key }) { app ->
                         Box(Modifier.animateItem()) {
-                            SearchRow(app, onLaunch, onAppInfo, saturation = iconSaturation)
+                            SearchRow(app, onLaunch, onMenu, saturation = iconSaturation)
                         }
                     }
                 }
@@ -214,18 +218,22 @@ fun SearchOverlay(
 fun SearchRow(
     app: LaunchableApp,
     onLaunch: (LaunchableApp) -> Unit,
-    onAppInfo: ((LaunchableApp) -> Unit)? = null,
+    onMenu: ((LaunchableApp, Rect) -> Unit)? = null,
     saturation: Float = 1f,
 ) {
+    val anchor = rememberMenuAnchor()
     Row(
         Modifier
             .fillMaxWidth()
             .then(
-                if (onAppInfo != null) {
-                    Modifier.combinedClickable(
-                        onClick = { onLaunch(app) },
-                        onLongClick = { onAppInfo(app) },
-                    )
+                if (onMenu != null) {
+                    Modifier
+                        .menuAnchor(anchor)
+                        .combinedClickable(
+                            onLongClickLabel = "Shortcuts",
+                            onClick = { onLaunch(app) },
+                            onLongClick = { onMenu(app, anchor.bounds()) },
+                        )
                 } else {
                     Modifier.clickable { onLaunch(app) }
                 },

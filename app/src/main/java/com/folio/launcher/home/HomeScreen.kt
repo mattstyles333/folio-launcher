@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.folio.launcher.data.AiApps
+import com.folio.launcher.data.AppShortcut
 import com.folio.launcher.data.AskProviders
 import com.folio.launcher.data.GoogleSearch
 import com.folio.launcher.data.HomeUiState
@@ -113,6 +115,9 @@ fun HomeScreen(
     hermesActions: HermesAskActions = HermesAskActions(),
     /** Swipe down on idle: the notification shade, unless a test listens in. */
     onExpandShade: (() -> Unit)? = null,
+    /** A held app's shortcuts for its menu (none unless Folio is Home); read off the main thread. */
+    shortcuts: suspend (LaunchableApp) -> List<AppShortcut> = { emptyList() },
+    onShortcut: (AppShortcut) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -130,6 +135,7 @@ fun HomeScreen(
     var revealOrigin by remember { mutableStateOf(Offset.Zero) }
     var revealTarget by remember { mutableStateOf<RingerVisual?>(null) }
     val revealProgress = remember { Animatable(0f) }
+    val appMenu = rememberAppMenuState()
 
     // The Hermes gateway is connected only while its overlay is on screen.
     val hermesShown = askOpen && state.askHermes
@@ -160,6 +166,7 @@ fun HomeScreen(
         query = ""
         askQuery = ""
         pinSlot = -1
+        appMenu.close()
         // snapTo cancels a develop mid-way, before it lets go of the look and its name.
         lookOverride = null
         flashLook = false
@@ -222,7 +229,7 @@ fun HomeScreen(
             )
         }
 
-        val gesturesEnabled = state.onboarding == null && !searchOpen && !askOpen && pinSlot < 0
+        val gesturesEnabled = state.onboarding == null && !searchOpen && !askOpen && pinSlot < 0 && appMenu.shown == null
         fun sheetDrag(): Modifier = Modifier.folioSheetPull(
             enabled = gesturesEnabled,
             pull = pull,
@@ -273,6 +280,12 @@ fun HomeScreen(
             askQuery = ""
             askOpen = true
             if (pull.px > 8f) collapse()
+        }
+
+        /** A sheet or search icon held: its menu, once its shortcuts are read. */
+        fun openMenu(app: LaunchableApp, anchor: Rect) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            appMenu.open(app, anchor, shortcuts)
         }
 
         BackHandler(enabled = searchOpen || askOpen || pull.showing || pinSlot >= 0) {
@@ -512,10 +525,7 @@ fun HomeScreen(
                     searchOpen = false
                     collapse()
                 },
-                onAppInfo = { app ->
-                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    onAppInfo(app)
-                },
+                onMenu = { app, anchor -> openMenu(app, anchor) },
                 onPinRequest = { pinSlot = it },
                 onReorder = onReorder,
                 onHide = { app ->
@@ -592,15 +602,34 @@ fun HomeScreen(
                 searchOpen = false
                 query = ""
             },
-            onAppInfo = { app ->
-                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                onAppInfo(app)
-            },
+            onMenu = { app, anchor -> openMenu(app, anchor) },
             onDismiss = {
                 searchOpen = false
                 query = ""
             },
         )
+
+        // The menu belongs to the sheet or search result it was opened on: when that goes (or the
+        // keyboard, still up under it, changes what's typed), so does the menu.
+        LaunchedEffect(searchOpen, query, pull.showing) { appMenu.close() }
+        appMenu.shown?.let { menu ->
+            AppMenuOverlay(
+                menu = menu,
+                iconSaturation = iconSat,
+                onShortcut = { shortcut ->
+                    appMenu.close()
+                    onShortcut(shortcut)
+                    searchOpen = false
+                    query = ""
+                    collapse()
+                },
+                onAppInfo = {
+                    appMenu.close()
+                    onAppInfo(menu.app)
+                },
+                onDismiss = { appMenu.close() },
+            )
+        }
 
         val askChips = remember(state.aiLabel, state.quote, state.askHermes) {
             when {

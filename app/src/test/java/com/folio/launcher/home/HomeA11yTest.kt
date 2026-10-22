@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.os.Process
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -190,7 +192,7 @@ class HomeA11yTest {
     }
 
     @Test
-    fun drawerIcon_opensShowsAppInfoAndHides() {
+    fun drawerIcon_opensShowsItsMenuAndHides() {
         show(grok.copy(apps = listOf(app("Maps"))))
         // Up to the peek, where the drawer's icons are on screen.
         compose.onRoot().performTouchInput {
@@ -200,8 +202,14 @@ class HomeA11yTest {
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
         val maps = compose.onNodeWithContentDescription("Maps")
-        assertEquals("App info", maps.fetchSemanticsNode().config[SemanticsActions.OnLongClick].label)
+        assertEquals("Shortcuts", maps.fetchSemanticsNode().config[SemanticsActions.OnLongClick].label)
         maps.performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.waitForIdle()
+        // The hold's menu: its rows are buttons, App info the last (here the only one: no shortcuts).
+        compose.onNodeWithText("App info")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
         maps.performCustomAccessibilityActionWithLabel("Hide from home")
         maps.performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
