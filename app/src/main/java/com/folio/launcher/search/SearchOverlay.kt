@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.SearchHint
 import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.home.SearchGlyph
@@ -87,13 +88,16 @@ fun SearchOverlay(
     val live = hint.takeIf { typed.isNotEmpty() && it.query == typed }
     val picked = live?.app
     val shown = if (picked == null) results else listOf(picked) + results.filterNot { it.key == picked.key }
-    // Jev's route when it's sure; with nothing local to launch, the web.
+    // Apps found only through a slip stay listed, but Enter searches the web: "chats" isn't Chase.
+    val onlySlips = picked == null && typed.isNotEmpty() && results.isNotEmpty() &&
+        results.all { Ranking.match(typed, it.label) == Ranking.MatchKind.Typo }
+    // Jev's route when it's sure; with nothing local to launch (or only slips), the web.
     val action = live?.route?.takeUnless { it is SearchRoute.App }
-        ?: SearchRoute.Web.takeIf { typed.isNotEmpty() && shown.isEmpty() }
+        ?: SearchRoute.Web.takeIf { typed.isNotEmpty() && (shown.isEmpty() || onlySlips) }
     fun enter() {
         when {
             picked != null -> onLaunch(picked)
-            action != null && live?.route != null -> onRoute(action)
+            action != null && (live?.route != null || onlySlips) -> onRoute(action)
             shown.isNotEmpty() -> onLaunch(shown.first())
             action != null -> onRoute(action)
         }

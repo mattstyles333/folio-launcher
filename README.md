@@ -35,7 +35,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 | Gesture | What |
 |---|---|
-| Tap Search | Spotlight: apps by name, a word's start or initials, and a typo forgiven ("spitify" finds Spotify). With an OpenRouter key (Settings → Jev), Jev reads what you type and offers one route: the app you meant ("trains" → Trainline), the web, a one-line answer, your Ask app, or Spotify. Enter follows it. Something you searched earlier this session comes back at once. |
+| Tap Search | Spotlight: apps by name, a word's start or initials, and a typo forgiven ("spitify" finds Spotify; when only a typo matches, Enter searches the web). With an OpenRouter key (Settings → Jev), Jev reads what you type and offers one route: the app you meant ("trains" → Trainline), the web, a one-line answer, your Ask app, or Spotify. Enter follows it. Something you searched earlier this session comes back at once. |
 | Triple-tap the print, or long-press Search | Ask: Hermes when Hermes Live is installed and signed in (it answers over the print), otherwise Grok, ChatGPT, Gemini or Claude. Settings → Ask picks which. |
 | Swipe left on the print | Hermes chosen: a Hermes Live voice call; otherwise open the chosen AI app |
 | Swipe right on the print | Google Search |
