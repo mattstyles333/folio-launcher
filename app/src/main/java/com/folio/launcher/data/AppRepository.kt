@@ -251,6 +251,49 @@ class AppRepository(private val context: Context) {
         }.getOrDefault(false)
     }
 
+    /**
+     * [app]'s own shortcuts for its long-press menu, in [AppShortcuts.pick]'s order, icons drawn for the
+     * menu. Only the Home app may read them: none while Folio isn't Home, nor when that changes mid-call
+     * (or the user is locked), which throws. Binder calls: off the main thread.
+     */
+    fun shortcuts(app: LaunchableApp): List<AppShortcut> {
+        val query = LauncherApps.ShortcutQuery()
+            .setPackage(app.packageName)
+            .setActivity(ComponentName(app.packageName, app.activityName))
+            .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC)
+        val published = runCatching {
+            if (launcherApps.hasShortcutHostPermission()) launcherApps.getShortcuts(query, app.user) else null
+        }.getOrNull().orEmpty()
+        val metrics = context.resources.displayMetrics
+        val size = (AppShortcuts.ICON_DP * metrics.density).toInt().coerceAtLeast(1)
+        return AppShortcuts.pick(
+            published,
+            enabled = { it.isEnabled },
+            declaredInManifest = { it.isDeclaredInManifest },
+            rank = { it.rank },
+        ).mapNotNull { info ->
+            val short = info.shortLabel?.toString()?.takeIf { it.isNotBlank() }
+            val long = info.longLabel?.toString()?.takeIf { it.isNotBlank() }
+            AppShortcut(
+                packageName = app.packageName,
+                id = info.id,
+                label = short ?: long ?: return@mapNotNull null,
+                user = app.user,
+                longLabel = long,
+                // A shortcut whose icon can't be drawn keeps its row.
+                icon = runCatching {
+                    launcherApps.getShortcutIconDrawable(info, metrics.densityDpi)?.toBitmap(size, size)?.asImageBitmap()
+                }.getOrNull(),
+            )
+        }
+    }
+
+    /** Start [shortcut]; false when the system won't: Folio no longer Home, the user locked, the shortcut gone or disabled. */
+    fun startShortcut(shortcut: AppShortcut, bounds: Rect? = null): Boolean = runCatching {
+        launcherApps.startShortcut(shortcut.packageName, shortcut.id, bounds, null, shortcut.user)
+        true
+    }.getOrDefault(false)
+
     fun find(packageName: String, activityName: String?, apps: List<LaunchableApp> = _apps.value): LaunchableApp? {
         if (activityName != null) {
             apps.find { it.packageName == packageName && it.activityName == activityName }?.let { return it }

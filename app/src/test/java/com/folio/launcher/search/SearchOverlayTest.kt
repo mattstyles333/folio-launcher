@@ -106,6 +106,27 @@ class SearchOverlayTest {
     }
 
     @Test
+    fun onlySlips_keepTheWebRow_andEnterSearchesTheWeb() {
+        val chase = app("Chase", "com.chase.sig.android")
+        show("chats", listOf(chase), SearchHint())
+        compose.onNodeWithText("Search the web").assertIsDisplayed()
+        compose.onNodeWithText("Chase").assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        assertEquals(listOf("route:Web"), calls)
+    }
+
+    @Test
+    fun aRealMatchBesideASlip_stillLaunchesOnEnter() {
+        // "chats" starts Chatsworth; Chase is only a slip. One real match keeps Enter on the app.
+        val chatsworth = app("Chatsworth", "com.example.chatsworth")
+        val chase = app("Chase", "com.chase.sig.android")
+        show("chats", listOf(chatsworth, chase), SearchHint())
+        compose.onNodeWithText("Search the web").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        assertEquals(listOf("launch:Chatsworth"), calls)
+    }
+
+    @Test
     fun noHint_enterLaunchesFirstLocal() {
         val spotify = app("Spotify", "com.spotify.music")
         show("spot", listOf(spotify), SearchHint())

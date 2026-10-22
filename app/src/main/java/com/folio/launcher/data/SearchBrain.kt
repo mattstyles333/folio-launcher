@@ -25,13 +25,22 @@ data class SearchHint(
 
 /**
  * Jev reads what was typed and picks one route; code decides whether it's sure enough to show.
- * Typing an app's name never leaves the phone unless it has a space — local matching already has it.
+ * An app's name isn't asked about unless it has a space: local matching already has it.
  */
 object SearchBrain {
     /** Choice confidence below this changes nothing (TypeSafe's "don't act" floor). */
     const val SURE = 0.5
     const val MIN_CHARS = 3
+
+    /**
+     * Typing must pause this long before Jev is asked. About a phone typist's gap between keys,
+     * and about a Jev call on an open connection: a call the next key moves past has mostly
+     * finished before the next one may start, so its connection is free for that one.
+     */
     const val PAUSE_MS = 280L
+
+    /** Opening search opens OpenRouter's connection ahead of Jev's first call, at most this often. */
+    const val WARM_MS = 60_000L
 
     /** A Choice takes 255 options; one of them is [NONE]. */
     const val MAX_APPS = 254
@@ -52,11 +61,8 @@ object SearchBrain {
             "reply with exactly SKIP."
 
     /** Worth a network call: long enough, and has a space or isn't already an app's name or a word of one. */
-    fun worthAsking(query: String, labels: List<String>): Boolean {
-        val q = query.trim()
-        if (q.length < MIN_CHARS) return false
-        if (q.any { it.isWhitespace() }) return true
-        return labels.none { label ->
+    fun worthAsking(query: String, labels: List<String>): Boolean = worthAsking(query) { q ->
+        labels.any { label ->
             when (Ranking.match(q, label)) {
                 Ranking.MatchKind.Prefix, Ranking.MatchKind.WordPrefix -> true
                 else -> false
@@ -64,19 +70,38 @@ object SearchBrain {
         }
     }
 
+    /** [worthAsking] for [apps]' labels, folded once per app list: search asks it on every keystroke. */
+    @JvmName("worthAskingApps")
+    fun worthAsking(query: String, apps: List<LaunchableApp>): Boolean =
+        worthAsking(query) { q -> Ranking.namesAnApp(q, apps) }
+
+    private inline fun worthAsking(query: String, namesAnApp: (String) -> Boolean): Boolean {
+        val q = query.trim()
+        if (q.length < MIN_CHARS) return false
+        if (q.any { it.isWhitespace() }) return true
+        return !namesAnApp(q)
+    }
+
+    /** Search just opened: warm OpenRouter's connection unless that was done in the last [WARM_MS] (at [warmedAt]; null: never). */
+    fun warmDue(now: Long, warmedAt: Long?): Boolean = warmedAt == null || now - warmedAt >= WARM_MS
+
     /** Installed apps as Choice options: most-used first, names made unique, capped at [MAX_APPS]. */
     fun candidates(
         apps: List<LaunchableApp>,
         launches: Map<String, List<Long>>,
         now: Long = System.currentTimeMillis(),
     ): Map<String, LaunchableApp> {
+        val today = Ranking.startOfDay(now)
         val ordered = apps
             .filter { !it.isHome }
+            // Each app's score worked out once, not on every comparison.
+            .map { it to Ranking.score(launches[it.packageName].orEmpty(), now, today) }
             .sortedWith(
-                compareByDescending<LaunchableApp> { Ranking.score(launches[it.packageName].orEmpty(), now) }
-                    .thenBy(Ranking.labelOrder()) { it.label },
+                compareByDescending<Pair<LaunchableApp, Int>> { it.second }
+                    .thenBy(Ranking.labelOrder()) { it.first.label },
             )
             .take(MAX_APPS)
+            .map { it.first }
         return optionNames(ordered.map { it.label }).zip(ordered).toMap(LinkedHashMap())
     }
 
@@ -93,9 +118,15 @@ object SearchBrain {
     }
 
     /** `state` and `questions` for one System One call; [apps] maps option name → package. */
-    fun request(query: String, apps: Map<String, String>, music: Boolean): Pair<JsonObject, JsonObject> {
-        val state = buildJsonObject { put("typed", query.trim()) }
-        val questions = buildJsonObject {
+    fun request(query: String, apps: Map<String, String>, music: Boolean): Pair<JsonObject, JsonObject> =
+        state(query) to questions(apps, music)
+
+    /** What was typed: the only part of a call that changes with each query. */
+    fun state(query: String): JsonObject = buildJsonObject { put("typed", query.trim()) }
+
+    /** The questions for every query typed over one app list ([apps]: option name → package). */
+    fun questions(apps: Map<String, String>, music: Boolean): JsonObject =
+        buildJsonObject {
             putJsonObject(INTENT) {
                 put("type", "choice")
                 put("instructions", "What does the person want from `typed`, entered in their phone's search box?")
@@ -116,8 +147,6 @@ object SearchBrain {
                 }
             }
         }
-        return state to questions
-    }
 
     /** The route, or null when Jev isn't sure — then search stays as it is. */
     fun route(query: String, answers: Map<String, JevAnswer>): SearchRoute? {

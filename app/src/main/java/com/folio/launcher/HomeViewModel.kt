@@ -13,6 +13,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.folio.launcher.data.AiApps
 import com.folio.launcher.data.AppIndex
+import com.folio.launcher.data.AppShortcut
 import com.folio.launcher.data.AskProvider
 import com.folio.launcher.data.AskProviders
 import com.folio.launcher.data.BrainStatus
@@ -33,6 +34,7 @@ import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SearchBrain
+import com.folio.launcher.data.SearchCache
 import com.folio.launcher.data.SearchHint
 import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.data.SlotPref
@@ -43,7 +45,6 @@ import com.folio.launcher.hermes.HermesAsk
 import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.hermes.HermesAvailability
 import com.folio.launcher.hermes.HermesLive
-import com.folio.launcher.hermes.Tailnet
 import com.folio.hermes.ApprovalChoice
 import com.folio.launcher.onboarding.AccessGrants
 import com.folio.launcher.onboarding.AccessScreen
@@ -115,20 +116,27 @@ class HomeViewModel(
     /** Jev's route (and DeepSeek's line) for what's typed in search. Empty without a key. */
     val searchHint: StateFlow<SearchHint> = _searchHint.asStateFlow()
 
+    /** What Jev and DeepSeek said this session, by query; a query typed again needs no call. */
+    private val searchCache = SearchCache(viewModelScope)
+
+    /** When OpenRouter's connection was last opened ahead of Jev (elapsedRealtime); null: not yet. */
+    private var jevWarmedAt: Long? = null
+
     private val hermesAsk = HermesAsk(
         parent = viewModelScope,
         connection = { withContext(Dispatchers.IO) { hermesConnection() } },
         renewedConnection = { withContext(Dispatchers.IO) { hermesConnection(forceRefresh = true) } },
         loadSessionId = { prefsStore.data.first().hermesSessionId },
         saveSessionId = { id -> prefsStore.update { it.copy(hermesSessionId = id) } },
-        tailnet = Tailnet.of(app),
     )
 
     /** The Hermes Ask overlay: exchanges, tool line, approvals. */
     val hermes: StateFlow<HermesAskState> = hermesAsk.state
 
     private var hermesJob: Job? = null
-    private var hermesCheckedAt = 0L
+
+    /** When Hermes Live was last asked (elapsedRealtime); null until the first ask. */
+    private var hermesCheckedAt: Long? = null
 
     /** When system usage was last read (elapsedRealtime); null until the first read. */
     private var usageQueriedAt: Long? = null
@@ -210,6 +218,14 @@ class HomeViewModel(
             }
         }
         viewModelScope.launch { searchQuery.collectLatest(::think) }
+        viewModelScope.launch(Dispatchers.Default) {
+            // Each app list's labels folded once, here: not on the main thread at search's first keystroke.
+            // Jev's last offer goes with the list it was built over, so that list's icons aren't kept.
+            appsRepo.apps.collect {
+                Ranking.prepareSearch(it)
+                searchCache.appsChanged(it)
+            }
+        }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
                 .collect { (charge, playing) ->
@@ -414,6 +430,20 @@ class HomeViewModel(
         return appsRepo.openAppInfo(app, bounds)
     }
 
+    /** A held app's shortcuts for its menu: none unless Folio is Home. Binder calls, read off the main thread. */
+    suspend fun shortcuts(app: LaunchableApp): List<AppShortcut> =
+        withContext(Dispatchers.IO) { appsRepo.shortcuts(app) }
+
+    /** A shortcut from an app's long-press menu: an open of that app, as a tap on its icon is. */
+    fun startShortcut(shortcut: AppShortcut, bounds: Rect? = null): Boolean {
+        val ok = appsRepo.startShortcut(shortcut, bounds)
+        // A paused app (app timer, Focus mode) only shows the system's "App paused": that isn't an open.
+        if (ok && !appsRepo.isPaused(shortcut.packageName)) {
+            viewModelScope.launch { usageStore.record(shortcut.packageName) }
+        }
+        return ok
+    }
+
     fun pin(slotIndex: Int, app: LaunchableApp) {
         viewModelScope.launch {
             prefsStore.update { prefs ->
@@ -496,10 +526,14 @@ class HomeViewModel(
         if (!HermesLive.open(host)) HermesLive.openReleases(host)
     }
 
-    /** Re-read whether Hermes Live is installed and signed in. Off the main thread; never blocks resume. */
+    /**
+     * Re-read whether Hermes Live is installed and signed in. Off the main thread; never blocks resume.
+     * A resume (not [force]) asks only while Hermes is out of reach or signed out, at most every few
+     * minutes ([HermesLive.resumeCheckDue]); Hermes Live announces sign-in and sign-out itself.
+     */
     fun refreshHermes(force: Boolean = true) {
         val now = SystemClock.elapsedRealtime()
-        if (!force && now - hermesCheckedAt < HERMES_RECHECK_MS) return
+        if (!force && !HermesLive.resumeCheckDue(extra.value.hermes, hermesCheckedAt, now)) return
         if (hermesJob?.isActive == true) return
         hermesCheckedAt = now
         hermesJob = viewModelScope.launch {
@@ -551,41 +585,62 @@ class HomeViewModel(
         searchQuery.value = query.trim()
     }
 
-    /** Once per keystroke; collectLatest drops a call still in flight when the next one arrives. */
+    /** Search opened: with a key, open OpenRouter's connection now, so Jev's first answer doesn't wait on DNS, TCP and TLS. */
+    fun onSearchOpened() {
+        viewModelScope.launch {
+            val key = prefsStore.data.first().openRouterKey
+            val now = SystemClock.elapsedRealtime()
+            if (!jevMayAsk(key) || !SearchBrain.warmDue(now, jevWarmedAt)) return@launch
+            jevWarmedAt = now
+            OpenRouter(key).warm()
+        }
+    }
+
+    /**
+     * Once per keystroke; collectLatest moves on when the next one arrives. A query asked before
+     * shows its route at once; a new one is asked once typing pauses, and that call finishes even
+     * if typing moves on (into [searchCache], for a backspace).
+     */
     private suspend fun think(query: String) {
         _searchHint.value = SearchHint(query = query)
         val key = prefsStore.data.first().openRouterKey
         if (!jevMayAsk(key)) return
         if (query.length < SearchBrain.MIN_CHARS) return
-        delay(SearchBrain.PAUSE_MS)
         val apps = appsRepo.apps.value
-        val options = withContext(Dispatchers.Default) {
-            if (!SearchBrain.worthAsking(query, apps.map { it.label })) return@withContext null
-            SearchBrain.candidates(apps, state.value.launches)
+        val offer = withContext(Dispatchers.Default) {
+            if (!SearchBrain.worthAsking(query, apps)) return@withContext null
+            searchCache.offer(apps, state.value.launches)
         } ?: return
-        val (brainState, questions) = SearchBrain.request(
-            query,
-            options.mapValues { it.value.packageName },
-            music = apps.any { it.packageName == Spotify.PACKAGE },
-        )
-        val router = OpenRouter(key)
-        val answers = router.decide(brainState, questions)
-        noteJevStatus(key, router)
-        if (answers == null) return
+        // In already (a backspace, a retype) or on its way: no pause, and no second call.
+        val known = searchCache.answers(key, offer, query)
+        if (known == null) delay(SearchBrain.PAUSE_MS)
+        val asked = known ?: searchCache.ask(key, offer, query) {
+            val router = OpenRouter(key)
+            router.decide(SearchBrain.state(query), offer.questions).also { noteJevStatus(key, router) }
+        }
+        val answers = asked.await() ?: return
         val route = when (val picked = SearchBrain.route(query, answers)) {
             SearchRoute.Ask -> if (state.value.aiLabel.isEmpty()) SearchRoute.Web else picked
             else -> picked
         } ?: return
         when (route) {
             is SearchRoute.App -> {
-                val app = options[route.name] ?: return
+                val app = offer.options[route.name] ?: return
                 _searchHint.value = SearchHint(query, route, app = app)
             }
             SearchRoute.Answer -> {
-                _searchHint.value = SearchHint(query, route, answering = true)
-                val line = router.write(SearchBrain.ANSWER_SYSTEM, query)?.let(SearchBrain::cleanAnswer)
-                noteJevStatus(key, router)
-                _searchHint.value = if (line != null) {
+                val written = searchCache.line(key, query)
+                if (written?.isCompleted != true) _searchHint.value = SearchHint(query, route, answering = true)
+                // Jev's route came from memory, so typing may not have paused yet.
+                if (written == null && known != null) delay(SearchBrain.PAUSE_MS)
+                val writing = written ?: searchCache.write(key, query) {
+                    val router = OpenRouter(key)
+                    // DeepSeek's SKIP is kept, as ""; no answer at all is null, and asked again next time.
+                    router.write(SearchBrain.ANSWER_SYSTEM, query).also { noteJevStatus(key, router) }
+                        ?.let { SearchBrain.cleanAnswer(it).orEmpty() }
+                }
+                val line = writing.await()
+                _searchHint.value = if (!line.isNullOrEmpty()) {
                     SearchHint(query, route, answer = line)
                 } else {
                     SearchHint(query, SearchRoute.Web)
@@ -673,6 +728,7 @@ class HomeViewModel(
         keyCheck?.cancel()
         extra.value = extra.value.copy(brain = null, pasted = null)
         _searchHint.value = SearchHint()
+        searchCache.clear()
         viewModelScope.launch { prefsStore.update { it.copy(openRouterKey = "") } }
     }
 
@@ -696,9 +752,16 @@ class HomeViewModel(
 
     fun setWallpaper(uri: Uri) = print.setFromUri(uri)
 
+    /** Settings › Your photos: what the picker handed back, copied in before its grant ends. */
+    fun setPhotos(uris: List<Uri>) = print.setRoll(uris)
+
     fun useSystemWallpaper() = print.useSystem()
 
-    fun nextBingPrint() = print.next()
+    /** Double-tap: the next of your photos while the print is one, else the next Bing. */
+    fun nextPrint() = print.next()
+
+    /** Settings › Bing print: a Bing, leaving your photos. */
+    fun nextBingPrint() = print.nextBing()
 
     fun previousPrint() = print.previous()
 
@@ -828,6 +891,8 @@ class HomeViewModel(
             wallpaperBusy = printState.busy,
             wallpaperCaption = printState.caption,
             hasPreviousPrint = printState.hasPrevious,
+            rollNote = printState.rollNote,
+            rollSize = if (prefs.isRollPrint) prefs.rollFiles.size else 0,
             charging = extraState.charging,
             charge = extraState.charge,
             musicPlaying = extraState.musicPlaying,
@@ -864,7 +929,6 @@ class HomeViewModel(
     companion object {
         private const val KEY_PENDING_ACCESS = "pending_access"
         private const val KEY_WALKING = "access_walking"
-        private const val HERMES_RECHECK_MS = 10_000L
         private const val USAGE_RECHECK_MS = 60_000L
         private const val JEV_PAUSE_MS = 60_000L
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,9 +55,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.SearchHint
 import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.home.SearchGlyph
+import com.folio.launcher.home.menuAnchor
+import com.folio.launcher.home.rememberMenuAnchor
 import com.folio.launcher.ui.AppIcon
 import com.folio.launcher.ui.PrintInk
 
@@ -68,7 +72,8 @@ fun SearchOverlay(
     results: List<LaunchableApp>,
     accent: Color,
     onLaunch: (LaunchableApp) -> Unit,
-    onAppInfo: (LaunchableApp) -> Unit = {},
+    /** A result held: its long-press menu, by where its row is (root pixels). */
+    onMenu: (LaunchableApp, Rect) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     iconSaturation: Float = 1f,
     hint: SearchHint = SearchHint(),
@@ -83,13 +88,16 @@ fun SearchOverlay(
     val live = hint.takeIf { typed.isNotEmpty() && it.query == typed }
     val picked = live?.app
     val shown = if (picked == null) results else listOf(picked) + results.filterNot { it.key == picked.key }
-    // Jev's route when it's sure; with nothing local to launch, the web.
+    // Apps found only through a slip stay listed, but Enter searches the web: "chats" isn't Chase.
+    val onlySlips = picked == null && typed.isNotEmpty() && results.isNotEmpty() &&
+        results.all { Ranking.match(typed, it.label) == Ranking.MatchKind.Typo }
+    // Jev's route when it's sure; with nothing local to launch (or only slips), the web.
     val action = live?.route?.takeUnless { it is SearchRoute.App }
-        ?: SearchRoute.Web.takeIf { typed.isNotEmpty() && shown.isEmpty() }
+        ?: SearchRoute.Web.takeIf { typed.isNotEmpty() && (shown.isEmpty() || onlySlips) }
     fun enter() {
         when {
             picked != null -> onLaunch(picked)
-            action != null && live?.route != null -> onRoute(action)
+            action != null && (live?.route != null || onlySlips) -> onRoute(action)
             shown.isNotEmpty() -> onLaunch(shown.first())
             action != null -> onRoute(action)
         }
@@ -200,7 +208,7 @@ fun SearchOverlay(
                     }
                     items(shown, key = { it.key }) { app ->
                         Box(Modifier.animateItem()) {
-                            SearchRow(app, onLaunch, onAppInfo, saturation = iconSaturation)
+                            SearchRow(app, onLaunch, onMenu, saturation = iconSaturation)
                         }
                     }
                 }
@@ -214,18 +222,26 @@ fun SearchOverlay(
 fun SearchRow(
     app: LaunchableApp,
     onLaunch: (LaunchableApp) -> Unit,
-    onAppInfo: ((LaunchableApp) -> Unit)? = null,
+    onMenu: ((LaunchableApp, Rect) -> Unit)? = null,
     saturation: Float = 1f,
 ) {
+    val anchor = rememberMenuAnchor()
     Row(
         Modifier
             .fillMaxWidth()
             .then(
-                if (onAppInfo != null) {
-                    Modifier.combinedClickable(
-                        onClick = { onLaunch(app) },
-                        onLongClick = { onAppInfo(app) },
-                    )
+                if (onMenu != null) {
+                    Modifier
+                        .menuAnchor(anchor)
+                        .combinedClickable(
+                            onLongClickLabel = "Shortcuts",
+                            // The menu buzzes as it opens; a hold that drifted opens none, so no buzz.
+                            hapticFeedbackEnabled = false,
+                            onClick = { onLaunch(app) },
+                            // Not after a drift past touch slop: the list only scrolls up and down, so
+                            // nothing else takes a press that slides sideways along the row.
+                            onLongClick = { if (!anchor.dragged) onMenu(app, anchor.bounds()) },
+                        )
                 } else {
                     Modifier.clickable { onLaunch(app) }
                 },

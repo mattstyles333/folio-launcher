@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -48,6 +49,8 @@ import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.RailSlot
 import com.folio.launcher.home.Rail
 import com.folio.launcher.home.SheetPull
+import com.folio.launcher.home.menuAnchor
+import com.folio.launcher.home.rememberMenuAnchor
 import com.folio.launcher.home.swipeAwayToHide
 import com.folio.launcher.ui.AppIcon
 import com.folio.launcher.ui.PrintInk
@@ -65,7 +68,8 @@ fun ExpandingDock(
     iconSaturation: Float,
     onSettle: (Float) -> Unit,
     onLaunch: (LaunchableApp) -> Unit,
-    onAppInfo: (LaunchableApp) -> Unit,
+    /** A drawer icon held: its long-press menu, by where the icon is (root pixels). */
+    onMenu: (LaunchableApp, Rect) -> Unit,
     onPinRequest: (Int) -> Unit,
     onReorder: (Int, Int) -> Unit,
     onHide: (LaunchableApp) -> Unit,
@@ -142,7 +146,7 @@ fun ExpandingDock(
                                 app = app,
                                 iconSaturation = iconSaturation,
                                 onLaunch = onLaunch,
-                                onAppInfo = onAppInfo,
+                                onMenu = onMenu,
                                 onHide = onHide,
                                 accessibilityActions = accessibilityActions,
                             )
@@ -175,15 +179,17 @@ private fun DrawerCell(
     app: LaunchableApp,
     iconSaturation: Float,
     onLaunch: (LaunchableApp) -> Unit,
-    onAppInfo: (LaunchableApp) -> Unit,
+    onMenu: (LaunchableApp, Rect) -> Unit,
     onHide: (LaunchableApp) -> Unit,
     accessibilityActions: Boolean,
 ) {
+    val anchor = rememberMenuAnchor()
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
             .height(DockRowHeight)
+            .menuAnchor(anchor)
             // Tap, hold and swipe are pointer input only: assistive tech gets them as actions.
             .semantics(mergeDescendants = true) {
                 if (!accessibilityActions) return@semantics
@@ -192,8 +198,8 @@ private fun DrawerCell(
                     onLaunch(app)
                     true
                 }
-                onLongClick(label = "App info") {
-                    onAppInfo(app)
+                onLongClick(label = "Shortcuts") {
+                    onMenu(app, anchor.bounds())
                     true
                 }
                 customActions = listOf(
@@ -207,7 +213,9 @@ private fun DrawerCell(
             .pointerInput(app.key) {
                 detectTapGestures(
                     onTap = { onLaunch(app) },
-                    onLongPress = { onAppInfo(app) },
+                    // Never mid-drag: the sheet, the grid or the swipe taking the finger cancels the hold,
+                    // and a press that travelled past touch slop any other way (a slow slide left) isn't one.
+                    onLongPress = { if (!anchor.dragged) onMenu(app, anchor.bounds()) },
                 )
             }
             .padding(horizontal = 2.dp, vertical = 4.dp),

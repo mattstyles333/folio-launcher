@@ -58,6 +58,14 @@ data class Prefs(
     val bingDay: Int = -1,
     /** The last Bing prints, newest first (the current one too): a random pick stays away from them. */
     val recentBingIds: List<String> = emptyList(),
+    /** Your photos: the roll's files in Folio's own storage, in the order picked; empty when there's none. */
+    val rollFiles: List<String> = emptyList(),
+    /** Position in [rollFiles] of the current print; -1 when it isn't one of your photos. */
+    val rollAt: Int = -1,
+    /** The same for the previous print: Previous print swaps the two, as it does [bingId] and [bingPrevId]. */
+    val rollPrevAt: Int = -1,
+    /** Day the current one of your photos became the print: the first unlock after it shows the next. */
+    val rollDay: Int = -1,
     /** Old installs stored archive list positions. Only [migrated] reads them. */
     val bingIndex: Int = -1,
     val bingPrevIndex: Int = -1,
@@ -76,6 +84,8 @@ data class Prefs(
     val diagnostics: Boolean = true,
 ) {
     val isBingPrint: Boolean get() = bingId.isNotEmpty()
+
+    val isRollPrint: Boolean get() = rollAt in rollFiles.indices
 
     /** Old installs stored a position in the day's archive; keep "this is a Bing print" across the upgrade. */
     fun migrated(): Prefs {

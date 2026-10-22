@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- HTTPS everywhere (Bing, OpenRouter, the user's Hermes). Plain http only for the user's own
-     Hermes on a Tailscale name, which HermesEndpoint also allows. Folio dials it only through
-     Tailscale (hermes/Tailnet.kt), which encrypts that hop. -->
+<!-- HTTPS everywhere (Bing, OpenRouter, the user's Hermes), with no plain-http exception, Tailscale
+     names included. A Hermes Live address on plain http is refused before anything is built or
+     dialled (hermes/HermesAsk.kt). -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">ts.net</domain>
-    </domain-config>
 </network-security-config>

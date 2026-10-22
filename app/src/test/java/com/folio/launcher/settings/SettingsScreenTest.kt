@@ -23,6 +23,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.HomeUiState
+import com.folio.launcher.hermes.HermesAvailability
+import com.folio.launcher.hermes.LiveTokenProvider
 import com.folio.launcher.ui.FolioTheme
 import java.io.FileNotFoundException
 import org.junit.Assert.assertEquals
@@ -57,6 +59,7 @@ class SettingsScreenTest {
                     state = screen,
                     onBack = { calls += "back" },
                     onPickPhoto = { calls += "pickPhoto" },
+                    onPickPhotos = { calls += "pickPhotos" },
                     onNextBing = { calls += "nextBing" },
                     onPreviousPrint = { calls += "previousPrint" },
                     onShowClock = { calls += "showClock:$it" },
@@ -120,6 +123,41 @@ class SettingsScreenTest {
         show(HomeUiState(wallpaperCaption = "Lavender fields, Provence"))
         compose.onNodeWithText("Replace the print").assertExists()
         compose.onNodeWithText("Lavender fields, Provence").assertDoesNotExist()
+    }
+
+    @Test fun yourPhotosOpensThePickerForSeveral() {
+        show()
+        compose.onNodeWithText("Up to 30, one a day").assertExists()
+        compose.onNodeWithText("Your photos").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("pickPhotos"), calls)
+    }
+
+    @Test fun yourPhotosSaysHowTheImportWent() {
+        // The picker comes back to Settings: the count, and what couldn't be read, show there.
+        show(HomeUiState(rollNote = "Adding 3 of 12…"))
+        compose.onNodeWithText("Adding 3 of 12…").assertExists()
+        screen = screen.copy(rollNote = "Added 11 photos, 1 couldn't be read")
+        compose.waitForIdle()
+        compose.onNodeWithText("Added 11 photos, 1 couldn't be read").assertExists()
+    }
+
+    @Test fun onYourPhotos_theBingRowLeavesThem() {
+        show(HomeUiState(rollSize = 12))
+        compose.onNodeWithText("12 photos, one a day. Double-tap for the next.").assertExists()
+        // Double-tap is the roll's now: Bing print is the way back to Bing's.
+        compose.onNodeWithText("Back to Bing's prints").assertExists()
+        compose.onNodeWithText("Double-tap the print for the next one").assertDoesNotExist()
+        compose.onNodeWithText("Bing print").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("nextBing"), calls)
+    }
+
+    @Test fun hermesLiveOnPlainHttp_saysToSetTheHttpsAddress_andTheTapOpensIt() {
+        show(HomeUiState(hermes = HermesAvailability.PlainHttp))
+        compose.onNodeWithText(LiveTokenProvider.PLAIN_HTTP).performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("hermesLive"), calls)
     }
 
     /** The view model's word on the pasted key, as Settings sees it arrive. */

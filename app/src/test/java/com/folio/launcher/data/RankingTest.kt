@@ -54,6 +54,36 @@ class RankingTest {
     }
 
     @Test
+    fun match_forgivesOneSlip_asTheLastResort() {
+        // A letter wrong, two swapped, one too many: from the start of the label or of one of its words.
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("spitify", "Spotify"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("sptoify", "Spotify"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("spottify", "Spotify"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("whatsaop", "WhatsApp"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("instagarm", "Instagram"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("mpas", "Google Maps"))
+        // Still typing, the slip already in.
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("spitif", "Spotify"))
+        // Accents fold first.
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("pokwmon", "Pokémon GO"))
+        // A letter left out was already a fuzzy match, and a prefix is still a prefix.
+        assertEquals(Ranking.MatchKind.Fuzzy, Ranking.match("spotfy", "Spotify"))
+        assertEquals(Ranking.MatchKind.Prefix, Ranking.match("whatsap", "WhatsApp"))
+        // Two slips, or one in fewer than four letters, is no match.
+        assertNull(Ranking.match("spitfy", "Spotify"))
+        assertNull(Ranking.match("sxo", "Spotify"))
+        // In four letters a wrong last letter, or one too many, leaves just a three-letter start: no match.
+        assertNull(Ranking.match("film", "My Files"))
+        assertNull(Ranking.match("moon", "Monzo"))
+        // A wrong letter before the last still is, and from five letters a wrong last one is too.
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("naps", "Google Maps"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("filez", "My Files"))
+        // A slip doesn't make a query an app's name: Jev is still asked.
+        assertTrue(SearchBrain.worthAsking("spitify", listOf("Spotify")))
+        assertTrue(Ranking.MatchKind.Typo.ordinal > Ranking.MatchKind.Fuzzy.ordinal)
+    }
+
+    @Test
     fun eligible_after_first_launch_or_24h() {
         val now = noon
         val launches = mapOf("com.used" to listOf(now))
@@ -118,6 +148,27 @@ class RankingTest {
         )
         val order = Ranking.orderDrawer(labeled, rail = emptySet(), launches, now)
         assertEquals(listOf("com.alpha", "com.beta", "com.zulu"), order)
+    }
+
+    @Test
+    fun drawer_keysWorkedOutOnce_giveTheOrderEveryComparisonUsedTo() {
+        // Ties on score, on the latest open and on the label, long histories, opens past the window.
+        val random = java.util.Random(7)
+        val labeled = List(120) { i -> "com.app$i" to "App ${'A' + random.nextInt(6)}${random.nextInt(3)}" }
+        val launches = labeled.associate { (pkg, _) ->
+            pkg to List(random.nextInt(40)) {
+                noon - random.nextInt(45) * Ranking.DAY_MS - random.nextInt(3) * 3_600_000L
+            }
+        }
+        // The comparator the drawer sorted with before: each comparison summed both apps' opens again.
+        val before = labeled.sortedWith(
+            compareByDescending<Pair<String, String>> { Ranking.score(launches[it.first].orEmpty(), noon) }
+                .thenByDescending { app ->
+                    launches[app.first].orEmpty().filter { it >= noon - Ranking.USAGE_WINDOW_MS }.maxOrNull() ?: 0L
+                }
+                .thenBy(Ranking.labelOrder()) { it.second },
+        ).map { it.first }
+        assertEquals(before, Ranking.orderDrawer(labeled, rail = emptySet(), launches, noon))
     }
 
     @Test

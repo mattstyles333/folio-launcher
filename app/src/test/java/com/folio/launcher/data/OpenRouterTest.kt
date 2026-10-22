@@ -42,6 +42,45 @@ class OpenRouterTest {
     }
 
     @Test
+    fun warm_opensTheConnectionJevsFirstCallGoesOutOn() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse.Builder().body("""{"data":{"label":"Folio"}}""").build())
+        server.enqueue(
+            MockResponse.Builder()
+                .body("""{"answers":{"intent":{"type":"choice","choice":"web","confidence":0.9}}}""")
+                .build(),
+        )
+        server.start()
+        try {
+            val router = OpenRouter("sk-or-test", server.url("/api/v1").toString())
+            assertTrue(router.warm())
+            assertEquals("web", router.decide(nothing, nothing)!!["intent"]!!.choice)
+            // One small authenticated GET: OpenRouter's key endpoint, which bills nothing.
+            val warm = server.takeRequest()
+            assertEquals("GET", warm.method)
+            assertEquals("/api/v1/key", warm.url.encodedPath)
+            assertEquals("Bearer sk-or-test", warm.headers["Authorization"])
+            // Its answer was read to the end and its socket left open, so Jev's call needs no new one.
+            val jev = server.takeRequest()
+            assertEquals("/api/v1/systemone", jev.url.encodedPath)
+            assertEquals(warm.connectionIndex, jev.connectionIndex)
+            assertEquals(1, jev.exchangeIndex)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
+    fun warm_noAnswerIsFalse() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        val base = server.url("/api/v1").toString()
+        server.close()
+        assertFalse(OpenRouter("sk-or-test", base).warm())
+        assertNull(OpenRouter("sk-or-test", base).check())
+    }
+
+    @Test
     fun decide_cancelClosesTheCallInsteadOfWaitingForIt() = runBlocking {
         val arrived = CountDownLatch(1)
         val release = CountDownLatch(1)

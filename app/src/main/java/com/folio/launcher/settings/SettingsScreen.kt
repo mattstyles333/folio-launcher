@@ -47,6 +47,7 @@ import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.PrintController
 import com.folio.launcher.data.Ranking
 import com.folio.launcher.hermes.HermesAvailability
+import com.folio.launcher.hermes.LiveTokenProvider
 import com.folio.launcher.search.AppPicker
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
@@ -56,6 +57,8 @@ fun SettingsScreen(
     state: HomeUiState,
     onBack: () -> Unit,
     onPickPhoto: () -> Unit,
+    /** Your photos: the system picker, several at once. */
+    onPickPhotos: () -> Unit = {},
     onNextBing: () -> Unit,
     onPreviousPrint: () -> Unit,
     onShowClock: (Boolean) -> Unit,
@@ -126,7 +129,19 @@ fun SettingsScreen(
                 "Choose photo",
                 state.wallpaperCaption.takeIf { it == PrintController.PHOTO_FAILED } ?: "Replace the print",
             ) { onPickPhoto() }
-            SettingsRow("Bing print", "Double-tap the print for the next one") { onNextBing() }
+            // The picker comes back here too: how many made it in, and how many couldn't be read.
+            SettingsRow(
+                "Your photos",
+                when {
+                    state.rollNote.isNotEmpty() -> state.rollNote
+                    state.rollSize > 0 -> "${state.rollSize} photos, one a day. Double-tap for the next."
+                    else -> "Up to ${PrintController.ROLL_MAX}, one a day"
+                },
+            ) { onPickPhotos() }
+            SettingsRow(
+                "Bing print",
+                if (state.rollSize > 0) "Back to Bing's prints" else "Double-tap the print for the next one",
+            ) { onNextBing() }
             if (state.hasPreviousPrint) {
                 SettingsRow("Previous print", "The one before this") { onPreviousPrint() }
             }
@@ -167,6 +182,7 @@ fun SettingsScreen(
                     HermesAvailability.NotInstalled -> "Install Hermes Live from the Folio release to talk to your Hermes"
                     HermesAvailability.SignedOut -> "Open Hermes Live to sign in"
                     HermesAvailability.Unreachable -> "Signed in, but your Hermes isn't answering. Check the connection"
+                    HermesAvailability.PlainHttp -> LiveTokenProvider.PLAIN_HTTP
                     HermesAvailability.Ready -> if (state.askHermes) {
                         "Hermes answers Ask; swipe left to talk"
                     } else {
@@ -219,7 +235,7 @@ fun SettingsScreen(
             SettingsRow(
                 "Better ranking",
                 if (state.hasUsageAccess) {
-                    "Last 30 days of opens, including before Folio"
+                    "Recent opens (Android keeps about ten days), including before Folio"
                 } else {
                     "Without this, ranking is only apps you open from Folio"
                 },

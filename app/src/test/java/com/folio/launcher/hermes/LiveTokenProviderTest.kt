@@ -89,33 +89,31 @@ class LiveTokenProviderTest {
     }
 
     @Test
-    fun plainHttpOffTheTailnet_noTokenAndNoRenewal() = runTest {
+    fun plainHttp_noTokenNoRenewal_andHermesLiveIsNeverAsked() = runTest {
         val box = "http://box.tail1234.ts.net:9119"
-        var up = false
         var asked = 0
         var renewals = 0
         val provider = LiveTokenProvider(
             HermesEndpoint.of(box),
             source = { asked++; conn("fake-token", base = box) },
             renewed = { renewals++; conn("fake-renewed", base = box) },
-            tailnetUp = { up },
         )
-        // Out of reach, not signed out: the gateway tries again, and Hermes Live is never asked,
-        // so its refresh token and password don't go to whatever answered the name.
-        assertEquals(LiveTokenProvider.TAILNET, expectUnavailable { provider.accessToken() })
-        assertEquals(LiveTokenProvider.TAILNET, expectUnavailable { provider.refreshAfterUnauthorized("fake-token") })
+        // It stops rather than retrying, and Hermes Live is never asked, so it never renews (its
+        // refresh token, then its password) towards whatever answers that name.
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, expectSignIn { provider.accessToken() })
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, expectSignIn { provider.refreshAfterUnauthorized("fake-token") })
         assertEquals(0, asked)
         assertEquals(0, renewals)
-        up = true
-        assertEquals("fake-token", provider.accessToken())
-        assertEquals("fake-renewed", provider.refreshAfterUnauthorized("fake-token"))
-        assertEquals(1, renewals)
     }
 
     @Test
-    fun https_neverAsksAboutTheTailnet() = runTest {
-        val provider = LiveTokenProvider(home, { conn("fake-token") }, tailnetUp = { error("asked about Tailscale") })
-        assertEquals("fake-token", provider.accessToken())
+    fun hermesLiveNowOnPlainHttp_getsNoToken_andIsToldWhatToChange() = runTest {
+        val plain: suspend () -> HermesConnection? = { conn("fake-token", base = "http://box.tail1234.ts.net:9119") }
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, expectSignIn { LiveTokenProvider(home, plain).accessToken() })
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, expectSignIn { LiveTokenProvider(home, { conn("fake-old") }, plain).refreshAfterUnauthorized("fake-old") })
+        // With no token right now as well: it stops instead of waiting for one.
+        val tailnetIp: suspend () -> HermesConnection? = { conn("", base = "http://100.101.102.103:9119") }
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, expectSignIn { LiveTokenProvider(home, tailnetIp).accessToken() })
     }
 
     @Test
@@ -126,10 +124,15 @@ class LiveTokenProviderTest {
     }
 
     @Test
-    fun connection_usableOnlyWithAnAllowedAddress() {
+    fun connection_usableOnlyOverHttps() {
         assertTrue(conn("t").usable)
+        assertFalse(conn("t").plainHttp)
         assertFalse(conn("t", base = "http://hermes.example.com").usable)
-        assertTrue(conn("t", base = "http://box.tail1234.ts.net:9119").usable)
+        // The plain http HermesEndpoint allows (a Tailscale name or address) is never usable in Folio.
+        for (base in listOf("http://box.tail1234.ts.net:9119", "http://100.101.102.103:9119")) {
+            assertTrue(base, conn("t", base = base).plainHttp)
+            assertFalse(base, conn("t", base = base).usable)
+        }
         assertFalse(conn("t", base = "").usable)
     }
 }
