@@ -201,6 +201,14 @@ class HomeViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            // Straight into a real Silent (One UI's Mute, a mode) the look stays Silent and says nothing:
+            // the refused one ending does, and takes its hint with it.
+            ringer.refusedSilent.collect { refused ->
+                if (refused || !prefsStore.data.first().silentHint) return@collect
+                prefsStore.update { p -> if (p.silentHint && !ringer.refusedSilent.value) p.copy(silentHint = false) else p }
+            }
+        }
         viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
@@ -562,7 +570,7 @@ class HomeViewModel(
         )
         val router = OpenRouter(key)
         val answers = router.decide(brainState, questions)
-        noteJevStatus(key, router.lastStatus)
+        noteJevStatus(key, router)
         if (answers == null) return
         val route = when (val picked = SearchBrain.route(query, answers)) {
             SearchRoute.Ask -> if (state.value.aiLabel.isEmpty()) SearchRoute.Web else picked
@@ -576,7 +584,7 @@ class HomeViewModel(
             SearchRoute.Answer -> {
                 _searchHint.value = SearchHint(query, route, answering = true)
                 val line = router.write(SearchBrain.ANSWER_SYSTEM, query)?.let(SearchBrain::cleanAnswer)
-                noteJevStatus(key, router.lastStatus)
+                noteJevStatus(key, router)
                 _searchHint.value = if (line != null) {
                     SearchHint(query, route, answer = line)
                 } else {
@@ -616,7 +624,7 @@ class HomeViewModel(
         val (photo, questions) = QuoteFit.request(QuoteFit.describe(shot.caption, shot.credit), quotes, shortlist)
         val router = OpenRouter(key)
         val answers = router.decide(photo, questions)
-        noteJevStatus(key, router.lastStatus)
+        noteJevStatus(key, router)
         return answers?.let { QuoteFit.pick(it, shortlist) }
     }
 
@@ -625,12 +633,13 @@ class HomeViewModel(
         jevMayAsk(key, extra.value.brain) && SystemClock.elapsedRealtime() >= jevPausedUntil
 
     /**
-     * After a call with [key]. A refused key, or one out of credit, stops Jev until Settings: every
-     * call would fail the same way. Too many calls pauses it for a minute.
+     * After [router]'s call with [key]. A refused key, or one out of credit or over its limit, stops
+     * Jev until Settings: every call would fail the same way. Too many calls pauses it for a minute.
      */
-    private suspend fun noteJevStatus(key: String, httpStatus: Int) {
+    private suspend fun noteJevStatus(key: String, router: OpenRouter) {
+        val httpStatus = router.lastStatus
         if (httpStatus == OpenRouter.RATE_LIMITED) jevPausedUntil = SystemClock.elapsedRealtime() + JEV_PAUSE_MS
-        val status = OpenRouter.keyStatus(httpStatus) ?: return
+        val status = OpenRouter.keyStatus(httpStatus, overLimit = router.lastOverLimit) ?: return
         // A call that went out with the key before a new paste says nothing about the new one.
         if (extra.value.pasted == BrainStatus.Checking || prefsStore.data.first().openRouterKey != key) return
         // News about the saved key: the row says so over an older refused paste.
@@ -644,20 +653,13 @@ class HomeViewModel(
         extra.value = extra.value.copy(pasted = BrainStatus.Checking)
         keyCheck?.cancel()
         keyCheck = viewModelScope.launch {
-            val status = when (OpenRouter(key).check()) {
-                true -> BrainStatus.Ready
-                false -> BrainStatus.Rejected
-                null -> BrainStatus.Unverified
-            }
-            // A key OpenRouter refuses isn't kept (after a restart it would read as Ready again), and
-            // says nothing about the key already saved: Jev goes on asking with that one.
-            if (status == BrainStatus.Rejected) {
-                extra.value = extra.value.copy(pasted = status)
-            } else {
+            val checked = OpenRouter(key).check()
+            val paste = pasteChecked(checked, extra.value.brain)
+            if (paste.save) {
                 prefsStore.update { it.copy(openRouterKey = key) }
                 jevPausedUntil = 0L
-                extra.value = extra.value.copy(brain = status, pasted = null)
             }
+            extra.value = extra.value.copy(brain = paste.brain, pasted = paste.pasted)
         }
         return true
     }
@@ -886,5 +888,20 @@ class HomeViewModel(
         /** Jev asks with [savedKey] until a call finds it refused or out of credit ([checked]); a refused paste was never saved. */
         internal fun jevMayAsk(savedKey: String, checked: BrainStatus?): Boolean =
             savedKey.isNotEmpty() && checked != BrainStatus.Rejected && checked != BrainStatus.NoCredit
+
+        /**
+         * A pasted key after OpenRouter's check ([check]: accepted, refused, or null when OpenRouter
+         * didn't answer). A refused key isn't saved (after a restart it would read as Ready again) and
+         * says nothing about the key already saved: what was known of that one ([brain]) stays, and
+         * Jev goes on asking with it. Any other key is saved, with what the check said.
+         */
+        internal fun pasteChecked(check: Boolean?, brain: BrainStatus?): PastedKey = when (check) {
+            false -> PastedKey(save = false, brain = brain, pasted = BrainStatus.Rejected)
+            true -> PastedKey(save = true, brain = BrainStatus.Ready, pasted = null)
+            null -> PastedKey(save = true, brain = BrainStatus.Unverified, pasted = null)
+        }
     }
+
+    /** What [pasteChecked] leaves: whether the pasted key is saved, and the two statuses Settings' Jev row reads. */
+    internal data class PastedKey(val save: Boolean, val brain: BrainStatus?, val pasted: BrainStatus?)
 }

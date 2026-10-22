@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -28,7 +27,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.testTag
@@ -94,11 +92,8 @@ fun ClockCluster(
                 modifier = Modifier
                     .widthIn(max = 340.dp)
                     .padding(horizontal = 28.dp)
-                    .pointerInput(onPrintLongPress) {
-                        detectTapGestures(
-                            onLongPress = { local -> onPrintLongPress(originInParent + local) },
-                        )
-                    },
+                    // The print's own hold: a slow pull that starts here is a drag, not the ringer.
+                    .detectPrintHold(enabled = true, onHold = { local -> onPrintLongPress(originInParent + local) }),
             )
             if (quoteAuthor.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))

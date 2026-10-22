@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -44,7 +43,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -398,12 +396,10 @@ fun HomeScreen(
                     },
                     onTripleTap = { if (pull.px < 8f) openAsk() },
                 )
-                .pointerInput(gesturesEnabled, look) {
-                    if (!gesturesEnabled) return@pointerInput
-                    detectTapGestures(
-                        onLongPress = { origin -> cycleRingerFrom(origin) },
-                    )
-                },
+                .detectPrintHold(
+                    enabled = gesturesEnabled,
+                    onHold = { origin -> cycleRingerFrom(origin) },
+                ),
         )
 
         val hint = when {

@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import android.app.ActivityOptions
 import android.app.Application
 import android.app.PendingIntent
 import android.content.ComponentName
@@ -13,7 +14,6 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,8 +69,14 @@ class DeviceSignalsTest {
         // Android 14+ drops the start unless the sender opts in, and send() succeeds either way.
         val sent = shadowOf(app).nextStartedActivityForResult
         assertEquals("com.spotify.music.NOW_PLAYING", sent.intent.action)
-        assertNotNull(sent.options)
+        // The opt-in itself, under ComponentOptions' own key (ActivityOptions.fromBundle isn't public API).
+        @Suppress("DEPRECATION")
+        val allowed = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+        assertEquals(allowed, sent.options!!.getInt("android.pendingIntent.backgroundActivityAllowed", -1))
     }
+
+    /** Media-button broadcasts sent so far: each must go to Spotify alone. */
+    private fun mediaButtons() = shadowOf(app).broadcastIntents.filter { it.action == Intent.ACTION_MEDIA_BUTTON }
 
     @Test
     fun startingSpotify_opensIt_withNoSystemWideKey() {
@@ -92,12 +98,16 @@ class DeviceSignalsTest {
         assertEquals("com.spotify.music", started.`package`)
         // A system-wide PLAY resumes whichever app played last, which may not be Spotify.
         assertTrue(shadowOf(audio).dispatchedMediaKeyEvents.isEmpty())
+        assertTrue(mediaButtons().isNotEmpty())
+        assertTrue(mediaButtons().all { it.`package` == "com.spotify.music" })
     }
 
     @Test
-    fun withoutSpotify_aTapSendsNoMediaKeyAtAll() {
+    fun withoutSpotify_aTapSendsNoSystemWideKey() {
         DeviceSignals(app).playPause(app)
 
         assertTrue(shadowOf(audio).dispatchedMediaKeyEvents.isEmpty())
+        // Spotify's play button still goes out, to Spotify alone: no other player can take it.
+        assertTrue(mediaButtons().all { it.`package` == "com.spotify.music" })
     }
 }

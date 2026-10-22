@@ -10,11 +10,15 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.folio.launcher.FolioApp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowAudioManager
 
 /**
  * The user's own DND policy and ring level through Folio's Silent and Vibrate: on disk before
@@ -141,13 +145,16 @@ class RingerControllerTest {
         assertEquals(5, ring())
     }
 
-    /** A Bedtime mode: calls blocked, so the look is Silent. */
+    /**
+     * A Bedtime mode: calls blocked, so the look is Silent. Announced the way Android 12–14 do; the
+     * consolidated broadcast Android 15 adds is pinned by the policy-in-force test below.
+     */
     private fun bedtimeStarts() {
         nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
         shadowOf(nm).setConsolidatedNotificationPolicy(
             NotificationManager.Policy(NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS, 0, 0),
         )
-        app.sendBroadcast(Intent(NotificationManager.ACTION_CONSOLIDATED_NOTIFICATION_POLICY_CHANGED))
+        app.sendBroadcast(Intent(NotificationManager.ACTION_NOTIFICATION_POLICY_CHANGED))
         shadowOf(Looper.getMainLooper()).idle()
     }
 
@@ -193,6 +200,44 @@ class RingerControllerTest {
     }
 
     @Test
+    fun aSoundTheSystemRefused_showsTheRingerAsItIs() {
+        audio.setStreamVolume(AudioManager.STREAM_RING, 5, 0)
+        bedtimeStarts()
+        // Without DND access Folio can't end the mode, so Sound doesn't take. Nothing would explain a
+        // ringing look held over a muted phone (only a refused Silent has a hint): the look stays Silent.
+        shadowOf(nm).setNotificationPolicyAccessGranted(false)
+        app.ringer.set(RingerVisual.Sound)
+
+        assertEquals(RingerVisual.Silent, app.ringer.visual.value)
+        assertFalse(app.ringer.refusedSilent.value)
+    }
+
+    @Test
+    @Config(shadows = [RefusesSilentAudioManager::class])
+    fun aRefusedSilent_isHeldOnlyUntilTheRingerMoves_evenIntoARealSilent() {
+        RefusesSilentAudioManager.refusing = true
+        shadowOf(nm).setNotificationPolicyAccessGranted(false)
+        audio.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+        app.ringer.refresh()
+
+        app.ringer.set(RingerVisual.Silent)
+        // Refused: the look (and its hint) say Silent while the phone still vibrates.
+        assertEquals(RingerVisual.Vibrate, app.ringer.readSystem())
+        assertEquals(RingerVisual.Silent, app.ringer.visual.value)
+        assertTrue(app.ringer.refusedSilent.value)
+
+        // One UI's Mute gets there another way. The look was Silent already, so only the hold can say
+        // the refused one is over (and take its hint with it).
+        RefusesSilentAudioManager.refusing = false
+        audio.ringerMode = AudioManager.RINGER_MODE_SILENT
+        app.sendBroadcast(Intent(AudioManager.RINGER_MODE_CHANGED_ACTION))
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(RingerVisual.Silent, app.ringer.visual.value)
+        assertFalse(app.ringer.refusedSilent.value)
+    }
+
+    @Test
     fun theLook_followsThePolicyInForce_evenWhenOnlyThePolicyChanges() {
         // Robolectric starts every stream at 0, which Folio rightly reads as Vibrate: a phone that rings.
         audio.setStreamVolume(AudioManager.STREAM_RING, 5, 0)
@@ -209,5 +254,22 @@ class RingerControllerTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         assertEquals(RingerVisual.Silent, app.ringer.visual.value)
+    }
+}
+
+/**
+ * Android without DND access: an app can't put the ringer into Silent (AudioService throws, and
+ * Folio's setMode lets it go). Robolectric's AudioManager never refuses, so this one does, until
+ * [refusing] is off for a mute that comes from elsewhere.
+ */
+@Implements(AudioManager::class)
+class RefusesSilentAudioManager : ShadowAudioManager() {
+    @Implementation
+    override fun setRingerMode(ringerMode: Int) {
+        if (ringerMode != AudioManager.RINGER_MODE_SILENT || !refusing) super.setRingerMode(ringerMode)
+    }
+
+    companion object {
+        var refusing = true
     }
 }

@@ -27,6 +27,14 @@ class RingerController(private val context: Context) {
     private val _needsDndAccess = MutableStateFlow(false)
     val needsDndAccess: StateFlow<Boolean> = _needsDndAccess.asStateFlow()
 
+    private val _refusedSilent = MutableStateFlow(false)
+
+    /**
+     * A Silent the system refused (no DND access) is being held: the look says Silent while the
+     * phone still rings. False again once the ringer moves, a move straight into a real Silent included.
+     */
+    val refusedSilent: StateFlow<Boolean> = _refusedSilent.asStateFlow()
+
     private var overrideVisual: RingerVisual? = null
 
     /** Where the system stayed when it ignored [overrideVisual]: the look is held only while it's still there. */
@@ -77,6 +85,7 @@ class RingerController(private val context: Context) {
             overrideFrom = null
         }
         _visual.value = next
+        _refusedSilent.value = overrideVisual == RingerVisual.Silent
     }
 
     fun consumeDndRequest() {
@@ -107,12 +116,10 @@ class RingerController(private val context: Context) {
         _visual.value = visual
         apply(visual)
         val sys = readSystem()
-        if (sys == visual) {
-            overrideVisual = null
-            overrideFrom = null
-        } else {
-            overrideFrom = sys
-        }
+        // Only a refused Silent is held: it has a hint to explain it. A Sound or Vibrate the system
+        // refused (a DND Folio can't end) shows the ringer as it is, not a ringing look on a muted phone.
+        if (visual == RingerVisual.Silent) overrideFrom = sys else overrideVisual = null
+        follow(sys)
     }
 
     private fun apply(visual: RingerVisual) {
@@ -279,9 +286,9 @@ class RingerController(private val context: Context) {
         private const val KEY_RING_VOLUME = "ring_volume"
 
         /**
-         * The look: [override], a request the system ignored (null when none), while the system is
-         * still where it stayed then ([overrideFrom]); otherwise the system's own [sys]. Volume
-         * keys, Quick Settings or a mode moving the ringer win over a request that never took.
+         * The look: [override], a request the system ignored (null when none; only a Silent is held),
+         * while the system is still where it stayed then ([overrideFrom]); otherwise the system's own
+         * [sys]. Volume keys, Quick Settings or a mode moving the ringer win over a request that never took.
          */
         internal fun nextVisual(
             override: RingerVisual?,

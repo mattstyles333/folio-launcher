@@ -5,10 +5,15 @@ import android.app.Application
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.PowerManager
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.math.sin
@@ -24,7 +29,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.SensorBuilder
 import org.robolectric.shadows.SensorEventBuilder
 
-/** The print's parallax: still at rest, held while off, never moving for Remove animations or Power saving. */
+/**
+ * The print's parallax: still at rest, held while off, listening only while Home is resumed, and
+ * never moving for Remove animations or Power saving (asked again on every resume).
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class ParallaxFilterTest {
@@ -84,9 +92,36 @@ class ParallaxFilterTest {
     }
 
     @Test
-    fun listensWhileResumed() {
-        show()
+    fun listensOnlyWhileResumed_andAsksAgainOnResume() {
+        val owner = object : LifecycleOwner {
+            val registry = LifecycleRegistry.createUnsafe(this)
+            override val lifecycle: Lifecycle get() = registry
+        }
+        owner.registry.currentState = Lifecycle.State.RESUMED
+        val parallax = show(owner)
         assertTrue(listening())
+        repeat(60) { tilt(gx = -4.9f, gz = 0f) }
+        val held = parallax.x
+        assertTrue(held > 1f)
+
+        // Home paused (an app opened, the screen went off): the sensor, and the gyroscope behind it, rest.
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.STARTED }
+        assertFalse(listening())
+        assertEquals(held, parallax.x, 0f)
+        // Back on Home it listens again, from where the print sits.
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.RESUMED }
+        assertTrue(listening())
+        tilt(gx = -4.9f, gz = 0f)
+        assertEquals(held, parallax.x, 0.5f)
+
+        // Power saving turned on while Folio was away: asked again on resume, so a still, centred print.
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.STARTED }
+        shadowOf(app.getSystemService(PowerManager::class.java)).setIsPowerSaveMode(true)
+        compose.runOnIdle { owner.registry.currentState = Lifecycle.State.RESUMED }
+        compose.waitForIdle()
+        assertFalse(listening())
+        assertEquals(0f, parallax.x, 0f)
+        assertEquals(0f, parallax.y, 0f)
     }
 
     @Test
@@ -132,10 +167,19 @@ class ParallaxFilterTest {
         assertEquals(0f, parallax.y, 0f)
     }
 
-    private fun show(): ParallaxState {
+    /** Under [owner]'s lifecycle when given; the test activity's (resumed) otherwise. */
+    private fun show(owner: LifecycleOwner? = null): ParallaxState {
         shadowOf(sensors).addSensor(gravity)
         lateinit var parallax: ParallaxState
-        compose.setContent { parallax = rememberParallax(enabled = enabled) }
+        compose.setContent {
+            if (owner == null) {
+                parallax = rememberParallax(enabled = enabled)
+            } else {
+                CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                    parallax = rememberParallax(enabled = enabled)
+                }
+            }
+        }
         compose.waitForIdle()
         return parallax
     }

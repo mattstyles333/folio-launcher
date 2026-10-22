@@ -135,6 +135,9 @@ class HermesAskReducerTest {
         assertNull(r.connectionLine(GatewayConnection.Ready(1, "e")))
         assertNull(r.connectionLine(GatewayConnection.Waiting(1, 1000, "x")))
         assertEquals("Can’t reach Hermes. Trying again…", r.connectionLine(GatewayConnection.Waiting(2, 1000, "x")))
+        // Waiting for Tailscale says what to do, from the first try.
+        assertEquals(LiveTokenProvider.TAILNET, r.connectionLine(GatewayConnection.Waiting(1, 1000, LiveTokenProvider.TAILNET)))
+        assertEquals(LiveTokenProvider.TAILNET, r.connectionLine(GatewayConnection.Waiting(2, 1000, LiveTokenProvider.TAILNET)))
         assertEquals(LiveTokenProvider.REFUSED, r.connectionLine(GatewayConnection.Stopped(LiveTokenProvider.REFUSED, true)))
     }
 

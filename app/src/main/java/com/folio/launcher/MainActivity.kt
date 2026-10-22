@@ -39,6 +39,7 @@ import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.settings.SettingsScreen
 import com.folio.launcher.ui.FolioTheme
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
@@ -86,11 +87,7 @@ class MainActivity : ComponentActivity() {
                 var idleEpoch by remember { mutableIntStateOf(0) }
 
                 LaunchedEffect(Unit) {
-                    // Home: back to the idle print, Settings included.
-                    viewModel.idleTick.collectLatest {
-                        nav.popToHome()
-                        idleEpoch++
-                    }
+                    nav.followIdle(viewModel.idleTick) { idleEpoch++ }
                 }
 
                 val pickPhoto = rememberLauncherForActivityResult(
@@ -255,6 +252,14 @@ class MainActivity : ComponentActivity() {
 
 /** Back to the idle print. Does nothing once home is on top, so a second tap can't pop home itself. */
 internal fun NavController.popToHome(): Boolean = popBackStack("home", inclusive = false)
+
+/** Home ([idleTick], from onNewIntent): back to the idle print, Settings included, then [toIdle] resets home's own state. */
+internal suspend fun NavController.followIdle(idleTick: Flow<Unit>, toIdle: () -> Unit) {
+    idleTick.collectLatest {
+        popToHome()
+        toIdle()
+    }
+}
 
 /**
  * The Home role request came back with Folio still not Home, sooner than anyone could read the

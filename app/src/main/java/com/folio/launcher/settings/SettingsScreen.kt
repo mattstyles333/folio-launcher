@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,6 +75,23 @@ fun SettingsScreen(
     LaunchedEffect(Unit) { onRefreshHermes() }
     var hiddenOpen by remember { mutableStateOf(false) }
     var keyMissing by remember { mutableStateOf(false) }
+    // A pasted key leaves the clipboard once it's saved, not before: one OpenRouter refuses, or a
+    // check cut short, stays there to paste again (OpenRouter shows a key only once).
+    var pendingKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.brain) {
+        val key = pendingKey ?: return@LaunchedEffect
+        when (state.brain) {
+            BrainStatus.Checking -> Unit
+            BrainStatus.Ready, BrainStatus.Unverified -> {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                val clip = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()?.trim()
+                // Only while the clip is still that key: anything copied since stays.
+                if (clip == key) clipboard.clearPrimaryClip()
+                pendingKey = null
+            }
+            else -> pendingKey = null
+        }
+    }
     val hiddenApps = remember(state.apps, state.hiddenPackages) {
         state.apps.filter { it.packageName in state.hiddenPackages }
             .distinctBy { it.packageName }
@@ -84,6 +102,8 @@ fun SettingsScreen(
     Column(
         Modifier
             .fillMaxSize()
+            // Under the Hidden apps picker the rows are out of reach for TalkBack and Switch Access too.
+            .then(if (hiddenOpen) Modifier.clearAndSetSemantics { } else Modifier)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 24.dp, vertical = 28.dp),
@@ -110,27 +130,16 @@ fun SettingsScreen(
             if (state.hasPreviousPrint) {
                 SettingsRow("Previous print", "The one before this") { onPreviousPrint() }
             }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("Show clock", color = PrintInk, fontSize = 16.sp)
-                    Text("Time and date", color = PrintInk.copy(0.4f), fontSize = 12.sp)
-                }
-                Switch(
-                    checked = state.showClock,
-                    onCheckedChange = onShowClock,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = VoidBlack,
-                        checkedTrackColor = state.accent,
-                        uncheckedTrackColor = Color.White.copy(alpha = 0.15f),
-                    ),
-                )
-            }
+            // Hidden, the clock's invisible slot is the way into Settings: say so where it's switched off.
+            SwitchRow(
+                "Show clock",
+                if (state.showClock) "Time and date" else "Long-press where the clock was for Settings",
+                state.showClock,
+                state.accent,
+                enabled = true,
+                tag = "showClock",
+                onChange = onShowClock,
+            )
             SwitchRow(
                 "Diagnostics",
                 if (state.diagnosticsBuiltIn) DIAGNOSTICS_PRIVACY else "This build has no diagnostics endpoint; nothing is sent.",
@@ -175,7 +184,7 @@ fun SettingsScreen(
                         BrainStatus.Ready -> "Search and quotes ask Jev; DeepSeek answers. Hold to remove the key."
                         BrainStatus.Unverified -> "Key saved. OpenRouter didn’t answer. Hold to remove."
                         BrainStatus.Rejected -> "OpenRouter refused that key. Copy another, then tap."
-                        BrainStatus.NoCredit -> "OpenRouter says the key is out of credit. Top up, then tap."
+                        BrainStatus.NoCredit -> "OpenRouter says the key is out of credit or over its limit. Top up or raise it, then tap."
                     }
                 },
                 onLongClick = if (state.brain == BrainStatus.Off) {
@@ -190,13 +199,14 @@ fun SettingsScreen(
                 val clipboard = context.getSystemService(ClipboardManager::class.java)
                 // The clip's own text only: coerceToText reads a URI clip's whole stream on the main thread.
                 val text = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString().orEmpty()
-                val saved = onSetOpenRouterKey(text)
+                val pasted = onSetOpenRouterKey(text)
                 // Out of credit and no new key: the saved one, after a top-up.
-                val retried = !saved && state.brain == BrainStatus.NoCredit
+                val retried = !pasted && state.brain == BrainStatus.NoCredit
                 if (retried) onRetryOpenRouterKey()
-                keyMissing = !saved && !retried
-                // The key lives only in Prefs now; don't leave it on the clipboard for the next paste.
-                if (saved) clipboard?.clearPrimaryClip()
+                // A second tap while a key is being checked isn't a missing key.
+                keyMissing = !pasted && !retried && state.brain != BrainStatus.Checking
+                // Cleared from the clipboard once the check has saved it (above): the key lives only in Prefs then.
+                if (pasted) pendingKey = text.trim()
             }
             SettingsRow(
                 "Hidden apps",
@@ -209,7 +219,7 @@ fun SettingsScreen(
             SettingsRow(
                 "Better ranking",
                 if (state.hasUsageAccess) {
-                    "Recent opens (Android keeps about a week to ten days), including before Folio"
+                    "Last 30 days of opens, including before Folio"
                 } else {
                     "Without this, ranking is only apps you open from Folio"
                 },

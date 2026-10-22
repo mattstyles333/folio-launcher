@@ -6,7 +6,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.isOutOfBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -78,6 +80,48 @@ fun Modifier.detectPrintTaps(
                     }
                     break
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Long-press the print (or the quote) for the ringer. A press that travels past four touch slops,
+ * whichever way, is a drag and never a hold, however its first few dp leaned (the sheet decides on
+ * those alone); nor is one a detector outside this one takes (the sheet's pull, a swipe). A smaller
+ * creep is still a hold.
+ */
+fun Modifier.detectPrintHold(
+    enabled: Boolean,
+    onHold: (Offset) -> Unit,
+): Modifier = composed {
+    val hold = rememberUpdatedState(onHold)
+    pointerInput(enabled) {
+        if (!enabled) return@pointerInput
+        // The same give PrintSwipe and the sheet's pull allow.
+        val holdSlop = viewConfiguration.touchSlop * 4f
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            // Null: the timeout ran out with the finger still down, near where it landed, and no one else's.
+            val letGo = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                var gone = false
+                while (!gone) {
+                    val change = awaitPointerEvent(PointerEventPass.Main).changes.firstOrNull { it.id == down.id }
+                    gone = change == null || !change.pressed || change.isConsumed ||
+                        change.isOutOfBounds(size, extendedTouchPadding) ||
+                        (change.position - down.position).getDistance() > holdSlop ||
+                        // Taken on the way out by a detector outside this one.
+                        awaitPointerEvent(PointerEventPass.Final).changes.any { it.id == down.id && it.isConsumed }
+                }
+                true
+            }
+            if (letGo == null) {
+                hold.value(down.position)
+                // The rest of the press is the hold's: no swipe, pull or tap after it.
+                do {
+                    val event = awaitPointerEvent()
+                    event.changes.forEach { it.consume() }
+                } while (event.changes.any { it.pressed })
             }
         }
     }

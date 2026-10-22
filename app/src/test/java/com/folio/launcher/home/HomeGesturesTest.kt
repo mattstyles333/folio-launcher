@@ -225,6 +225,36 @@ class HomeGesturesTest {
         assertEquals(listOf("shade"), calls)
     }
 
+    /** A thumb's arc: the first few dp lean sideways (the sheet lets the gesture go), then a pull [dy] slower than a hold. */
+    private fun slowPullThatLeansSidewaysFirst(dy: Float) {
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            down(at)
+            moveBy(Offset(15.dp.toPx(), 0f))
+            repeat(20) {
+                advanceEventTime(40)
+                moveBy(Offset(0f, dy / 20))
+            }
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun slowPullDownOnPrint_leaningSidewaysFirst_doesNotCycleRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        slowPullThatLeansSidewaysFirst(dy = compose.onRoot().fetchSemanticsNode().size.height * 0.3f)
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("ringer:") })
+    }
+
+    @Test
+    fun slowPullUpOnPrint_leaningSidewaysFirst_doesNotCycleRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        slowPullThatLeansSidewaysFirst(dy = -compose.onRoot().fetchSemanticsNode().size.height * 0.3f)
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("ringer:") })
+    }
+
     @Test
     fun swipeDownOnPrint_opensShadeNotSearch() {
         show()
@@ -311,6 +341,27 @@ class HomeGesturesTest {
             // ...then think better of it: a quick flick back that still ends right of the start.
             repeat(2) { moveBy(Offset(-16.dp.toPx(), 0f)) }
             check(out - 2 * 16.dp.toPx() > 0f)
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun swipeRightThenFlickBackPastTheStart_withHermes_startsNoCall() {
+        show(hermesState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            // A swipe right, just past PrintSwipe's drag slop and short of the 18% swipe...
+            val out = viewConfiguration.touchSlop * 4 + 4.dp.toPx()
+            check(out < width * 0.18f)
+            down(at)
+            repeat(4) { moveBy(Offset(out / 4, 0f)) }
+            // ...a beat, then a fast flick back that ends 30 dp left of the start: short of the 48 dp
+            // of travel a flick needs, however fast.
+            advanceEventTime(60)
+            val back = out + 30.dp.toPx()
+            repeat(3) { moveBy(Offset(-back / 3, 0f)) }
             up()
         }
         compose.waitForIdle()

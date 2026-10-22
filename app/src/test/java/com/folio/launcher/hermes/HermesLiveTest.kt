@@ -84,6 +84,11 @@ class HermesLiveTest {
         }
         assertEquals(HermesAvailability.Unreachable, HermesLive.availability(true, HermesConnection.from(down)))
         assertNull(HermesConnection.from(null))
+        // Out of reach is still signed in, so Hermes stays the Ask provider; only signed out (or not installed) drops it.
+        assertEquals(
+            listOf(HermesAvailability.Unreachable, HermesAvailability.Ready),
+            HermesAvailability.entries.filter { it.signedIn },
+        )
     }
 
     @Test

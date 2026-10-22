@@ -18,6 +18,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -55,6 +58,11 @@ class OpenRouter internal constructor(private val key: String, private val base:
     /** HTTP status of the last call's answer; 0 when none came (offline, timed out). See [keyStatus]. */
     @Volatile
     var lastStatus: Int = 0
+        private set
+
+    /** The last call's 403 named a spent spending limit (see [namesALimit]); any other 403 blocked that one request. */
+    @Volatile
+    var lastOverLimit: Boolean = false
         private set
 
     suspend fun decide(state: JsonElement, questions: JsonObject): Map<String, JevAnswer>? {
@@ -106,6 +114,7 @@ class OpenRouter internal constructor(private val key: String, private val base:
     /** [label] ("jev" / "writer") names the call in diagnostics; only the status or error type is reported. */
     private suspend fun post(url: String, body: String, readMs: Int, label: String): String? = withContext(Dispatchers.IO) {
         lastStatus = 0
+        lastOverLimit = false
         runCatching {
             val conn = open(url, readMs).apply {
                 requestMethod = "POST"
@@ -118,6 +127,11 @@ class OpenRouter internal constructor(private val key: String, private val base:
                 val status = conn.responseCode
                 lastStatus = status
                 if (status !in 200..299) {
+                    if (status == FORBIDDEN) {
+                        lastOverLimit = runCatching {
+                            conn.errorStream?.bufferedReader()?.use { namesALimit(it.readText()) }
+                        }.getOrNull() == true
+                    }
                     Telemetry.warn("jev.error", null, mapOf("call" to label, "http_status" to status))
                     return@runCatching null
                 }
@@ -172,15 +186,30 @@ class OpenRouter internal constructor(private val key: String, private val base:
         /** Too many calls: wait a while instead of sending more. */
         const val RATE_LIMITED = 429
 
+        /** Forbidden: a spending limit spent, or one request blocked (moderation, a guardrail). */
+        const val FORBIDDEN = 403
+
         /**
-         * What a call's HTTP status says about the key itself: refused (401, 403) or out of credit
-         * (402). Null for anything else; a rate limit ([RATE_LIMITED]) passes.
+         * What a call's HTTP status says about the key itself: refused (401), or out of credit (402)
+         * or over a spending limit (a 403 that names it, [overLimit]). Null for anything else: a 403
+         * for one blocked request (moderation, a guardrail) says nothing about the key, and a rate
+         * limit ([RATE_LIMITED]) passes.
          */
-        fun keyStatus(httpStatus: Int): BrainStatus? = when (httpStatus) {
-            401, 403 -> BrainStatus.Rejected
+        fun keyStatus(httpStatus: Int, overLimit: Boolean = false): BrainStatus? = when (httpStatus) {
+            401 -> BrainStatus.Rejected
             402 -> BrainStatus.NoCredit
+            FORBIDDEN -> if (overLimit) BrainStatus.NoCredit else null
             else -> null
         }
+
+        /**
+         * A 403's body names a spent spending limit (the key's own, a workspace's or a guardrail's
+         * budget): OpenRouter puts which in `error.metadata.limit_source`.
+         */
+        internal fun namesALimit(body: String): Boolean = runCatching {
+            json.parseToJsonElement(body).jsonObject["error"]?.jsonObject?.get("metadata")?.jsonObject
+                ?.get("limit_source")?.jsonPrimitive?.contentOrNull?.isNotEmpty() == true
+        }.getOrDefault(false)
 
         /** OpenRouter keys are `sk-or-…` with no whitespace. */
         fun looksLikeKey(text: String): Boolean =

@@ -9,7 +9,7 @@ enum class RingerVisual { Sound, Vibrate, Silent }
 
 enum class OnboardingStep { Role, Wallpaper, Access }
 
-/** Jev in search: no key, key being checked, working, refused, saved but unreachable, or out of credit. */
+/** Jev in search: no key, key being checked, working, refused, saved but unreachable, or out of credit (or over its spending limit). */
 enum class BrainStatus { Off, Checking, Ready, Rejected, Unverified, NoCredit }
 
 data class LaunchableApp(

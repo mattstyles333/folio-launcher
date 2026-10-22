@@ -131,7 +131,12 @@ object HermesAskReducer {
         } else {
             "Hermes turned the connection down. Try again later."
         }
-        is GatewayConnection.Waiting -> if (connection.attempt >= 2) "Can’t reach Hermes. Trying again…" else null
+        // Off the tailnet the gateway waits for Tailscale: say so, whatever the attempt.
+        is GatewayConnection.Waiting -> when {
+            connection.reason == LiveTokenProvider.TAILNET -> LiveTokenProvider.TAILNET
+            connection.attempt >= 2 -> "Can’t reach Hermes. Trying again…"
+            else -> null
+        }
         else -> null
     }
 

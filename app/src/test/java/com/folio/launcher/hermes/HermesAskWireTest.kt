@@ -299,6 +299,8 @@ class HermesAskWireTest {
         until("held back off the tailnet") {
             (gateway?.connection?.value as? GatewayConnection.Waiting)?.reason == LiveTokenProvider.TAILNET
         }
+        // The overlay says what to do, not just that Hermes can't be reached.
+        until("told to turn on Tailscale") { hermes.state.value.error == LiveTokenProvider.TAILNET }
         assertEquals(requests, server.requestCount)
         assertEquals(0, renewals.get())
         // A question says what to do instead of waiting for a socket.

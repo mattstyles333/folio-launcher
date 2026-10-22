@@ -9,6 +9,9 @@ import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -43,11 +46,15 @@ class SettingsScreenTest {
         .getSystemService(ClipboardManager::class.java)
     private val key = "sk-or-v1-" + "a".repeat(64)
 
+    /** What the view model hands Settings; a test moves it on as a key check would. */
+    private var screen by mutableStateOf(HomeUiState())
+
     private fun show(state: HomeUiState = HomeUiState()) {
+        screen = state
         compose.setContent {
             FolioTheme {
                 SettingsScreen(
-                    state = state,
+                    state = screen,
                     onBack = { calls += "back" },
                     onPickPhoto = { calls += "pickPhoto" },
                     onNextBing = { calls += "nextBing" },
@@ -86,6 +93,24 @@ class SettingsScreenTest {
         assertEquals(emptyList<String>(), calls)
     }
 
+    @Test fun theEmptyHiddenPicker_hidesTheRowsUnderneathFromAccessibility() {
+        show()
+        compose.onNodeWithText("Hidden apps").performScrollTo().performClick()
+        compose.onNodeWithText("Nothing hidden. Swipe an app right on the home screen.").assertExists()
+        // TalkBack, Switch Access and Voice Access can't reach them behind the scrim either.
+        compose.onNodeWithText("Reset pins").assertDoesNotExist()
+        compose.onNodeWithText("Show clock").assertDoesNotExist()
+    }
+
+    @Test fun showClockOff_saysWhereSettingsWent() {
+        show()
+        compose.onNodeWithText("Time and date").assertExists()
+        // Off, the clock's invisible slot is the way back in; a long-press on the print is the ringer.
+        screen = screen.copy(showClock = false)
+        compose.waitForIdle()
+        compose.onNodeWithText("Long-press where the clock was for Settings").assertExists()
+    }
+
     @Test fun aPhotoThatCannotBeReadSaysSoUnderChoosePhoto() {
         show(HomeUiState(wallpaperCaption = "Couldn't open that photo"))
         compose.onNodeWithText("Couldn't open that photo").assertExists()
@@ -97,12 +122,43 @@ class SettingsScreenTest {
         compose.onNodeWithText("Lavender fields, Provence").assertDoesNotExist()
     }
 
-    @Test fun jevTakesTheKeyAndClearsItFromTheClipboard() {
+    /** The view model's word on the pasted key, as Settings sees it arrive. */
+    private fun keyChecked(brain: BrainStatus) {
+        screen = screen.copy(brain = brain)
+        compose.waitForIdle()
+    }
+
+    @Test fun jevTakesTheKey_andClearsItFromTheClipboardOnceSaved() {
         clipboard.setPrimaryClip(ClipData.newPlainText("OpenRouter", key))
         show()
         tapJev()
         assertEquals(listOf("key:$key"), calls)
+        // Not while it's checked: OpenRouter shows a key only once, and the check may not save it.
+        keyChecked(BrainStatus.Checking)
+        assertTrue(clipboard.hasPrimaryClip())
+        keyChecked(BrainStatus.Ready)
         assertFalse(clipboard.hasPrimaryClip())
+    }
+
+    @Test fun jevLeavesARefusedKeyOnTheClipboard() {
+        clipboard.setPrimaryClip(ClipData.newPlainText("OpenRouter", key))
+        show()
+        tapJev()
+        keyChecked(BrainStatus.Checking)
+        keyChecked(BrainStatus.Rejected)
+        assertTrue(clipboard.hasPrimaryClip())
+    }
+
+    @Test fun jevTappedAgainWhileChecking_isNoMissingKey() {
+        clipboard.setPrimaryClip(ClipData.newPlainText("OpenRouter", key))
+        show()
+        tapJev()
+        keyChecked(BrainStatus.Checking)
+        // An impatient second tap, with the clipboard emptied meanwhile.
+        clipboard.clearPrimaryClip()
+        tapJev()
+        compose.onNodeWithText("No OpenRouter key on the clipboard").assertDoesNotExist()
+        compose.onNodeWithText("Checking the key…").assertExists()
     }
 
     @Test fun jevLeavesAClipThatIsNotAKey() {
