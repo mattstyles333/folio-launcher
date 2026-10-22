@@ -46,8 +46,8 @@ typealias GatewayFactory = (HermesConfig, AccessTokenProvider, CoroutineScope) -
  * follow the overlay being on screen and Folio being started.
  *
  * Off state: nothing is built or dialled until Hermes Live hands over a usable connection.
- * Every request goes to the base URL Hermes Live gives, with its token, and nowhere else. A base
- * URL on plain http (a Tailscale name) is used only while Tailscale is up, and only through it.
+ * Every request goes to the base URL Hermes Live gives, with its token, and nowhere else; never to
+ * one on plain http.
  *
  * Call from the main thread.
  */
@@ -59,9 +59,7 @@ class HermesAsk(
     private val renewedConnection: suspend () -> HermesConnection? = connection,
     private val loadSessionId: suspend () -> String,
     private val saveSessionId: suspend (String) -> Unit,
-    /** Tailscale, for a Hermes on plain http; [Tailnet.Off] never reaches one. */
-    private val tailnet: Tailnet = Tailnet.Off,
-    private val gatewayFactory: GatewayFactory = { config, tokens, scope -> defaultGateway(config, tokens, scope, tailnet) },
+    private val gatewayFactory: GatewayFactory = ::defaultGateway,
 ) {
     private val _state = MutableStateFlow(HermesAskState())
     val state: StateFlow<HermesAskState> = _state.asStateFlow()
@@ -228,11 +226,10 @@ class HermesAsk(
     private suspend fun prepare(off: (line: String, type: String) -> Unit = { _, _ -> }): Link? = setup.withLock {
         val c = connection()
         val endpoint = c?.takeIf { it.usable }?.endpoint
-        // Plain http is private only inside Tailscale: off it, nothing is built or dialled.
-        val offTailnet = endpoint?.isCleartext == true && !tailnet.isUp()
-        if (endpoint == null || offTailnet) {
+        if (endpoint == null) {
             val (line, type) = when {
-                offTailnet -> LiveTokenProvider.TAILNET to "off_tailnet"
+                // Folio talks to Hermes over https only: for plain http nothing is built or dialled.
+                c != null && c.signedIn && c.plainHttp -> LiveTokenProvider.PLAIN_HTTP to "plain_http"
                 // Signed in without a token or a usable address: out of reach for now, not signed out.
                 c?.signedIn == true -> HermesAskReducer.REACH to "unreachable"
                 else -> LiveTokenProvider.SIGNED_OUT to "signed_out"
@@ -249,7 +246,7 @@ class HermesAsk(
             existing.gateway.disconnect()
         }
         val config = HermesConfig(endpoint = endpoint)
-        val tokens = LiveTokenProvider(endpoint, connection, renewedConnection, tailnet::isUp)
+        val tokens = LiveTokenProvider(endpoint, connection, renewedConnection)
         val l = Link(endpoint, config, gatewayFactory(config, tokens, scope))
         val stored = loadSessionId().ifEmpty { null }
         l.conversation = conversation(l, stored)
@@ -372,8 +369,7 @@ class HermesAsk(
             "http_status" to (e as? HermesAuthException.Unavailable)?.httpCode,
         )
 
-        /** A Hermes on plain http is looked up and dialled only through Tailscale. */
-        private fun defaultGateway(config: HermesConfig, tokens: AccessTokenProvider, scope: CoroutineScope, tailnet: Tailnet) =
-            HermesGateway(config, tokens, if (config.endpoint.isCleartext) tailnet.bind(http) else http, scope)
+        private fun defaultGateway(config: HermesConfig, tokens: AccessTokenProvider, scope: CoroutineScope) =
+            HermesGateway(config, tokens, http, scope)
     }
 }

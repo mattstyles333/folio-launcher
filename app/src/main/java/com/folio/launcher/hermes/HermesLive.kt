@@ -14,13 +14,16 @@ enum class HermesAvailability {
     NotInstalled,
     SignedOut,
 
-    /** Signed in, but Hermes Live can't reach the server (down, or off the tailnet). */
+    /** Signed in, but Hermes Live can't reach the server (down, or the phone offline). */
     Unreachable,
+
+    /** Signed in, but to a plain-http address: Folio talks to Hermes over https only. */
+    PlainHttp,
     Ready,
     ;
 
-    /** Installed and signed in: Hermes stays the Ask provider while its server is out of reach. */
-    val signedIn: Boolean get() = this == Ready || this == Unreachable
+    /** Installed and signed in: Hermes stays the Ask provider while Folio can't use it, saying why. */
+    val signedIn: Boolean get() = this == Ready || this == Unreachable || this == PlainHttp
 }
 
 /**
@@ -38,8 +41,14 @@ class HermesConnection(
         (HermesEndpoint.parse(baseUrl) as? HermesEndpoint.Parsed.Valid)?.endpoint
     }
 
-    /** Signed in, with a token and an address Folio may talk to. */
-    val usable: Boolean get() = signedIn && accessToken.isNotEmpty() && endpoint != null
+    /**
+     * Hermes Live points at plain http (a `*.ts.net` name, say), which Folio never talks to: the
+     * token would go out in the clear, to whatever answers that address.
+     */
+    val plainHttp: Boolean get() = endpoint?.isCleartext == true
+
+    /** Signed in, with a token and an https address Folio may talk to. */
+    val usable: Boolean get() = signedIn && accessToken.isNotEmpty() && endpoint != null && !plainHttp
 
     override fun toString(): String =
         "HermesConnection(signedIn=$signedIn, baseUrl=$baseUrl, accessToken=<${accessToken.length} chars>, expiresAtMs=$expiresAtMs)"
@@ -83,10 +92,31 @@ object HermesLive {
 
     fun availability(installed: Boolean, connection: HermesConnection?): HermesAvailability = when {
         !installed -> HermesAvailability.NotInstalled
-        connection?.usable == true -> HermesAvailability.Ready
-        connection?.signedIn == true -> HermesAvailability.Unreachable
-        else -> HermesAvailability.SignedOut
+        connection == null || !connection.signedIn -> HermesAvailability.SignedOut
+        // Never Ready, token or not: Settings and the overlay say what to change in Hermes Live.
+        connection.plainHttp -> HermesAvailability.PlainHttp
+        connection.usable -> HermesAvailability.Ready
+        else -> HermesAvailability.Unreachable
     }
+
+    /**
+     * Whether a resume asks Hermes Live again ([checkedAt]: the last ask, elapsedRealtime; null
+     * before the first). Each ask is IPC that can start Hermes Live, and Home resumes all day.
+     * Ready, not installed and plain http change with a sign-in or sign-out, which Hermes Live
+     * announces, or a package change, which the app list hears; Settings and the Hermes overlay ask
+     * anyway as they open. Out of reach and signed out (no answer reads as signed out) can end
+     * without a word: those a resume asks again, at most every [RESUME_RECHECK_MS].
+     */
+    fun resumeCheckDue(availability: HermesAvailability, checkedAt: Long?, now: Long): Boolean {
+        if (checkedAt == null) return true
+        return when (availability) {
+            HermesAvailability.Ready, HermesAvailability.NotInstalled, HermesAvailability.PlainHttp -> false
+            HermesAvailability.Unreachable, HermesAvailability.SignedOut -> now - checkedAt >= RESUME_RECHECK_MS
+        }
+    }
+
+    /** Out of reach or signed out, a resume asks Hermes Live again after this long at the soonest. */
+    const val RESUME_RECHECK_MS = 5 * 60_000L
 
     /**
      * Hermes Live is installed and signed with Folio's own key (the release key signs both). An

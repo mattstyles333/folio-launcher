@@ -135,15 +135,15 @@ class HermesAskReducerTest {
         assertNull(r.connectionLine(GatewayConnection.Ready(1, "e")))
         assertNull(r.connectionLine(GatewayConnection.Waiting(1, 1000, "x")))
         assertEquals("Can’t reach Hermes. Trying again…", r.connectionLine(GatewayConnection.Waiting(2, 1000, "x")))
-        // Waiting for Tailscale says what to do, from the first try.
-        assertEquals(LiveTokenProvider.TAILNET, r.connectionLine(GatewayConnection.Waiting(1, 1000, LiveTokenProvider.TAILNET)))
-        assertEquals(LiveTokenProvider.TAILNET, r.connectionLine(GatewayConnection.Waiting(2, 1000, LiveTokenProvider.TAILNET)))
         assertEquals(LiveTokenProvider.REFUSED, r.connectionLine(GatewayConnection.Stopped(LiveTokenProvider.REFUSED, true)))
+        // Hermes Live moved to plain http mid-session: the gateway stops and the overlay says what to change.
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, r.connectionLine(GatewayConnection.Stopped(LiveTokenProvider.PLAIN_HTTP, true)))
     }
 
     @Test
     fun plainWords() {
         assertEquals(LiveTokenProvider.SIGNED_OUT, r.plain(HermesAuthException.SignInRequired(LiveTokenProvider.SIGNED_OUT)))
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, r.plain(HermesAuthException.SignInRequired(LiveTokenProvider.PLAIN_HTTP)))
         assertEquals(HermesAskReducer.REACH, r.plain(GatewayUnavailableException("socket closed")))
         assertEquals(HermesAskReducer.REACH, r.plain(java.net.UnknownHostException("hermes.example.com")))
         assertEquals("Hermes couldn’t take that (code 4100).", r.plain(HermesRpcException("x", 4100, "nope")))

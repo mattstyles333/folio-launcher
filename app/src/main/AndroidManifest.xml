@@ -12,8 +12,6 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Is Folio's traffic going through Tailscale? A Hermes on plain http is reached only then. -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
     <!-- Hermes Live hands Folio the Hermes connection through a provider guarded by this

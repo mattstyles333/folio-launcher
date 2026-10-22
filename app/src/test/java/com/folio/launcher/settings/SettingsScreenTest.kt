@@ -23,6 +23,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.HomeUiState
+import com.folio.launcher.hermes.HermesAvailability
+import com.folio.launcher.hermes.LiveTokenProvider
 import com.folio.launcher.ui.FolioTheme
 import java.io.FileNotFoundException
 import org.junit.Assert.assertEquals
@@ -149,6 +151,13 @@ class SettingsScreenTest {
         compose.onNodeWithText("Bing print").performScrollTo().performClick()
         compose.waitForIdle()
         assertEquals(listOf("nextBing"), calls)
+    }
+
+    @Test fun hermesLiveOnPlainHttp_saysToSetTheHttpsAddress_andTheTapOpensIt() {
+        show(HomeUiState(hermes = HermesAvailability.PlainHttp))
+        compose.onNodeWithText(LiveTokenProvider.PLAIN_HTTP).performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("hermesLive"), calls)
     }
 
     /** The view model's word on the pasted key, as Settings sees it arrive. */

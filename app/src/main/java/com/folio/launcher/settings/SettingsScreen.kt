@@ -47,6 +47,7 @@ import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.PrintController
 import com.folio.launcher.data.Ranking
 import com.folio.launcher.hermes.HermesAvailability
+import com.folio.launcher.hermes.LiveTokenProvider
 import com.folio.launcher.search.AppPicker
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
@@ -181,6 +182,7 @@ fun SettingsScreen(
                     HermesAvailability.NotInstalled -> "Install Hermes Live from the Folio release to talk to your Hermes"
                     HermesAvailability.SignedOut -> "Open Hermes Live to sign in"
                     HermesAvailability.Unreachable -> "Signed in, but your Hermes isn't answering. Check the connection"
+                    HermesAvailability.PlainHttp -> LiveTokenProvider.PLAIN_HTTP
                     HermesAvailability.Ready -> if (state.askHermes) {
                         "Hermes answers Ask; swipe left to talk"
                     } else {
