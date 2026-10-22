@@ -220,7 +220,11 @@ class HomeViewModel(
         viewModelScope.launch { searchQuery.collectLatest(::think) }
         viewModelScope.launch(Dispatchers.Default) {
             // Each app list's labels folded once, here: not on the main thread at search's first keystroke.
-            appsRepo.apps.collect { Ranking.prepareSearch(it) }
+            // Jev's last offer goes with the list it was built over, so that list's icons aren't kept.
+            appsRepo.apps.collect {
+                Ranking.prepareSearch(it)
+                searchCache.appsChanged(it)
+            }
         }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }

@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -151,6 +152,33 @@ class AppMenuTest {
         compose.waitForIdle()
     }
 
+    /**
+     * A Back swipe from the screen's left edge under gesture navigation, as Folio sees it: its first
+     * touch and a little travel, then a cancel once the system takes the swipe. Back follows ([pressBack]).
+     */
+    private fun edgeSwipeTakenBySystem() {
+        compose.onRoot().performTouchInput {
+            down(Offset(2f, centerY))
+            moveBy(Offset(40f, 0f))
+            cancel()
+        }
+        compose.waitForIdle()
+    }
+
+    /** A press on [node]'s centre that slides 30 dp left over 600 ms (past the hold's timeout), then lifts. */
+    private fun driftLeft(node: SemanticsNodeInteraction) {
+        node.performTouchInput {
+            down(center)
+            repeat(10) {
+                advanceEventTime(60)
+                moveBy(Offset(-3.dp.toPx(), 0f))
+            }
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
     private fun top(text: String) = compose.onNodeWithText(text).assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
 
     @Test
@@ -217,6 +245,21 @@ class AppMenuTest {
     }
 
     @Test
+    fun anEdgeBackSwipe_closesOnlyTheMenu() {
+        show()
+        peek()
+        hold("Maps")
+        // Its first touch lands on the scrim, but the system takes the swipe: the menu is still open for its Back.
+        edgeSwipeTakenBySystem()
+        compose.onNodeWithText("App info").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithText("App info").assertDoesNotExist()
+        // The sheet is still at its peek.
+        compose.onNodeWithContentDescription("Maps").assertIsDisplayed()
+        assertEquals(listOf("shortcuts:Maps"), calls)
+    }
+
+    @Test
     fun aTapOffTheMenu_closesIt_andReachesNothingUnderneath() {
         show()
         peek()
@@ -238,6 +281,38 @@ class AppMenuTest {
             repeat(10) {
                 advanceEventTime(60)
                 moveBy(Offset(0f, -8.dp.toPx()))
+            }
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("App info").assertDoesNotExist()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun aPressThatSlidesSideways_neverOpensTheMenu() {
+        show()
+        peek()
+        // Left, inside the cell: swipe-to-hide only takes a move right, the sheet and the grid only up
+        // and down, so nothing else takes it. Held past the timeout, it's still a drag, not a hold.
+        driftLeft(compose.onNodeWithContentDescription("Maps"))
+        compose.onNodeWithText("App info").assertDoesNotExist()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun aSlowPullThatLeansSidewaysFirst_neverOpensTheMenu() {
+        show()
+        peek()
+        // Its first few dp lean left, past the sheet's slop, so the sheet lets it go (and swipe-to-hide only
+        // takes a move right); then up, slowly, still inside the cell.
+        compose.onNodeWithContentDescription("Maps").performTouchInput {
+            down(center)
+            moveBy(Offset(-10.dp.toPx(), 0f))
+            repeat(8) {
+                advanceEventTime(60)
+                moveBy(Offset(0f, -3.5f.dp.toPx()))
             }
             up()
         }
@@ -292,6 +367,36 @@ class AppMenuTest {
         compose.onNodeWithText("App info").assertIsDisplayed()
         pressBack()
         compose.onNodeWithText("App info").assertDoesNotExist()
+        compose.onNode(hasSetTextAction() and hasText("map")).assertExists()
+    }
+
+    @Test
+    fun anEdgeBackSwipe_inSearch_closesOnlyTheMenu_andKeepsWhatWasTyped() {
+        show()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("map")
+        compose.waitForIdle()
+        compose.onNode(hasText("Maps") and hasClickAction()).performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.waitForIdle()
+        edgeSwipeTakenBySystem()
+        compose.onNodeWithText("App info").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithText("App info").assertDoesNotExist()
+        compose.onNode(hasSetTextAction() and hasText("map")).assertExists()
+    }
+
+    @Test
+    fun aSearchResultPressThatSlidesSideways_neverOpensItsMenu() {
+        show()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("map")
+        compose.waitForIdle()
+        // Along the row: the list only scrolls up and down, so nothing else takes it.
+        driftLeft(compose.onNode(hasText("Maps") and hasClickAction()))
+        compose.onNodeWithText("App info").assertDoesNotExist()
+        assertEquals(emptyList<String>(), calls)
         compose.onNode(hasSetTextAction() and hasText("map")).assertExists()
     }
 

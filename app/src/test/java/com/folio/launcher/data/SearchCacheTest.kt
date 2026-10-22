@@ -188,4 +188,22 @@ class SearchCacheTest {
         assertNotSame(offer, reread)
         assertEquals(offer.questions, reread.questions)
     }
+
+    @Test
+    fun offer_isLetGo_forANewAppList_andWithTheKey() = runTest {
+        val cache = SearchCache(backgroundScope)
+        val list = ArrayList<LaunchableApp>()
+        val launches = HashMap<String, List<Long>>()
+        val offer = cache.offer(list, launches)
+        // Its own list again: kept.
+        cache.appsChanged(list)
+        assertSame(offer, cache.offer(list, launches))
+        // Another list arrived: the offer, and the old list (its icons) it holds, are let go.
+        cache.appsChanged(ArrayList())
+        val rebuilt = cache.offer(list, launches)
+        assertNotSame(offer, rebuilt)
+        // The key removed: nothing would replace it, so it goes at once.
+        cache.clear()
+        assertNotSame(rebuilt, cache.offer(list, launches))
+    }
 }

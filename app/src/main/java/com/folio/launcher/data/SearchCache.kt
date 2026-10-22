@@ -86,11 +86,21 @@ class SearchCache(private val scope: CoroutineScope) {
             lines.ask(normal(query), call)
         }.also { it.start() }
 
+    /**
+     * [apps] is the app list now. An offer built over another one is let go: it can't be asked for
+     * again, and it would keep that list, and every icon in it, alive.
+     */
+    fun appsChanged(apps: List<LaunchableApp>) {
+        synchronized(this) { if (lastOffer?.apps !== apps) lastOffer = null }
+    }
+
     /** Forgets everything and closes the calls on their way (the key was removed). */
     fun clear() {
         synchronized(this) {
             routes.clear()
             lines.clear()
+            // With no key no new offer replaces it: let go of it, and of the app list it holds, now.
+            lastOffer = null
         }
     }
 

@@ -90,7 +90,9 @@ object Ranking {
     /**
      * [query] is one slip from the start of [text]: a letter wrong, missing or extra, or two
      * letters swapped ("spitify", "sptoify", "spotiffy" all start "spotify"). Looked for where
-     * the two first differ: a slip further on can always be moved back to there.
+     * the two first differ: a slip further on can always be moved back to there. In [TYPO_MIN]
+     * letters a wrong last letter, or one too many, doesn't count: what's left is just a
+     * three-letter start ("film" would find "files", "moon" "monzo").
      */
     private fun slipFromStart(query: String, text: String): Boolean {
         val n = query.length
@@ -98,9 +100,10 @@ object Ranking {
         var i = 0
         while (i < n && i < m && query[i] == text[i]) i++
         if (i == n) return true
+        val loose = n > TYPO_MIN
         if (m >= n) {
             // A wrong letter: the rest lines up.
-            if (text.regionMatches(i + 1, query, i + 1, n - i - 1)) return true
+            if ((loose || i < n - 1) && text.regionMatches(i + 1, query, i + 1, n - i - 1)) return true
             // Two letters swapped.
             if (i + 1 < n && query[i] == text[i + 1] && query[i + 1] == text[i] &&
                 text.regionMatches(i + 2, query, i + 2, n - i - 2)
@@ -109,7 +112,7 @@ object Ranking {
             }
         }
         // A letter too many in the query, or one missing from it.
-        if (m >= n - 1 && text.regionMatches(i, query, i + 1, n - i - 1)) return true
+        if (loose && m >= n - 1 && text.regionMatches(i, query, i + 1, n - i - 1)) return true
         return m >= n + 1 && text.regionMatches(i + 1, query, i, n - i)
     }
 

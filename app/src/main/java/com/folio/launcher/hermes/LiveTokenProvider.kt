@@ -50,7 +50,9 @@ class LiveTokenProvider(
      * Folio talks to Hermes over https only. For a plain-http [endpoint] no token goes out and
      * Hermes Live isn't even asked (asking can make it renew its token, which sends its refresh
      * token, then its password, to that address). The gateway stops: only an https address in
-     * Hermes Live fixes it.
+     * Hermes Live fixes it. A backstop: HermesAsk refuses a plain-http address before it builds
+     * one of these. By then it has asked Hermes Live for its connection once, to learn the address,
+     * and that ask can still renew toward it: only Hermes Live refusing plain http itself closes that.
      */
     private fun checkHttps() {
         if (endpoint.isCleartext) throw HermesAuthException.SignInRequired(PLAIN_HTTP)

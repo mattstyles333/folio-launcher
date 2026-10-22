@@ -72,6 +72,12 @@ class RankingTest {
         // Two slips, or one in fewer than four letters, is no match.
         assertNull(Ranking.match("spitfy", "Spotify"))
         assertNull(Ranking.match("sxo", "Spotify"))
+        // In four letters a wrong last letter, or one too many, leaves just a three-letter start: no match.
+        assertNull(Ranking.match("film", "My Files"))
+        assertNull(Ranking.match("moon", "Monzo"))
+        // A wrong letter before the last still is, and from five letters a wrong last one is too.
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("naps", "Google Maps"))
+        assertEquals(Ranking.MatchKind.Typo, Ranking.match("filez", "My Files"))
         // A slip doesn't make a query an app's name: Jev is still asked.
         assertTrue(SearchBrain.worthAsking("spitify", listOf("Spotify")))
         assertTrue(Ranking.MatchKind.Typo.ordinal > Ranking.MatchKind.Fuzzy.ordinal)

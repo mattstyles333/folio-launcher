@@ -213,8 +213,9 @@ private fun DrawerCell(
             .pointerInput(app.key) {
                 detectTapGestures(
                     onTap = { onLaunch(app) },
-                    // Never mid-drag: the sheet, the grid or the swipe taking the finger cancels the hold.
-                    onLongPress = { onMenu(app, anchor.bounds()) },
+                    // Never mid-drag: the sheet, the grid or the swipe taking the finger cancels the hold,
+                    // and a press that travelled past touch slop any other way (a slow slide left) isn't one.
+                    onLongPress = { if (!anchor.dragged) onMenu(app, anchor.bounds()) },
                 )
             }
             .padding(horizontal = 2.dp, vertical = 4.dp),

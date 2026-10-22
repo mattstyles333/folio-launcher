@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -101,9 +103,20 @@ fun rememberAppMenuState(): AppMenuState {
     return remember(scope) { AppMenuState(scope) }
 }
 
-/** Where a held icon is: kept as it's placed, read only when it's held, so nothing recomposes as it moves. */
+/**
+ * A held icon: where it is, kept as it's placed and read only when it's held, so nothing recomposes
+ * as it moves; and whether the press on it has wandered, so a drag is never taken for a hold.
+ */
 class MenuAnchor {
     internal var coordinates: LayoutCoordinates? = null
+
+    /**
+     * The press under way has travelled past touch slop from where it landed, whichever way: a drag,
+     * even one nothing else takes (a slow slide left). False between presses, so an accessibility
+     * action, which makes none, still opens the menu.
+     */
+    var dragged = false
+        internal set
 
     /** The icon's bounds in the root's pixels (empty once it has left the screen). */
     fun bounds(): Rect = coordinates?.takeIf { it.isAttached }?.boundsInRoot() ?: Rect.Zero
@@ -112,11 +125,29 @@ class MenuAnchor {
 @Composable
 fun rememberMenuAnchor(): MenuAnchor = remember { MenuAnchor() }
 
-fun Modifier.menuAnchor(anchor: MenuAnchor): Modifier = onPlaced { anchor.coordinates = it }
+/**
+ * Keeps [anchor] placed, and watches how far the press on it travels. It only watches: the tap, the
+ * hold, swipe-to-hide, the sheet and the grid all get the press as they did.
+ */
+fun Modifier.menuAnchor(anchor: MenuAnchor): Modifier =
+    onPlaced { anchor.coordinates = it }.pointerInput(anchor) {
+        val slop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            anchor.dragged = false
+            do {
+                val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                    .firstOrNull { it.id == down.id } ?: break
+                if ((change.position - down.position).getDistance() > slop) anchor.dragged = true
+            } while (change.pressed)
+            anchor.dragged = false
+        }
+    }
 
 /**
- * A held app's menu over the sheet or search: its shortcuts, then App info. A touch anywhere off the
- * card closes it, and so does Back, before the sheet or search hears it.
+ * A held app's menu over the sheet or search: its shortcuts, then App info. A touch off the card
+ * closes it as it lifts (not one the system takes for Back or Home), and so does Back, before the
+ * sheet or search hears it.
  */
 @Composable
 fun AppMenuOverlay(
@@ -137,11 +168,14 @@ fun AppMenuOverlay(
             Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.2f))
-                // A touch off the card closes the menu and reaches nothing underneath, the sheet's icons included.
+                // A touch off the card closes the menu as it lifts, and reaches nothing underneath, the
+                // sheet's icons included. Not as it lands: under gesture navigation an edge Back swipe
+                // lands here first, then the system takes it (a cancel: an up already consumed), and
+                // the Back it becomes must still find the menu open, or the sheet or search hears it.
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
-                        dismiss()
+                        if (waitForUpOrCancellation() != null) dismiss()
                     }
                 },
         )

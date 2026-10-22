@@ -231,8 +231,12 @@ fun SearchRow(
                         .menuAnchor(anchor)
                         .combinedClickable(
                             onLongClickLabel = "Shortcuts",
+                            // The menu buzzes as it opens; a hold that drifted opens none, so no buzz.
+                            hapticFeedbackEnabled = false,
                             onClick = { onLaunch(app) },
-                            onLongClick = { onMenu(app, anchor.bounds()) },
+                            // Not after a drift past touch slop: the list only scrolls up and down, so
+                            // nothing else takes a press that slides sideways along the row.
+                            onLongClick = { if (!anchor.dragged) onMenu(app, anchor.bounds()) },
                         )
                 } else {
                     Modifier.clickable { onLaunch(app) }

@@ -46,6 +46,16 @@ class SearchRankingTest {
     }
 
     @Test
+    fun search_aSwapFindsTheAppMeant_notOneThatSharesThreeLetters() {
+        val maps = app("Maps", "com.google.android.apps.maps")
+        val mastodon = app("Mastodon", "org.joinmastodon.android")
+        val launches = mapOf(mastodon.packageName to List(20) { noon - it * 60_000L })
+        // "mpas" is Maps with two letters swapped. Dropping its "p" leaves "mas", Mastodon's start, but in
+        // four letters that's no slip, however often Mastodon is opened.
+        assertEquals(listOf(maps), Ranking.search("mpas", listOf(mastodon, maps), launches, noon))
+    }
+
+    @Test
     fun search_readsEachNewAppListAfresh() {
         // Labels are folded once per list; another list (an app renamed or replaced) isn't read from the last one's.
         val before = listOf(app("Spotify", "com.spotify.music"))
