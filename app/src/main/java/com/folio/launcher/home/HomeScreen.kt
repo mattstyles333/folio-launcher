@@ -108,6 +108,8 @@ fun HomeScreen(
     onOpenGoogleSearch: () -> Unit,
     searchHint: SearchHint = SearchHint(),
     onSearchQuery: (String) -> Unit = {},
+    /** Search is opening: Jev's connection can be opened ahead of the first keystroke. */
+    onSearchOpen: () -> Unit = {},
     onSearchRoute: (SearchRoute, String) -> Unit = { _, _ -> },
     hermes: HermesAskState = HermesAskState(),
     hermesActions: HermesAskActions = HermesAskActions(),
@@ -241,6 +243,7 @@ fun HomeScreen(
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             askOpen = false
             searchOpen = true
+            onSearchOpen()
         }
 
         fun cycleRingerFrom(origin: Offset) {

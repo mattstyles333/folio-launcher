@@ -54,6 +54,23 @@ class SearchBrainTest {
     }
 
     @Test
+    fun request_isWhatWasTyped_plusQuestionsEveryQueryShares() {
+        val apps = linkedMapOf("Trainline" to "com.thetrainline", "Spotify" to "com.spotify.music")
+        val (state, questions) = SearchBrain.request("  trains ", apps, music = true)
+        assertEquals(SearchBrain.state("trains"), state)
+        // Built once for an app list, then sent with each query typed over it.
+        assertEquals(SearchBrain.questions(apps, music = true), questions)
+        assertEquals(questions, SearchBrain.request("lofi", apps, music = true).second)
+    }
+
+    @Test
+    fun warmDue_whenSearchOpens_atMostOnceAMinute() {
+        assertTrue(SearchBrain.warmDue(now = 5_000, warmedAt = null))
+        assertFalse(SearchBrain.warmDue(now = 64_999, warmedAt = 5_000))
+        assertTrue(SearchBrain.warmDue(now = 65_000, warmedAt = 5_000))
+    }
+
+    @Test
     fun route_followsSureIntents() {
         assertEquals(SearchRoute.Web, SearchBrain.route("q", mapOf(SearchBrain.INTENT to choice("web", 0.9))))
         assertEquals(SearchRoute.Answer, SearchBrain.route("q", mapOf(SearchBrain.INTENT to choice("answer", 0.8))))

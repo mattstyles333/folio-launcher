@@ -96,17 +96,33 @@ class OpenRouter internal constructor(private val key: String, private val base:
     }
 
     /** True if OpenRouter accepts the key, false if it refuses it, null if it couldn't be reached. */
-    suspend fun check(): Boolean? = withContext(Dispatchers.IO) {
+    suspend fun check(): Boolean? {
+        val status = getKey() ?: return null
+        return when (status) {
+            in 200..299 -> true
+            401, 403 -> false
+            else -> null
+        }
+    }
+
+    /**
+     * Opens the connection to OpenRouter ahead of a call, so Jev's first answer doesn't wait on
+     * DNS, TCP and TLS: one small `GET /key` (no tokens, nothing billed), its answer ignored.
+     * True if OpenRouter answered at all.
+     */
+    suspend fun warm(): Boolean = getKey() != null
+
+    /** `GET /key`: its status, or null with no answer. Read to its end, so the connection stays open for the next call. */
+    private suspend fun getKey(): Int? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = open("$base/key", JEV_READ_MS)
+            var drained = false
             try {
-                when (conn.responseCode) {
-                    in 200..299 -> true
-                    401, 403 -> false
-                    else -> null
-                }
+                val status = conn.responseCode
+                drained = drain(conn, status)
+                status
             } finally {
-                conn.disconnect()
+                if (!drained) conn.disconnect()
             }
         }.getOrNull()
     }
@@ -122,6 +138,7 @@ class OpenRouter internal constructor(private val key: String, private val base:
                 setRequestProperty("Content-Type", "application/json")
             }
             val abort = disconnectOnCancel(conn)
+            var drained = false
             try {
                 conn.outputStream.use { it.write(body.toByteArray()) }
                 val status = conn.responseCode
@@ -135,10 +152,12 @@ class OpenRouter internal constructor(private val key: String, private val base:
                     Telemetry.warn("jev.error", null, mapOf("call" to label, "http_status" to status))
                     return@runCatching null
                 }
-                conn.inputStream.bufferedReader().use { it.readText() }
+                conn.inputStream.bufferedReader().use { it.readText() }.also { drained = true }
             } finally {
                 abort.cancel()
-                conn.disconnect()
+                // An answer read to its end has already given its connection back to the pool, open
+                // for the next call; disconnect() is for one that wasn't, and closes its socket.
+                if (!drained) conn.disconnect()
             }
         }.onFailure { e ->
             // Closed because the caller moved on (a newer keystroke): not an error.
@@ -147,9 +166,16 @@ class OpenRouter internal constructor(private val key: String, private val base:
     }
 
     /**
-     * Cancelling doesn't stop blocking socket I/O, so search's collectLatest would wait out a stale
-     * call's timeouts before the next query could start. This closes [conn] the moment the call is
-     * cancelled. Undispatched, so it is watching before the request goes out.
+     * Reads a successful answer to its end. Its connection then goes back to the pool by itself,
+     * open for the next call; any other is disconnected, which closes its socket.
+     */
+    private fun drain(conn: HttpURLConnection, status: Int): Boolean =
+        status in 200..299 && runCatching { conn.inputStream.use { it.readBytes() } }.isSuccess
+
+    /**
+     * Cancelling doesn't stop blocking socket I/O, so a cancelled call (one search let go of, the
+     * key removed) would sit out its timeouts, holding a thread and a socket. This closes [conn]
+     * the moment the call is cancelled. Undispatched, so it is watching before the request goes out.
      */
     private fun CoroutineScope.disconnectOnCancel(conn: HttpURLConnection): Job {
         val call = coroutineContext.job

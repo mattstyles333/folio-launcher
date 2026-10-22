@@ -172,6 +172,7 @@ class MainActivity : ComponentActivity() {
                             onOpenGoogleSearch = { viewModel.openGoogleSearch(this@MainActivity) },
                             searchHint = searchHint,
                             onSearchQuery = viewModel::onSearchQuery,
+                            onSearchOpen = viewModel::onSearchOpened,
                             onSearchRoute = { route, query -> viewModel.follow(this@MainActivity, route, query) },
                             hermes = hermes,
                             hermesActions = hermesActions,
