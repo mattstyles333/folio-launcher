@@ -54,6 +54,10 @@ data class HomeUiState(
     val wallpaperBusy: Boolean = false,
     val wallpaperCaption: String = "",
     val hasPreviousPrint: Boolean = false,
+    /** Settings › Your photos: an import under way, or how the last one went. */
+    val rollNote: String = "",
+    /** How many of your photos the print goes round while it is one of them; 0 otherwise. */
+    val rollSize: Int = 0,
     val charging: Boolean = false,
     val charge: Float = 0f,
     val musicPlaying: Boolean = false,

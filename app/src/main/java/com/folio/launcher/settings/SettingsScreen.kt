@@ -56,6 +56,8 @@ fun SettingsScreen(
     state: HomeUiState,
     onBack: () -> Unit,
     onPickPhoto: () -> Unit,
+    /** Your photos: the system picker, several at once. */
+    onPickPhotos: () -> Unit = {},
     onNextBing: () -> Unit,
     onPreviousPrint: () -> Unit,
     onShowClock: (Boolean) -> Unit,
@@ -126,7 +128,19 @@ fun SettingsScreen(
                 "Choose photo",
                 state.wallpaperCaption.takeIf { it == PrintController.PHOTO_FAILED } ?: "Replace the print",
             ) { onPickPhoto() }
-            SettingsRow("Bing print", "Double-tap the print for the next one") { onNextBing() }
+            // The picker comes back here too: how many made it in, and how many couldn't be read.
+            SettingsRow(
+                "Your photos",
+                when {
+                    state.rollNote.isNotEmpty() -> state.rollNote
+                    state.rollSize > 0 -> "${state.rollSize} photos, one a day. Double-tap for the next."
+                    else -> "Up to ${PrintController.ROLL_MAX}, one a day"
+                },
+            ) { onPickPhotos() }
+            SettingsRow(
+                "Bing print",
+                if (state.rollSize > 0) "Back to Bing's prints" else "Double-tap the print for the next one",
+            ) { onNextBing() }
             if (state.hasPreviousPrint) {
                 SettingsRow("Previous print", "The one before this") { onPreviousPrint() }
             }

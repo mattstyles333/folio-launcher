@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** Portrait cover window in source pixels. Crop only — the caller scales the result. */
@@ -58,4 +59,21 @@ object CoverCrop {
      */
     fun shrinks(windowW: Int, windowH: Int, dstW: Int, dstH: Int): Boolean =
         windowW > dstW || windowH > dstH
+
+    /** Scale (≤ 1 means shrink) at which [srcW]×[srcH] just covers [dstW]×[dstH]. */
+    fun coverScale(srcW: Int, srcH: Int, dstW: Int, dstH: Int): Float {
+        if (srcW <= 0 || srcH <= 0) return 1f
+        return max(dstW.toFloat() / srcW, dstH.toFloat() / srcH)
+    }
+
+    /**
+     * The size a picked photo is decoded at for the print: shrunk until it just covers
+     * [dstW]×[dstH], never enlarged. Its [window] is all an import keeps, and for a photo at least
+     * as large as the print that is exactly the print's size, so load() neither cuts nor scales it.
+     */
+    fun coverSize(srcW: Int, srcH: Int, dstW: Int, dstH: Int): Pair<Int, Int> {
+        val scale = coverScale(srcW, srcH, dstW, dstH)
+        if (scale >= 1f) return srcW to srcH
+        return (srcW * scale).roundToInt().coerceAtLeast(1) to (srcH * scale).roundToInt().coerceAtLeast(1)
+    }
 }

@@ -57,6 +57,7 @@ class SettingsScreenTest {
                     state = screen,
                     onBack = { calls += "back" },
                     onPickPhoto = { calls += "pickPhoto" },
+                    onPickPhotos = { calls += "pickPhotos" },
                     onNextBing = { calls += "nextBing" },
                     onPreviousPrint = { calls += "previousPrint" },
                     onShowClock = { calls += "showClock:$it" },
@@ -120,6 +121,34 @@ class SettingsScreenTest {
         show(HomeUiState(wallpaperCaption = "Lavender fields, Provence"))
         compose.onNodeWithText("Replace the print").assertExists()
         compose.onNodeWithText("Lavender fields, Provence").assertDoesNotExist()
+    }
+
+    @Test fun yourPhotosOpensThePickerForSeveral() {
+        show()
+        compose.onNodeWithText("Up to 30, one a day").assertExists()
+        compose.onNodeWithText("Your photos").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("pickPhotos"), calls)
+    }
+
+    @Test fun yourPhotosSaysHowTheImportWent() {
+        // The picker comes back to Settings: the count, and what couldn't be read, show there.
+        show(HomeUiState(rollNote = "Adding 3 of 12…"))
+        compose.onNodeWithText("Adding 3 of 12…").assertExists()
+        screen = screen.copy(rollNote = "Added 11 photos, 1 couldn't be read")
+        compose.waitForIdle()
+        compose.onNodeWithText("Added 11 photos, 1 couldn't be read").assertExists()
+    }
+
+    @Test fun onYourPhotos_theBingRowLeavesThem() {
+        show(HomeUiState(rollSize = 12))
+        compose.onNodeWithText("12 photos, one a day. Double-tap for the next.").assertExists()
+        // Double-tap is the roll's now: Bing print is the way back to Bing's.
+        compose.onNodeWithText("Back to Bing's prints").assertExists()
+        compose.onNodeWithText("Double-tap the print for the next one").assertDoesNotExist()
+        compose.onNodeWithText("Bing print").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("nextBing"), calls)
     }
 
     /** The view model's word on the pasted key, as Settings sees it arrive. */

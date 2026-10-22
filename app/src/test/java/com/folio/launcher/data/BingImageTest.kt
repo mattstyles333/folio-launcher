@@ -2,6 +2,7 @@ package com.folio.launcher.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -25,19 +26,47 @@ class BingImageTest {
     }
 
     @Test
-    fun candidateUrls_uhdOriginalFirst_bingsPortraitFileOnlyAFallback() {
+    fun candidateUrls_bingsPrintSizeCropFirst_thenTheUhdOriginal_bingsPortraitFileOnlyAFallback() {
         val image = BingImage(
             url = "/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg&w=1080&h=1920",
             urlbase = "/th?id=OHR.LakeMagadi_EN-US1",
         )
-        val urls = image.candidateUrls(1080, 2340)
-        // AGENTS: the UHD original, cropped and scaled here; never Bing's own 1080×1920 file first.
-        val uhd = urls.indexOf("https://www.bing.com/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg")
+        // The S23's print: 1080×2340 plus parallax bleed.
+        val urls = image.candidateUrls(1166, 2527)
+        // AGENTS: Bing's crop of the UHD master at the print's size, then the UHD original (cropped
+        // here); never Bing's own 1080×1920 file first.
+        assertEquals("https://www.bing.com/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg&w=1166&h=2527&rs=1&c=4&qlt=90", urls[0])
+        assertEquals("https://www.bing.com/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg", urls[1])
         val portrait = urls.indexOfFirst { it.endsWith("_1080x1920.jpg") }
-        assertEquals(0, uhd)
-        assertTrue("1080×1920 at $portrait, before the UHD original", portrait > uhd)
-        // Fallbacks when there's no UHD file: the screen's own size is still asked for.
-        assertTrue(urls.any { it.contains("w=1080") && it.contains("h=2340") })
+        assertTrue("1080×1920 at $portrait, before the UHD original", portrait > 1)
+        // Fallbacks when there's no UHD file: the print's own size is still asked for.
+        assertTrue(urls.drop(2).any { it.contains("w=1166") && it.contains("h=2527") })
+    }
+
+    @Test
+    fun printCrop_isAskedAtThePrintsOwnSize() {
+        val image = BingImage(urlbase = "/th?id=OHR.LakeMagadi_EN-US1")
+        // A larger panel's print asks for more: no size is written into the code.
+        assertEquals(
+            "https://www.bing.com/th?id=OHR.LakeMagadi_EN-US1_UHD.jpg&w=1555&h=3335&rs=1&c=4&qlt=90",
+            image.candidateUrls(1555, 3335).first(),
+        )
+        // No urlbase, no UHD master to crop: only the archive's own file.
+        val bare = BingImage(url = "/th?id=OHR.LakeMagadi_EN-US1_1920x1080.jpg")
+        assertNull(bare.printCrop(1166, 2527))
+        assertTrue(bare.candidateUrls(1166, 2527).none { "rs=1" in it })
+    }
+
+    @Test
+    fun printCrop_isKeptOnlyAtExactlyTheSizeAsked() {
+        assertTrue(BingImage.isPrintCrop(1166, 2527, askedW = 1166, askedH = 2527))
+        // The parameters ignored (the UHD original), a fit inside, or the strip unscaled: the UHD
+        // original, cropped here, is fetched instead.
+        assertFalse(BingImage.isPrintCrop(3840, 2160, askedW = 1166, askedH = 2527))
+        assertFalse(BingImage.isPrintCrop(1166, 656, askedW = 1166, askedH = 2527))
+        assertFalse(BingImage.isPrintCrop(997, 2160, askedW = 1166, askedH = 2527))
+        // Not an image at all: its header has no size.
+        assertFalse(BingImage.isPrintCrop(-1, -1, askedW = 1166, askedH = 2527))
     }
 
     @Test
