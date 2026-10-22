@@ -156,7 +156,9 @@ class SearchCacheTest {
         val newest = cache.ask(key, apps, "capital of australia") { slow() }
         assertTrue(oldest.isCancelled)
         assertFalse(older.isCancelled)
-        advanceUntilIdle()
+        // The calls run on backgroundScope, which advanceUntilIdle() leaves be: wait for the two still out.
+        older.await()
+        newest.await()
         assertTrue(newest.isCompleted)
         assertNull(cache.answers(key, apps, "capital"))
         assertNotNull(cache.answers(key, apps, "capital of"))
