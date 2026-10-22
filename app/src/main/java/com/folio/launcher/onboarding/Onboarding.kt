@@ -191,7 +191,7 @@ fun Onboarding(
 
 private fun accessStatus(dnd: Boolean, usage: Boolean, media: Boolean): String {
     val mute = if (dnd) "Silent mutes the ringer" else "Silent needs Do Not Disturb"
-    val rank = if (usage) "Ranking uses the last 30 days" else "Ranking starts from Folio until usage access"
+    val rank = if (usage) "Ranking uses your recent opens" else "Ranking starts from Folio until usage access"
     val spotify = if (media) "Spotify can sit on the print" else "Spotify needs notification access"
     return "$mute. $rank. $spotify."
 }

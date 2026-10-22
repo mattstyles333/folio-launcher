@@ -235,7 +235,7 @@ fun SettingsScreen(
             SettingsRow(
                 "Better ranking",
                 if (state.hasUsageAccess) {
-                    "Last 30 days of opens, including before Folio"
+                    "Recent opens (Android keeps about ten days), including before Folio"
                 } else {
                     "Without this, ranking is only apps you open from Folio"
                 },
