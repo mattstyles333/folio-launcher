@@ -50,4 +50,12 @@ object CoverCrop {
         }
         return sample
     }
+
+    /**
+     * Whether a decoded window is scaled to [dstW]×[dstH]: only ever down. A smaller one already
+     * has the panel's shape, so the GPU's one stretch is all it needs; scaling it up first (Bing's
+     * 997×2160 UHD strip to 1166×2527) adds 37% more pixels and no detail.
+     */
+    fun shrinks(windowW: Int, windowH: Int, dstW: Int, dstH: Int): Boolean =
+        windowW > dstW || windowH > dstH
 }

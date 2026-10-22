@@ -1,6 +1,7 @@
 package com.folio.launcher.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,5 +29,18 @@ class CoverCropTest {
         assertEquals(2, CoverCrop.sampleSize(3000, 6500, 1166, 2527))
         assertEquals(4, CoverCrop.sampleSize(4800, 10400, 1166, 2527))
         assertEquals(1, CoverCrop.sampleSize(0, 0, 1166, 2527))
+    }
+
+    @Test
+    fun shrinks_neverScalesUp() {
+        // Bing's UHD strip on the S23's print (1080×2340 plus parallax bleed) stays as decoded:
+        // the GPU stretches it once, a CPU copy at print size would only add pixels.
+        val bing = CoverCrop.window(3840, 2160, 1166, 2527)
+        assertEquals(1, CoverCrop.sampleSize(bing.width, bing.height, 1166, 2527))
+        assertFalse(CoverCrop.shrinks(bing.width, bing.height, 1166, 2527))
+        assertFalse(CoverCrop.shrinks(1166, 2527, 1166, 2527))
+        // A photo window still larger after sampling is brought down to the print.
+        assertTrue(CoverCrop.shrinks(1500, 3250, 1166, 2527))
+        assertTrue(CoverCrop.shrinks(1167, 2528, 1166, 2527))
     }
 }

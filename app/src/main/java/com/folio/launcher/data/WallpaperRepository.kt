@@ -200,7 +200,7 @@ class WallpaperRepository(private val context: Context) : PrintFiles {
     }.getOrNull()
 
     private fun scaleTo(src: Bitmap, w: Int, h: Int): Bitmap {
-        if (src.width == w && src.height == h) return src
+        if (!CoverCrop.shrinks(src.width, src.height, w, h)) return src
         val scaled = Bitmap.createScaledBitmap(src, w, h, true)
         if (scaled !== src) src.recycle()
         return scaled

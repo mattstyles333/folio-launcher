@@ -47,6 +47,10 @@ class AppRepository(private val context: Context) {
     @Volatile
     private var iconPx = 0
 
+    /** Stands in for an icon that couldn't be drawn; never put in [icons], so each load tries the real one again. */
+    @Volatile
+    private var standInIcon: ImageBitmap? = null
+
     /** Packages changed since the last load began; that load's icons for them may be stale. */
     private val pending = ConcurrentHashMap.newKeySet<String>()
 
@@ -122,18 +126,22 @@ class AppRepository(private val context: Context) {
                 val list = load()
                 // Cancelled while loading: a newer reload is coming with a fresher list.
                 ensureActive()
-                _apps.value = list
+                // A failed load leaves the last list up, not an empty home screen.
+                if (list != null) _apps.value = list
             }
         }
     }
 
-    private fun load(): List<LaunchableApp> {
-        return runCatching {
+    /** Every launchable app, or null when the system couldn't list them. */
+    private fun load(): List<LaunchableApp>? {
+        return try {
             val user = Process.myUserHandle()
             val infos = launcherApps.getActivityList(null, user)
             val homes = homePackages()
             val density = context.resources.displayMetrics.densityDpi
-            val size = (56 * context.resources.displayMetrics.density).toInt().coerceIn(48, 192)
+            // 48 dp: the drawer's size, drawn 1:1, and shrunk for search's 40 dp rows. The rail's
+            // 52 dp (56 while dragging) takes a slight stretch rather than every icon paying for it.
+            val size = (48 * context.resources.displayMetrics.density).toInt().coerceIn(48, 192)
             if (size != iconPx) {
                 icons.clear()
                 iconPx = size
@@ -145,9 +153,12 @@ class AppRepository(private val context: Context) {
                 val label = info.label?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val iconKey = "${cn.packageName}/${cn.className}@${info.user.hashCode()}"
                 live += iconKey
-                val icon = icons[iconKey] ?: runCatching {
-                    info.getBadgedIcon(density).toBitmap(size, size).asImageBitmap()
-                }.getOrNull()?.also { icons[iconKey] = it } ?: return@mapNotNull null
+                // An icon that can't be drawn mustn't cost its app (and a rail pin with it).
+                val icon = icons[iconKey] ?: try {
+                    info.getBadgedIcon(density).toBitmap(size, size).asImageBitmap().also { icons[iconKey] = it }
+                } catch (_: Exception) {
+                    standIn(size)
+                }
                 LaunchableApp(
                     packageName = cn.packageName,
                     activityName = cn.className,
@@ -160,7 +171,19 @@ class AppRepository(private val context: Context) {
             }.distinctBy { it.key }
                 .sortedWith(compareBy(Ranking.labelOrder()) { it.label })
                 .also { icons.keys.retainAll(live) }
-        }.getOrElse { emptyList() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** The system's plain app icon, drawn once per size. */
+    private fun standIn(size: Int): ImageBitmap {
+        standInIcon?.takeIf { it.width == size }?.let { return it }
+        return try {
+            context.packageManager.defaultActivityIcon.toBitmap(size, size).asImageBitmap().also { standInIcon = it }
+        } catch (_: Exception) {
+            ImageBitmap(size, size)
+        }
     }
 
     private fun homePackages(): Set<String> {
