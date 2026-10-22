@@ -4,14 +4,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.ScrollAxisRange
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.folio.hermes.ApprovalChoice
 import com.folio.hermes.ApprovalRequest
@@ -25,6 +40,8 @@ import com.folio.launcher.ui.FolioTheme
 import com.folio.launcher.ui.PrintInk
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,7 +65,11 @@ class HermesAskOverlayTest {
         call = { calls += "call:$it" },
     )
 
+    /** What the overlay shows; a test sets it again to stream more of a reply. */
+    private val hermesState = mutableStateOf<HermesAskState?>(null)
+
     private fun show(hermes: HermesAskState?, aiLabel: String = "Hermes", startQuery: String = "") {
+        hermesState.value = hermes
         compose.setContent {
             var query by remember { mutableStateOf(startQuery) }
             FolioTheme {
@@ -61,13 +82,32 @@ class HermesAskOverlayTest {
                     accent = PrintInk,
                     onAsk = { calls += "onAsk:$it" },
                     onDismiss = { calls += "dismiss" },
-                    hermes = hermes,
+                    hermes = hermesState.value,
                     hermesActions = actions,
                 )
             }
         }
         compose.waitForIdle()
     }
+
+    private fun approval(command: String) = ApprovalRequest(
+        id = "srq-1", sessionId = "rt", requestId = "a1", command = command,
+        description = "Run the script", choices = ApprovalChoice.entries, toolName = "terminal", params = JsonObject(emptyMap()),
+    )
+
+    /** The text as laid out on screen (the semantics text is always whole, even when clipped). */
+    private fun SemanticsNodeInteraction.textLayout(): TextLayoutResult {
+        val layouts = mutableListOf<TextLayoutResult>()
+        fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!.invoke(layouts)
+        return layouts.single()
+    }
+
+    /** The transcript's scroll position and its end. */
+    private fun transcript(): ScrollAxisRange =
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            .fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+
+    private val longReply = (1..60).joinToString("\n") { "Line $it of the week." }
 
     @Test
     fun typingAndSend_asksHermesAndClearsTheField() {
@@ -159,5 +199,107 @@ class HermesAskOverlayTest {
         compose.onNodeWithText("Open Grok").performClick()
         compose.waitForIdle()
         assertEquals(listOf("onAsk:"), calls)
+    }
+
+    @Test
+    fun approval_showsEveryLineOfTheCommandBeforeApproveOnce() {
+        val command = (1..20).joinToString("\n") { "echo step $it" } + "\nrm -rf ~/notes"
+        show(HermesAskState(exchanges = listOf(HermesExchange(1, "Tidy up")), approval = approval(command)))
+        val layout = compose.onNodeWithText(command).textLayout()
+        assertFalse(layout.didOverflowHeight)
+        assertTrue(layout.lineCount >= 21)
+        compose.onNodeWithText("Approve once").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("approve:Once"), calls)
+    }
+
+    @Test
+    fun approvalBeforeAnyQuestion_aLongCommandStillScrollsToItsButtons() {
+        val command = (1..80).joinToString("\n") { "echo step $it" }
+        show(HermesAskState(approval = approval(command)))
+        assertFalse(compose.onNodeWithText(command).textLayout().didOverflowHeight)
+        compose.onNodeWithText("Deny").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("approve:Deny"), calls)
+    }
+
+    @Test
+    fun clarify_freeTextTakesTheKeyboard_soSendAnswersIt() {
+        val request = ClarifyRequest(
+            "srq-3", "rt",
+            listOf(ClarifyQuestion("q1", "Which day?", emptyList(), multiSelect = false)),
+            JsonObject(emptyMap()),
+        )
+        show(HermesAskState(exchanges = listOf(HermesExchange(1, "Book the usual table")), clarify = request))
+        // The cursor is in the answer, so typing and Send answer Hermes instead of interrupting it.
+        compose.onNode(isFocused()).performTextInput("Saturday")
+        compose.onNode(isFocused()).performImeAction()
+        compose.waitForIdle()
+        assertEquals(listOf("clarify:{q1=Saturday}"), calls)
+    }
+
+    @Test
+    fun streamingReply_scrolledUpToReread_staysPut() {
+        show(HermesAskState(exchanges = listOf(HermesExchange(1, "Summarise the week", reply = longReply))))
+        assertEquals(transcript().maxValue(), transcript().value(), 0.5f)
+        compose.onNodeWithText("Summarise the week").performScrollTo()
+        val readAt = transcript().value()
+        assertTrue(readAt < transcript().maxValue())
+        hermesState.value = HermesAskState(exchanges = listOf(HermesExchange(1, "Summarise the week", reply = "$longReply\nMore.")))
+        compose.waitForIdle()
+        assertEquals(readAt, transcript().value(), 0.5f)
+        compose.onNodeWithText("Summarise the week").assertIsDisplayed()
+    }
+
+    @Test
+    fun streamingReply_atTheEnd_isFollowed() {
+        show(HermesAskState(exchanges = listOf(HermesExchange(1, "Summarise the week", reply = longReply))))
+        val before = transcript().maxValue()
+        assertEquals(before, transcript().value(), 0.5f)
+        hermesState.value = HermesAskState(exchanges = listOf(HermesExchange(1, "Summarise the week", reply = "$longReply\nMore.\nMore.")))
+        compose.waitForIdle()
+        assertTrue(transcript().maxValue() > before)
+        assertEquals(transcript().maxValue(), transcript().value(), 0.5f)
+    }
+
+    @Test
+    fun talkBack_hearsApprovalsAndToolSteps_andChipsAreButtons() {
+        show(
+            HermesAskState(
+                exchanges = listOf(HermesExchange(1, "Ship it", reply = "Pushing now.")),
+                working = "Hermes is working: terminal",
+                approval = approval("git push"),
+            ),
+        )
+        val polite = SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)
+        val button = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+        compose.onNodeWithText("Hermes wants to go ahead").assert(polite)
+        compose.onNodeWithText("Hermes is working: terminal").assert(polite)
+        // Never the streaming reply: it would be read out token by token.
+        compose.onNodeWithText("Pushing now.").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
+        compose.onNodeWithText("Approve once").assert(button)
+        compose.onNodeWithText("Stop").assert(button)
+        compose.onNodeWithText("Cancel").assert(button)
+    }
+
+    @Test
+    fun hermesBeforeAnyQuestion_aSwipeDownOnTheChipsDismisses() {
+        show(HermesAskState())
+        compose.onNodeWithText("Catch me up").performTouchInput { swipe(center, center + Offset(0f, 300f)) }
+        compose.waitForIdle()
+        assertEquals(listOf("dismiss"), calls)
+    }
+
+    @Test
+    fun smallDrags_doNotAddUpToADismiss() {
+        show(hermes = null, aiLabel = "Grok")
+        repeat(2) {
+            compose.onRoot().performTouchInput { swipe(center, center + Offset(0f, 100f)) }
+            compose.waitForIdle()
+        }
+        assertEquals(emptyList<String>(), calls)
+        compose.onRoot().performTouchInput { swipe(center, center + Offset(0f, 300f)) }
+        compose.waitForIdle()
+        assertEquals(listOf("dismiss"), calls)
     }
 }

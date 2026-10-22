@@ -1,6 +1,18 @@
 package com.folio.launcher.home
 
+import android.graphics.Bitmap
+import android.os.Process
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasSetTextAction
@@ -13,11 +25,17 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.folio.launcher.data.HomeUiState
+import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.OnboardingStep
+import com.folio.launcher.data.RailSlot
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SearchHint
 import com.folio.launcher.data.SearchRoute
@@ -38,6 +56,10 @@ class HomeGesturesTest {
     val compose = createComposeRule()
 
     private val calls = mutableListOf<String>()
+
+    /** Bumped by MainActivity when Home is pressed (or the screen comes back on). */
+    private var idleEpoch by mutableIntStateOf(0)
+    private var back: OnBackPressedDispatcher? = null
 
     private val hermesActions = HermesAskActions(
         ask = { calls += "hermesAsk:$it" },
@@ -60,12 +82,21 @@ class HomeGesturesTest {
     /** No Hermes Live: Grok answers Ask, as in 2.1.0. */
     private val grokState = HomeUiState(aiLabel = "Grok", aiPackage = "ai.x.grok")
 
+    private fun app(label: String, pkg: String) = LaunchableApp(
+        packageName = pkg,
+        activityName = "$pkg.Main",
+        user = Process.myUserHandle(),
+        label = label,
+        icon = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).asImageBitmap(),
+    )
+
     private fun show(state: HomeUiState = HomeUiState(), searchHint: SearchHint = SearchHint()) {
         compose.setContent {
+            back = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
             FolioTheme {
                 HomeScreen(
                     state = state,
-                    idleEpoch = 0,
+                    idleEpoch = idleEpoch,
                     launches = emptyMap(),
                     onLaunch = { calls += "launch" },
                     onAppInfo = { calls += "appInfo" },
@@ -93,6 +124,7 @@ class HomeGesturesTest {
                     searchHint = searchHint,
                     onSearchRoute = { route, query -> calls += "route:$route:$query" },
                     hermesActions = hermesActions,
+                    onExpandShade = { calls += "shade" },
                 )
             }
         }
@@ -103,6 +135,29 @@ class HomeGesturesTest {
     private fun printPoint() = compose.onRoot().fetchSemanticsNode().size.let {
         Offset(it.width / 2f, it.height * 0.45f)
     }
+
+    /** The system Back, as the activity hands it to HomeScreen's BackHandler. */
+    private fun pressBack() {
+        compose.runOnIdle { checkNotNull(back).onBackPressed() }
+        compose.waitForIdle()
+    }
+
+    /** A quick pull up from the print: from idle it lands on the peek, from the peek on the full grid. */
+    private fun pullUp() {
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            swipe(start = at, end = at - Offset(0f, 100.dp.toPx()), durationMillis = 200)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
+    /** Six rows A–Z: the peek shows the first two and a sliver, the full grid row five (Quebec) too. */
+    private val sixRows = listOf(
+        "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+        "India", "Juliett", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa",
+        "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "Xray",
+    ).map { app(it, "com.example.${it.lowercase()}") }
 
     @Test
     fun doubleTapPrint_fetchesNextBing() {
@@ -140,6 +195,77 @@ class HomeGesturesTest {
         compose.onRoot().performTouchInput { longClick(at) }
         compose.waitForIdle()
         assertEquals(listOf("ringer:Sound"), calls)
+    }
+
+    @Test
+    fun longPressPrint_withASmallDrift_stillCyclesRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            down(at)
+            // A resting finger creeps a little: still a hold.
+            moveBy(Offset(0f, viewConfiguration.touchSlop * 2))
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(listOf("ringer:Vibrate"), calls)
+    }
+
+    @Test
+    fun slowPullDownOnPrint_doesNotCycleRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        val at = printPoint()
+        // Slower than a long-press: the pull for the shade must not also count as a hold.
+        compose.onRoot().performTouchInput {
+            swipeDown(startY = at.y, endY = at.y + height * 0.3f, durationMillis = 800)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals(listOf("shade"), calls)
+    }
+
+    /** A thumb's arc: the first few dp lean sideways (the sheet lets the gesture go), then a pull [dy] slower than a hold. */
+    private fun slowPullThatLeansSidewaysFirst(dy: Float) {
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            down(at)
+            moveBy(Offset(15.dp.toPx(), 0f))
+            repeat(20) {
+                advanceEventTime(40)
+                moveBy(Offset(0f, dy / 20))
+            }
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun slowPullDownOnPrint_leaningSidewaysFirst_doesNotCycleRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        slowPullThatLeansSidewaysFirst(dy = compose.onRoot().fetchSemanticsNode().size.height * 0.3f)
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("ringer:") })
+    }
+
+    @Test
+    fun slowPullUpOnPrint_leaningSidewaysFirst_doesNotCycleRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        slowPullThatLeansSidewaysFirst(dy = -compose.onRoot().fetchSemanticsNode().size.height * 0.3f)
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("ringer:") })
+    }
+
+    @Test
+    fun swipeDownOnPrint_opensShadeNotSearch() {
+        show()
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            swipeDown(startY = at.y, endY = at.y + height * 0.2f, durationMillis = 200)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals(listOf("shade"), calls)
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
     }
 
     @Test
@@ -187,6 +313,62 @@ class HomeGesturesTest {
     }
 
     @Test
+    fun shortFlickLeftOnPrint_withHermes_stillStartsACall() {
+        show(hermesState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            // Just past PrintSwipe's drag slop (four touch slops) in 48 ms: short of the 18%
+            // swipe, so the fling is what counts.
+            val travel = viewConfiguration.touchSlop * 4 + 4.dp.toPx()
+            check(travel < width * 0.18f && travel > 48.dp.toPx())
+            down(at)
+            repeat(3) { moveBy(Offset(-travel / 3, 0f)) }
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(listOf("callHermes:"), calls)
+    }
+
+    @Test
+    fun swipeRightThenFlickBack_withHermes_startsNoCall() {
+        show(hermesState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            // Start a swipe right, just past PrintSwipe's drag slop (four touch slops)...
+            val out = viewConfiguration.touchSlop * 4 + 4.dp.toPx()
+            down(at)
+            repeat(5) { moveBy(Offset(out / 5, 0f)) }
+            // ...then think better of it: a quick flick back that still ends right of the start.
+            repeat(2) { moveBy(Offset(-16.dp.toPx(), 0f)) }
+            check(out - 2 * 16.dp.toPx() > 0f)
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun swipeRightThenFlickBackPastTheStart_withHermes_startsNoCall() {
+        show(hermesState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            // A swipe right, just past PrintSwipe's drag slop and short of the 18% swipe...
+            val out = viewConfiguration.touchSlop * 4 + 4.dp.toPx()
+            check(out < width * 0.18f)
+            down(at)
+            repeat(4) { moveBy(Offset(out / 4, 0f)) }
+            // ...a beat, then a fast flick back that ends 30 dp left of the start: short of the 48 dp
+            // of travel a flick needs, however fast.
+            advanceEventTime(60)
+            val back = out + 30.dp.toPx()
+            repeat(3) { moveBy(Offset(-back / 3, 0f)) }
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
     fun longPressSearch_withoutHermes_isTheAppAskOverlay() {
         show(grokState)
         compose.onNodeWithContentDescription("Search").performTouchInput { longClick() }
@@ -229,6 +411,74 @@ class HomeGesturesTest {
     }
 
     @Test
+    fun tripleTapPrint_withoutHermes_opensAppAskOverlay() {
+        show(grokState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            click(at)
+            advanceEventTime(90)
+            click(at)
+            advanceEventTime(90)
+            click(at)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Grok").assertExists()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun tripleTapPrint_whenTheThirdTouchRests_stillOpensAsk() {
+        show(hermesState)
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            click(at)
+            advanceEventTime(90)
+            click(at)
+            // The third finger lands late in the window and is still down when it closes.
+            advanceEventTime(250)
+            down(at)
+            advanceEventTime(120)
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertExists()
+        assertEquals(listOf("hermesVisible:true"), calls)
+    }
+
+    @Test
+    fun slowDoubleTapPrint_fetchesNextBing() {
+        show()
+        val at = printPoint()
+        // The second touch lands in time but rests: the window runs lift to touch, not lift to lift.
+        compose.onRoot().performTouchInput {
+            click(at)
+            advanceEventTime(250)
+            down(at)
+            advanceEventTime(120)
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals(listOf("nextBing"), calls)
+    }
+
+    @Test
+    fun tapThenLongPressPrint_onlyCyclesRinger() {
+        show(HomeUiState(mode = RingerVisual.Sound))
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            click(at)
+            advanceEventTime(90)
+            longClick(at)
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        assertEquals(listOf("ringer:Vibrate"), calls)
+    }
+
+    @Test
     fun searchAskRoute_withHermes_asksHermesInTheOverlay() {
         show(hermesState, SearchHint("what is stoicism", SearchRoute.Ask))
         compose.onNodeWithContentDescription("Search").performClick()
@@ -251,5 +501,166 @@ class HomeGesturesTest {
         compose.onNode(hasSetTextAction()).performImeAction()
         compose.waitForIdle()
         assertEquals(listOf("route:Ask:what is stoicism"), calls)
+    }
+
+    @Test
+    fun pullUpOnPrint_landsOnPeek() {
+        show(HomeUiState(apps = listOf(app("Maps", "com.google.android.apps.maps"))))
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            down(at)
+            repeat(3) { moveBy(Offset(0f, -8.dp.toPx())) }
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Maps").assertIsDisplayed()
+    }
+
+    @Test
+    fun pullUpTakenBySystem_leavesSheetClosed() {
+        show(HomeUiState(apps = listOf(app("Maps", "com.google.android.apps.maps"))))
+        val at = printPoint()
+        // Home or Recents takes the swipe: Android cancels it rather than lifting.
+        compose.onRoot().performTouchInput {
+            down(at)
+            repeat(3) { moveBy(Offset(0f, -8.dp.toPx())) }
+            cancel()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Maps").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun pullUpThatSwervesSideways_thenFlicksUp_landsOnPeek() {
+        show(HomeUiState(apps = listOf(app("Maps", "com.google.android.apps.maps"))))
+        val at = printPoint()
+        compose.onRoot().performTouchInput {
+            down(at)
+            // Up far enough to grab the sheet, then sideways past four touch slops: PrintSwipe takes
+            // the gesture too and consumes the rest of it, the lift included.
+            moveBy(Offset(0f, -viewConfiguration.touchSlop))
+            moveBy(Offset(viewConfiguration.touchSlop * 4.4f, 0f))
+            repeat(3) { moveBy(Offset(0f, -20.dp.toPx())) }
+            // A real lift comes a frame after the last move; only the system's cancel copies it.
+            advanceEventTime(8)
+            up()
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Maps").assertIsDisplayed()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun longPressRailIcon_withASmallDrift_opensPinPicker() {
+        val maps = app("Maps", "com.google.android.apps.maps")
+        show(HomeUiState(rail = listOf(RailSlot(maps)) + List(3) { RailSlot() }))
+        compose.onNodeWithContentDescription("Maps").performTouchInput {
+            down(center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            // A finger rolls a little as it lifts.
+            moveBy(Offset(6.dp.toPx(), 0f))
+            up()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Pin").assertExists()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun dragRailIcon_rightToLeft_followsTheFinger() {
+        val moves = mutableListOf<String>()
+        // The rail alone, laid out right to left (Arabic, Hebrew): slot 0 is the rightmost.
+        compose.setContent {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                Rail(
+                    slots = listOf("A", "B", "C", "D").map { RailSlot(app(it, "com.example.$it")) },
+                    iconSaturation = 1f,
+                    onLaunch = {},
+                    onPinRequest = {},
+                    onReorder = { from, to -> moves += "$from>$to" },
+                    onHide = {},
+                )
+            }
+        }
+        compose.waitForIdle()
+        val slot = compose.onRoot().fetchSemanticsNode().size.width / 4f
+        // Hold B (slot 1) and drag it left, toward C (slot 2).
+        compose.onNodeWithContentDescription("B").performTouchInput {
+            down(center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            moveBy(Offset(-slot * 0.75f, 0f))
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(listOf("1>2"), moves)
+    }
+
+    @Test
+    fun back_closesSearch_andForgetsTheQuery() {
+        show()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("zebra")
+        pressBack()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("zebra").assertDoesNotExist()
+    }
+
+    @Test
+    fun back_stepsTheSheet_fullThenPeekThenClosed() {
+        show(HomeUiState(apps = sixRows))
+        pullUp()
+        pullUp()
+        compose.onNodeWithContentDescription("Quebec").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithContentDescription("Quebec").assertIsNotDisplayed()
+        compose.onNodeWithContentDescription("Alpha").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithContentDescription("Alpha").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun home_closesSearchAndTheSheet_andForgetsTheQuery() {
+        show(HomeUiState(apps = sixRows))
+        pullUp()
+        compose.onNodeWithContentDescription("Alpha").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performTextInput("zebra")
+        // Home pressed: MainActivity bumps idleEpoch.
+        idleEpoch++
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Alpha").assertIsNotDisplayed()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("zebra").assertDoesNotExist()
+    }
+
+    @Test
+    fun home_closesTheHermesOverlay_andDisconnects() {
+        show(hermesState)
+        compose.onNodeWithContentDescription("Search").performTouchInput { longClick() }
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertExists()
+        idleEpoch++
+        compose.waitForIdle()
+        compose.onNodeWithText("Ask Hermes").assertDoesNotExist()
+        assertEquals(listOf("hermesVisible:true", "hermesVisible:false"), calls)
+    }
+
+    @Test
+    fun onboarding_tapOnARailIconLaunchesNothing() {
+        val maps = app("Maps", "com.google.android.apps.maps")
+        show(HomeUiState(onboarding = OnboardingStep.Access, rail = listOf(RailSlot(maps)) + List(3) { RailSlot() }))
+        // The rail shows through the onboarding scrim; a tap there is onboarding's, not the app's.
+        compose.onNodeWithContentDescription("Maps").performClick()
+        compose.waitForIdle()
+        assertEquals(emptyList<String>(), calls.filter { it == "launch" || it == "hide" || it == "pin" })
     }
 }

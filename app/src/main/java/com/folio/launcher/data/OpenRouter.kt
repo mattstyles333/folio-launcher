@@ -3,7 +3,14 @@ package com.folio.launcher.data
 import com.folio.hermes.telemetry.Telemetry
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -11,6 +18,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -40,16 +50,28 @@ internal data class ChatMessage(val content: String? = null)
 /**
  * OpenRouter with the key pasted in Settings. Jev makes the decisions on the System One
  * endpoint; DeepSeek writes the odd line on chat completions. Any failure is null, and the
- * caller carries on without it.
+ * caller carries on without it. Only tests point [base] anywhere else (a local server).
  */
-class OpenRouter(private val key: String) {
+class OpenRouter internal constructor(private val key: String, private val base: String) {
+    constructor(key: String) : this(key, BASE)
+
+    /** HTTP status of the last call's answer; 0 when none came (offline, timed out). See [keyStatus]. */
+    @Volatile
+    var lastStatus: Int = 0
+        private set
+
+    /** The last call's 403 named a spent spending limit (see [namesALimit]); any other 403 blocked that one request. */
+    @Volatile
+    var lastOverLimit: Boolean = false
+        private set
+
     suspend fun decide(state: JsonElement, questions: JsonObject): Map<String, JevAnswer>? {
         val body = buildJsonObject {
             put("model", JEV)
             put("state", state)
             put("questions", questions)
         }
-        return post("$BASE/systemone", body.toString(), JEV_READ_MS, "jev")?.let(::parseAnswers)
+        return post("$base/systemone", body.toString(), JEV_READ_MS, "jev")?.let(::parseAnswers)
     }
 
     suspend fun write(system: String, prompt: String, maxTokens: Int = 120): String? {
@@ -70,13 +92,13 @@ class OpenRouter(private val key: String) {
             // V4.1 Flash reasons at "high" by default; a one-liner doesn't need it.
             putJsonObject("reasoning") { put("enabled", false) }
         }
-        return post("$BASE/chat/completions", body.toString(), WRITER_READ_MS, "writer")?.let(::parseChat)
+        return post("$base/chat/completions", body.toString(), WRITER_READ_MS, "writer")?.let(::parseChat)
     }
 
     /** True if OpenRouter accepts the key, false if it refuses it, null if it couldn't be reached. */
     suspend fun check(): Boolean? = withContext(Dispatchers.IO) {
         runCatching {
-            val conn = open("$BASE/key", JEV_READ_MS)
+            val conn = open("$base/key", JEV_READ_MS)
             try {
                 when (conn.responseCode) {
                     in 200..299 -> true
@@ -91,26 +113,53 @@ class OpenRouter(private val key: String) {
 
     /** [label] ("jev" / "writer") names the call in diagnostics; only the status or error type is reported. */
     private suspend fun post(url: String, body: String, readMs: Int, label: String): String? = withContext(Dispatchers.IO) {
+        lastStatus = 0
+        lastOverLimit = false
         runCatching {
             val conn = open(url, readMs).apply {
                 requestMethod = "POST"
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
             }
+            val abort = disconnectOnCancel(conn)
             try {
                 conn.outputStream.use { it.write(body.toByteArray()) }
                 val status = conn.responseCode
+                lastStatus = status
                 if (status !in 200..299) {
+                    if (status == FORBIDDEN) {
+                        lastOverLimit = runCatching {
+                            conn.errorStream?.bufferedReader()?.use { namesALimit(it.readText()) }
+                        }.getOrNull() == true
+                    }
                     Telemetry.warn("jev.error", null, mapOf("call" to label, "http_status" to status))
                     return@runCatching null
                 }
                 conn.inputStream.bufferedReader().use { it.readText() }
             } finally {
+                abort.cancel()
                 conn.disconnect()
             }
         }.onFailure { e ->
-            if (e !is kotlinx.coroutines.CancellationException) Telemetry.warn("jev.error", null, mapOf("call" to label, "type" to e.javaClass.simpleName))
+            // Closed because the caller moved on (a newer keystroke): not an error.
+            if (e !is kotlinx.coroutines.CancellationException && isActive) Telemetry.warn("jev.error", null, mapOf("call" to label, "type" to e.javaClass.simpleName))
         }.getOrNull()
+    }
+
+    /**
+     * Cancelling doesn't stop blocking socket I/O, so search's collectLatest would wait out a stale
+     * call's timeouts before the next query could start. This closes [conn] the moment the call is
+     * cancelled. Undispatched, so it is watching before the request goes out.
+     */
+    private fun CoroutineScope.disconnectOnCancel(conn: HttpURLConnection): Job {
+        val call = coroutineContext.job
+        return launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                awaitCancellation()
+            } finally {
+                if (call.isCancelled) runCatching { conn.disconnect() }
+            }
+        }
     }
 
     private fun open(url: String, readMs: Int): HttpURLConnection =
@@ -133,6 +182,34 @@ class OpenRouter(private val key: String) {
         private const val WRITER_READ_MS = 12_000
 
         private val json = Json { ignoreUnknownKeys = true }
+
+        /** Too many calls: wait a while instead of sending more. */
+        const val RATE_LIMITED = 429
+
+        /** Forbidden: a spending limit spent, or one request blocked (moderation, a guardrail). */
+        const val FORBIDDEN = 403
+
+        /**
+         * What a call's HTTP status says about the key itself: refused (401), or out of credit (402)
+         * or over a spending limit (a 403 that names it, [overLimit]). Null for anything else: a 403
+         * for one blocked request (moderation, a guardrail) says nothing about the key, and a rate
+         * limit ([RATE_LIMITED]) passes.
+         */
+        fun keyStatus(httpStatus: Int, overLimit: Boolean = false): BrainStatus? = when (httpStatus) {
+            401 -> BrainStatus.Rejected
+            402 -> BrainStatus.NoCredit
+            FORBIDDEN -> if (overLimit) BrainStatus.NoCredit else null
+            else -> null
+        }
+
+        /**
+         * A 403's body names a spent spending limit (the key's own, a workspace's or a guardrail's
+         * budget): OpenRouter puts which in `error.metadata.limit_source`.
+         */
+        internal fun namesALimit(body: String): Boolean = runCatching {
+            json.parseToJsonElement(body).jsonObject["error"]?.jsonObject?.get("metadata")?.jsonObject
+                ?.get("limit_source")?.jsonPrimitive?.contentOrNull?.isNotEmpty() == true
+        }.getOrDefault(false)
 
         /** OpenRouter keys are `sk-or-…` with no whitespace. */
         fun looksLikeKey(text: String): Boolean =

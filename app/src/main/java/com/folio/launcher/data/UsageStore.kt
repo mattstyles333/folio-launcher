@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-val Context.folioUsage by preferencesDataStore(name = "folio_usage")
+val Context.folioUsage by preferencesDataStore(name = "folio_usage", corruptionHandler = startOver("usage.corrupt"))
 
 @Serializable
 data class UsageData(
@@ -35,7 +35,7 @@ class UsageStore(context: Context) {
             val current = prefs[KEY]?.let {
                 runCatching { json.decodeFromString<UsageData>(it) }.getOrNull()
             } ?: UsageData()
-            val cutoff = at - 30 * Ranking.DAY_MS
+            val cutoff = at - Ranking.USAGE_WINDOW_MS
             val next = current.launches.toMutableMap()
             next[packageName] = (next[packageName].orEmpty() + at).filter { it >= cutoff }
             prefs[KEY] = json.encodeToString(UsageData(next))

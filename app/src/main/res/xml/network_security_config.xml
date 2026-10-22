@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- HTTPS everywhere (Bing, OpenRouter, the user's Hermes). Plain http only for the user's own
-     Hermes on a Tailscale name, which HermesEndpoint also allows; Tailscale encrypts that hop. -->
+     Hermes on a Tailscale name, which HermesEndpoint also allows. Folio dials it only through
+     Tailscale (hermes/Tailnet.kt), which encrypts that hop. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">

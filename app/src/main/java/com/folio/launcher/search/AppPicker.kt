@@ -26,6 +26,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,13 +51,15 @@ fun AppPicker(
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     val results = remember(query, apps) {
-        if (query.isBlank()) apps.sortedBy { it.label.lowercase() }
+        if (query.isBlank()) apps.sortedWith(compareBy(Ranking.labelOrder()) { it.label })
         else Ranking.search(query, apps, launches)
     }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.88f))
+            // Hit-testing stops here, so a tap on the empty scrim can't reach Settings rows or the rail underneath.
+            .pointerInput(Unit) {}
             .statusBarsPadding()
             .imePadding()
             .padding(horizontal = 22.dp, vertical = 18.dp),

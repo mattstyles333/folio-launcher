@@ -57,11 +57,9 @@ object AiApps {
         val text = prompt.trim()
         if (text.isNotEmpty()) {
             val encoded = Uri.encode(text)
+            // Every intent names pkg: a link the app doesn't claim would open the browser instead.
             for (uri in viewUris(kind, encoded)) {
                 if (start(host, viewIntent(uri, pkg, flags))) return true
-            }
-            for (uri in viewUris(kind, encoded)) {
-                if (start(host, viewIntent(uri, packageName = null, flags))) return true
             }
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -92,10 +90,10 @@ object AiApps {
         )
     }
 
-    private fun viewIntent(uri: String, packageName: String?, flags: Int): Intent {
+    private fun viewIntent(uri: String, packageName: String, flags: Int): Intent {
         return Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
             addFlags(flags)
-            if (packageName != null) `package` = packageName
+            `package` = packageName
         }
     }
 

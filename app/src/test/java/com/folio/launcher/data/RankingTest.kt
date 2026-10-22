@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,6 +23,13 @@ class RankingTest {
     }
 
     @Test
+    fun score_countsOpensInsideTheUsageWindowOnly() {
+        // The same window UsageStore keeps opens for.
+        assertEquals(1, Ranking.score(listOf(noon - Ranking.USAGE_WINDOW_MS + 1), noon))
+        assertEquals(0, Ranking.score(listOf(noon - Ranking.USAGE_WINDOW_MS - 1), noon))
+    }
+
+    @Test
     fun match_prefix_word_acronym_fuzzy() {
         assertEquals(Ranking.MatchKind.Prefix, Ranking.match("gma", "Gmail"))
         assertEquals(Ranking.MatchKind.Prefix, Ranking.match("gm", "Gmail"))
@@ -30,6 +38,19 @@ class RankingTest {
         assertEquals(Ranking.MatchKind.Fuzzy, Ranking.match("gml", "Gmail"))
         assertNull(Ranking.match("zzz", "Gmail"))
         assertNull(Ranking.match("", "Gmail"))
+    }
+
+    @Test
+    fun match_ignoresAccents() {
+        assertEquals(Ranking.MatchKind.Prefix, Ranking.match("poke", "Pokémon GO"))
+        assertEquals(Ranking.MatchKind.Prefix, Ranking.match("pokemon go", "Pokémon GO"))
+        assertEquals(Ranking.MatchKind.Prefix, Ranking.match("telephone", "Téléphone"))
+        assertEquals(Ranking.MatchKind.Prefix, Ranking.match("Pokémon", "Pokemon TCG Pocket"))
+        // An app's name, so it never goes to Jev.
+        assertFalse(SearchBrain.worthAsking("pokemon", listOf("Pokémon GO")))
+        // Hangul stays whole syllables: 칵 is not hidden in 카카오톡's letters.
+        assertEquals(Ranking.MatchKind.Prefix, Ranking.match("카카", "카카오톡"))
+        assertNull(Ranking.match("칵", "카카오톡"))
     }
 
     @Test
@@ -87,6 +108,36 @@ class RankingTest {
     }
 
     @Test
+    fun drawer_oldOpensStayInTheAToZTail() {
+        val now = noon
+        val launches = mapOf("com.zulu" to listOf(now - 40 * Ranking.DAY_MS))
+        val labeled = listOf(
+            "com.zulu" to "Zulu",
+            "com.alpha" to "Alpha",
+            "com.beta" to "Beta",
+        )
+        val order = Ranking.orderDrawer(labeled, rail = emptySet(), launches, now)
+        assertEquals(listOf("com.alpha", "com.beta", "com.zulu"), order)
+    }
+
+    @Test
+    fun drawer_aToZFollowsThePhonesLanguage() {
+        val before = Locale.getDefault()
+        Locale.setDefault(Locale.GERMAN)
+        try {
+            val labeled = listOf(
+                "com.zoom" to "Zoom",
+                "com.aerzte" to "Ärzte",
+                "com.bahn" to "Bahn",
+            )
+            val order = Ranking.orderDrawer(labeled, rail = emptySet(), launches = emptyMap(), now = noon)
+            assertEquals(listOf("com.aerzte", "com.bahn", "com.zoom"), order)
+        } finally {
+            Locale.setDefault(before)
+        }
+    }
+
+    @Test
     fun homeApps_detectsOneUiAndNova() {
         assertTrue(HomeApps.packageLooksLikeLauncher("com.sec.android.app.launcher"))
         assertTrue(HomeApps.packageLooksLikeLauncher("com.teslacoilsw.launcher"))
@@ -117,7 +168,7 @@ class RankingTest {
     }
 
     @Test
-    fun rankForRail_skipsHidden() {
+    fun drawer_hidesHiddenEvenWhenMostUsed() {
         val now = noon
         val apps = listOf(
             "com.chat" to "Chat",
@@ -135,25 +186,58 @@ class RankingTest {
     }
 
     @Test
-    fun drawer_hidesHiddenPackages() {
-        val now = noon
-        val order = Ranking.orderDrawer(
-            labeled = listOf("com.chat" to "Chat", "com.hidden" to "Hidden"),
-            rail = emptySet(),
-            launches = emptyMap(),
-            now = now,
-            hide = setOf("com.hidden"),
+    fun combinedLaunches_systemOpensAreTheRecord() {
+        val day = Ranking.DAY_MS
+        val local = mapOf(
+            // Launched from Folio 20 days ago and yesterday.
+            "a" to listOf(noon - 20 * day, noon - day),
+            "c" to listOf(noon - 2 * day),
         )
-        assertEquals(listOf("com.chat"), order)
+        val extra = mapOf(
+            // The system logged yesterday's launch as the app resumed; it keeps nine days.
+            "a" to listOf(noon - day + 300),
+            "b" to listOf(noon - 9 * day),
+        )
+        val merged = Ranking.combinedLaunches(local, extra, readAt = noon)
+        // Yesterday counts once; the 20-day launch is older than anything the system kept.
+        assertEquals(listOf(noon - 20 * day, noon - day + 300), merged["a"])
+        assertEquals(listOf(noon - 9 * day), merged["b"])
+        // Nothing from the system for c: Folio's own launches still count.
+        assertEquals(listOf(noon - 2 * day), merged["c"])
+        // No usage access: only launches from Folio.
+        assertEquals(local, Ranking.combinedLaunches(local, emptyMap(), readAt = 0L))
     }
 
     @Test
-    fun combinedLaunches_mergesDistinct() {
-        val local = mapOf("a" to listOf(1L, 2L))
-        val extra = mapOf("a" to listOf(2L, 3L), "b" to listOf(9L))
-        val merged = Ranking.combinedLaunches(local, extra)
-        assertEquals(listOf(1L, 2L, 3L), merged["a"])
-        assertEquals(listOf(9L), merged["b"])
+    fun combinedLaunches_aLaunchSinceTheLastReadCountsOnce() {
+        val day = Ranking.DAY_MS
+        val hour = 3_600_000L
+        // Read at noon: the system had an open nine days ago and Folio's launch an hour ago.
+        val extra = mapOf("w" to listOf(noon - 9 * day, noon - hour + 300))
+        // Folio launched it an hour ago, and again 20 s after the read; the next read is a minute away.
+        val local = mapOf("w" to listOf(noon - hour, noon + 20_000))
+        assertEquals(
+            listOf(noon - 9 * day, noon - hour + 300, noon + 20_000),
+            Ranking.combinedLaunches(local, extra, readAt = noon)["w"],
+        )
+        // The next read has that launch too (the app resumed 300 ms later): still once.
+        val reread = mapOf("w" to listOf(noon - 9 * day, noon - hour + 300, noon + 20_300))
+        assertEquals(reread["w"], Ranking.combinedLaunches(local, reread, readAt = noon + 61_000)["w"])
+    }
+
+    @Test
+    fun defaultApps_preferThePhonesDefault() {
+        val known = listOf("com.google.android.apps.messaging", "com.samsung.android.messaging")
+        val installed = known.toSet()
+        // Samsung Messages is the default SMS app: it, not the first known one.
+        assertEquals(
+            "com.samsung.android.messaging",
+            DefaultApps.choose(installed, "com.samsung.android.messaging", known),
+        )
+        // No default (the system chooser, "android") or nothing resolved: the first known one.
+        assertEquals("com.google.android.apps.messaging", DefaultApps.choose(installed, "android", known))
+        assertEquals("com.google.android.apps.messaging", DefaultApps.choose(installed, null, known))
+        assertNull(DefaultApps.choose(emptySet(), "com.samsung.android.messaging", known))
     }
 
     private fun slot(pkg: String, pinned: Boolean = false) = SlotPref(pkg, "$pkg.Main", pinned)

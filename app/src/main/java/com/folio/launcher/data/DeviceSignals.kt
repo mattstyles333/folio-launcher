@@ -1,5 +1,7 @@
 package com.folio.launcher.data
 
+import android.app.ActivityOptions
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -86,19 +88,18 @@ class DeviceSignals(private val context: Context) {
     fun previous() = transportOrKey(MediaController.TransportControls::skipToPrevious, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
 
     fun playPause(host: Context = app) {
-        val controls = controller?.transportControls
-        val state = controller?.playbackState?.state
-        if (controls != null && playingOrPaused(state)) {
-            if (state == PlaybackState.STATE_PLAYING) controls.pause() else controls.play()
-            return
+        val c = controller
+        when (playTap(c?.playbackState)) {
+            PlayTap.Pause -> c?.transportControls?.pause()
+            PlayTap.Play -> c?.transportControls?.play()
+            PlayTap.StartSpotify -> startSpotify(host)
         }
-        startSpotify(host)
     }
 
     fun openSession(host: Context = app): Boolean {
         val sent = controller?.sessionActivity?.let { pi ->
             runCatching {
-                pi.send()
+                sendFromHome(pi)
                 true
             }.getOrDefault(false)
         } ?: false
@@ -108,12 +109,39 @@ class DeviceSignals(private val context: Context) {
         return launchPlayer(host, pkg)
     }
 
-    private fun startSpotify(host: Context) {
-        dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-        sendMediaButton(host, KeyEvent.KEYCODE_MEDIA_PLAY)
-        if (!launchPlayer(host, SPOTIFY_PACKAGE)) {
-            dispatchKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+    /**
+     * Since Android 14 a PendingIntent starts its activity only if the sender opts in, and send()
+     * reports success either way. Folio, the visible home screen, opts in.
+     */
+    private fun sendFromHome(pi: PendingIntent) {
+        if (Build.VERSION.SDK_INT < 34) {
+            pi.send()
+            return
         }
+        @Suppress("DEPRECATION")
+        val mode = if (Build.VERSION.SDK_INT >= 36) {
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE
+        } else {
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+        }
+        pi.send(ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(mode).toBundle())
+    }
+
+    /**
+     * Straight to Spotify's own session when Folio can see one, in any state. Never a system-wide
+     * PLAY: that resumes whichever app played last, which may not be Spotify.
+     */
+    private fun startSpotify(host: Context) {
+        val session = spotifySession()
+        if (session != null && runCatching { session.transportControls.play() }.isSuccess) return
+        sendMediaButton(host, KeyEvent.KEYCODE_MEDIA_PLAY)
+        launchPlayer(host, SPOTIFY_PACKAGE)
+    }
+
+    private fun spotifySession(): MediaController? {
+        if (!listenerEnabled()) return null
+        return runCatching { sessions.getActiveSessions(listenerName) }.getOrDefault(emptyList())
+            .firstOrNull { it.packageName.contains("spotify", ignoreCase = true) }
     }
 
     private fun sendMediaButton(host: Context, code: Int) {
@@ -189,8 +217,8 @@ class DeviceSignals(private val context: Context) {
     }
 
     private fun pick(list: List<MediaController>): MediaController? {
-        val playing = list.filter { it.playbackState?.state == PlaybackState.STATE_PLAYING }
-        val paused = list.filter { playingOrPaused(it.playbackState?.state) }
+        val playing = list.filter { it.playbackState?.isActive == true }
+        val paused = list.filter { it.playbackState?.state == PlaybackState.STATE_PAUSED }
         return playing.firstOrNull { it.packageName.contains("spotify", ignoreCase = true) }
             ?: playing.firstOrNull()
             ?: paused.firstOrNull { it.packageName.contains("spotify", ignoreCase = true) }
@@ -210,7 +238,7 @@ class DeviceSignals(private val context: Context) {
     }
 
     private fun publish() {
-        _musicPlaying.value = controller?.playbackState?.state == PlaybackState.STATE_PLAYING
+        _musicPlaying.value = controller?.playbackState?.isActive == true
     }
 
     private fun readBattery(intent: Intent) {
@@ -223,11 +251,21 @@ class DeviceSignals(private val context: Context) {
     private fun listenerEnabled(): Boolean =
         app.packageName in NotificationManagerCompat.getEnabledListenerPackages(app)
 
+    /** What a tap on play does. */
+    internal enum class PlayTap { Pause, Play, StartSpotify }
+
     companion object {
         private const val SPOTIFY_PACKAGE = "com.spotify.music"
 
-        private fun playingOrPaused(state: Int?): Boolean {
-            return state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_PAUSED
+        /**
+         * Pause anything under way (buffering, connecting and skipping too, not just playing),
+         * resume a paused player, otherwise start Spotify.
+         */
+        internal fun playTap(state: PlaybackState?): PlayTap = when {
+            state == null -> PlayTap.StartSpotify
+            state.isActive -> PlayTap.Pause
+            state.state == PlaybackState.STATE_PAUSED -> PlayTap.Play
+            else -> PlayTap.StartSpotify
         }
     }
 }

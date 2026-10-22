@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,7 +25,15 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.folio.launcher.ui.PrintInk
 
@@ -44,19 +53,22 @@ fun PlaybackStrip(
         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         action()
     }
-    Row(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SkipButton(onClick = { tap(onPrevious) }) { prevGlyph(ink) }
-        PlayPauseButton(
-            playing = playing,
-            ink = ink,
-            onPlayPause = { tap(onPlayPause) },
-            onOpen = { tap(onOpen) },
-        )
-        SkipButton(onClick = { tap(onNext) }) { nextGlyph(ink) }
+    // Transport controls follow the tape, not the reading direction: never mirror them.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Row(
+            modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SkipButton(label = "Previous track", onClick = { tap(onPrevious) }) { prevGlyph(ink) }
+            PlayPauseButton(
+                playing = playing,
+                ink = ink,
+                onPlayPause = { tap(onPlayPause) },
+                onOpen = { tap(onOpen) },
+            )
+            SkipButton(label = "Next track", onClick = { tap(onNext) }) { nextGlyph(ink) }
+        }
     }
 }
 
@@ -70,6 +82,19 @@ private fun PlayPauseButton(
     Canvas(
         Modifier
             .size(52.dp)
+            // The taps below are pointer input only: TalkBack, Switch Access and Voice Access act here.
+            .semantics {
+                contentDescription = if (playing) "Pause" else "Play"
+                role = Role.Button
+                onClick {
+                    onPlayPause()
+                    true
+                }
+                onLongClick(label = "Open player") {
+                    onOpen()
+                    true
+                }
+            }
             .pointerInput(playing) {
                 detectTapGestures(
                     onLongPress = { onOpen() },
@@ -83,15 +108,18 @@ private fun PlayPauseButton(
 
 @Composable
 private fun SkipButton(
+    label: String,
     onClick: () -> Unit,
     glyph: DrawScope.() -> Unit,
 ) {
     Canvas(
         Modifier
             .size(48.dp)
+            .semantics { contentDescription = label }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                role = Role.Button,
                 onClick = onClick,
             ),
     ) { glyph() }

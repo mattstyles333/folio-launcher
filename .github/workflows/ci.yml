@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -37,13 +37,3 @@ jobs:
       # Build only: tests and lint run locally before every merge (user, 2026-10-14).
       - name: Assemble debug
         run: ./gradlew assembleDebug --no-daemon
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: reports
-          path: |
-            app/build/reports/tests/
-            app/build/reports/lint-results-debug.html
-            hermes-live/hermes/build/reports/tests/
-          if-no-files-found: ignore

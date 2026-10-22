@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,8 @@ import androidx.compose.ui.unit.sp
 import com.folio.launcher.data.BrainStatus
 import com.folio.launcher.data.HomeUiState
 import com.folio.launcher.data.LaunchableApp
+import com.folio.launcher.data.PrintController
+import com.folio.launcher.data.Ranking
 import com.folio.launcher.hermes.HermesAvailability
 import com.folio.launcher.search.AppPicker
 import com.folio.launcher.ui.PrintInk
@@ -63,6 +66,8 @@ fun SettingsScreen(
     onCycleAi: () -> Unit,
     onSetOpenRouterKey: (String) -> Boolean,
     onClearOpenRouterKey: () -> Unit,
+    /** Out of credit, tapped with no new key on the clipboard (topped up since): try the saved key again. */
+    onRetryOpenRouterKey: () -> Unit = {},
     onOpenHermesLive: () -> Unit = {},
     onRefreshHermes: () -> Unit = {},
 ) {
@@ -70,16 +75,35 @@ fun SettingsScreen(
     LaunchedEffect(Unit) { onRefreshHermes() }
     var hiddenOpen by remember { mutableStateOf(false) }
     var keyMissing by remember { mutableStateOf(false) }
+    // A pasted key leaves the clipboard once it's saved, not before: one OpenRouter refuses, or a
+    // check cut short, stays there to paste again (OpenRouter shows a key only once).
+    var pendingKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.brain) {
+        val key = pendingKey ?: return@LaunchedEffect
+        when (state.brain) {
+            BrainStatus.Checking -> Unit
+            BrainStatus.Ready, BrainStatus.Unverified -> {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                val clip = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()?.trim()
+                // Only while the clip is still that key: anything copied since stays.
+                if (clip == key) clipboard.clearPrimaryClip()
+                pendingKey = null
+            }
+            else -> pendingKey = null
+        }
+    }
     val hiddenApps = remember(state.apps, state.hiddenPackages) {
         state.apps.filter { it.packageName in state.hiddenPackages }
             .distinctBy { it.packageName }
-            .sortedBy { it.label.lowercase() }
+            .sortedWith(compareBy(Ranking.labelOrder()) { it.label })
     }
     BackHandler(enabled = !hiddenOpen, onBack = onBack)
     Box(Modifier.fillMaxSize().background(VoidBlack)) {
     Column(
         Modifier
             .fillMaxSize()
+            // Under the Hidden apps picker the rows are out of reach for TalkBack and Switch Access too.
+            .then(if (hiddenOpen) Modifier.clearAndSetSemantics { } else Modifier)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 24.dp, vertical = 28.dp),
@@ -97,32 +121,25 @@ fun SettingsScreen(
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SettingsRow("Choose photo", "Replace the print") { onPickPhoto() }
+            // The picker comes back here, not to the clock, so a photo that can't be read says so here.
+            SettingsRow(
+                "Choose photo",
+                state.wallpaperCaption.takeIf { it == PrintController.PHOTO_FAILED } ?: "Replace the print",
+            ) { onPickPhoto() }
             SettingsRow("Bing print", "Double-tap the print for the next one") { onNextBing() }
             if (state.hasPreviousPrint) {
                 SettingsRow("Previous print", "The one before this") { onPreviousPrint() }
             }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("Show clock", color = PrintInk, fontSize = 16.sp)
-                    Text("Time and date", color = PrintInk.copy(0.4f), fontSize = 12.sp)
-                }
-                Switch(
-                    checked = state.showClock,
-                    onCheckedChange = onShowClock,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = VoidBlack,
-                        checkedTrackColor = state.accent,
-                        uncheckedTrackColor = Color.White.copy(alpha = 0.15f),
-                    ),
-                )
-            }
+            // Hidden, the clock's invisible slot is the way into Settings: say so where it's switched off.
+            SwitchRow(
+                "Show clock",
+                if (state.showClock) "Time and date" else "Long-press where the clock was for Settings",
+                state.showClock,
+                state.accent,
+                enabled = true,
+                tag = "showClock",
+                onChange = onShowClock,
+            )
             SwitchRow(
                 "Diagnostics",
                 if (state.diagnosticsBuiltIn) DIAGNOSTICS_PRIVACY else "This build has no diagnostics endpoint; nothing is sent.",
@@ -167,6 +184,7 @@ fun SettingsScreen(
                         BrainStatus.Ready -> "Search and quotes ask Jev; DeepSeek answers. Hold to remove the key."
                         BrainStatus.Unverified -> "Key saved. OpenRouter didn’t answer. Hold to remove."
                         BrainStatus.Rejected -> "OpenRouter refused that key. Copy another, then tap."
+                        BrainStatus.NoCredit -> "OpenRouter says the key is out of credit or over its limit. Top up or raise it, then tap."
                     }
                 },
                 onLongClick = if (state.brain == BrainStatus.Off) {
@@ -178,9 +196,17 @@ fun SettingsScreen(
                     }
                 },
             ) {
-                val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-                val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-                keyMissing = !onSetOpenRouterKey(text)
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                // The clip's own text only: coerceToText reads a URI clip's whole stream on the main thread.
+                val text = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString().orEmpty()
+                val pasted = onSetOpenRouterKey(text)
+                // Out of credit and no new key: the saved one, after a top-up.
+                val retried = !pasted && state.brain == BrainStatus.NoCredit
+                if (retried) onRetryOpenRouterKey()
+                // A second tap while a key is being checked isn't a missing key.
+                keyMissing = !pasted && !retried && state.brain != BrainStatus.Checking
+                // Cleared from the clipboard once the check has saved it (above): the key lives only in Prefs then.
+                if (pasted) pendingKey = text.trim()
             }
             SettingsRow(
                 "Hidden apps",
@@ -207,7 +233,9 @@ fun SettingsScreen(
                 if (state.hasNowPlayingAccess) {
                     "Previous, play, next above the four icons. Play starts Spotify."
                 } else {
-                    "Allow notification access so Folio can see what’s playing"
+                    // Android 13+ greys the switch out for an APK installed from a browser or file manager.
+                    "Allow notification access so Folio can see what’s playing. Switch greyed out? " +
+                        "Settings › Apps › Folio › ⋮ › Allow restricted settings."
                 },
             ) {
                 context.startActivity(
@@ -252,7 +280,9 @@ fun SettingsScreen(
     }
 }
 
-const val DIAGNOSTICS_PRIVACY = "Crash reports and errors only. Never what you say, Hermes's answers, or sign-in details."
+const val DIAGNOSTICS_PRIVACY =
+    "Crashes, errors and start-up time, with app version, phone model, Android version and a random install ID. " +
+        "Never what you type or say, answers, or sign-in details."
 
 @Composable
 private fun SwitchRow(

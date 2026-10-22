@@ -69,8 +69,8 @@ fun WallpaperLayer(
     val grain = remember(resources) {
         BitmapFactory.decodeResource(resources, R.drawable.grain).asImageBitmap()
     }
-    val halfColor = remember { ColorFilter.colorMatrix(saturationMatrix(0.5f)) }
-    val blackWhite = remember { ColorFilter.colorMatrix(saturationMatrix(0f)) }
+    val halfColor = remember { ColorFilter.colorMatrix(saturationMatrix(RingerVisual.Vibrate.saturation())) }
+    val blackWhite = remember { ColorFilter.colorMatrix(saturationMatrix(RingerVisual.Silent.saturation())) }
     val developing = reveal?.takeIf { it.progress > 0.001f }
     Box(modifier.fillMaxSize().background(VoidBlack)) {
         if (developing != null) {
@@ -267,6 +267,15 @@ private fun farthestCorner(origin: Offset, size: Size): Float {
     return hypot(dx, dy)
 }
 
+/**
+ * Parallax [shift] kept inside the overhang that [scale] (about the centre) leaves past each edge
+ * of [extent]: past it a hard tilt shows the black behind the print, at any density or zoom.
+ */
+internal fun printShift(shift: Float, extent: Float, scale: Float): Float {
+    val overhang = ((scale - 1f) / 2f * extent).coerceAtLeast(0f)
+    return shift.coerceIn(-overhang, overhang)
+}
+
 @Composable
 private fun GradedPrint(
     photo: ImageBitmap?,
@@ -284,10 +293,10 @@ private fun GradedPrint(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            translationX = parallax?.x ?: 0f
-                            translationY = parallax?.y ?: 0f
                             scaleX = 1.08f
                             scaleY = 1.08f
+                            translationX = printShift(parallax?.x ?: 0f, size.width, scaleX)
+                            translationY = printShift(parallax?.y ?: 0f, size.height, scaleY)
                         },
                     contentScale = ContentScale.Crop,
                     colorFilter = filter,
@@ -349,6 +358,13 @@ private fun FallbackGradient(accent: Color) {
                 ),
             ),
     )
+}
+
+/** The ringer's grade: full colour, half, grey. The print and the app icons both take it from here. */
+fun RingerVisual.saturation(): Float = when (this) {
+    RingerVisual.Sound -> 1f
+    RingerVisual.Vibrate -> 0.5f
+    RingerVisual.Silent -> 0f
 }
 
 private fun saturationMatrix(amount: Float): ColorMatrix {

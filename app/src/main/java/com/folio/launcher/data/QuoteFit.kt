@@ -9,7 +9,7 @@ import kotlinx.serialization.json.putJsonObject
 object QuoteFit {
     const val SHORTLIST = 60
 
-    /** Coprime to the bank's size (872), so the shortlist spreads across every theme. */
+    /** Step through the bank; raised until coprime to its size, so the shortlist spreads across every theme. */
     private const val STRIDE = 97
     internal const val QUESTION = "quote"
 
@@ -17,8 +17,12 @@ object QuoteFit {
     fun shortlist(size: Int, epochDay: Int, salt: Int, n: Int = SHORTLIST): List<Int> {
         if (size <= 0) return emptyList()
         val start = (epochDay * 13 + salt).mod(size)
-        return (0 until minOf(n, size)).map { (start + it * STRIDE).mod(size) }.distinct()
+        // A fixed 97 cycled after nine quotes in a bank of 873 (9 × 97).
+        val step = generateSequence(STRIDE) { it + 1 }.first { gcd(it, size) == 1 }
+        return (0 until minOf(n, size)).map { (start + it * step).mod(size) }.distinct()
     }
+
+    private tailrec fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
 
     /** Bing's title and what its credit line says the photo is, without the photographer. */
     fun describe(title: String, credit: String): String {

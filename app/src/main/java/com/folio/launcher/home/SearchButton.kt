@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -24,6 +23,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -38,11 +39,21 @@ fun SearchButton(
 ) {
     Row(
         modifier
-            .systemGestureExclusion()
             .minimumInteractiveComponentSize()
-            .semantics {
+            // The taps below are pointer input only: TalkBack, Switch Access and Voice Access act here.
+            .semantics(mergeDescendants = true) {
                 contentDescription = "Search"
                 role = Role.Button
+                onClick(action = {
+                    onClick()
+                    true
+                })
+                if (onLongPress != null) {
+                    onLongClick(label = "Ask") {
+                        onLongPress()
+                        true
+                    }
+                }
             }
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White.copy(alpha = 0.16f))

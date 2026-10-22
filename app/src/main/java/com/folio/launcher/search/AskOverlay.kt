@@ -81,6 +81,8 @@ fun AskOverlay(
                 .pointerInput(Unit) {
                     var total = 0f
                     detectVerticalDragGestures(
+                        // Each drag on its own: small nudges must not add up to a dismiss.
+                        onDragStart = { total = 0f },
                         onDragEnd = { if (total > 80f) onDismiss() },
                         onVerticalDrag = { _, dy -> total += dy },
                     )

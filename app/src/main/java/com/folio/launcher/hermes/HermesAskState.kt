@@ -100,6 +100,21 @@ object HermesAskReducer {
         },
     )
 
+    /** Back after [closed] with that turn still going: running again, its partial reply kept until Completed. */
+    fun resumed(state: HermesAskState, id: Long): HermesAskState =
+        state.copy(working = "Hermes is still answering…").edit(id) { it.copy(status = ExchangeStatus.Running, note = null) }
+
+    /** Stop couldn't reach Hermes: exchange [id] stops, but only while it is still the one running. */
+    fun stopped(state: HermesAskState, id: Long?): HermesAskState {
+        if (state.exchanges.none { it.id == id && it.status == ExchangeStatus.Running }) return state
+        return state.copy(
+            working = null,
+            exchanges = state.exchanges.map {
+                if (it.id == id) it.copy(status = ExchangeStatus.Stopped, note = "Stopped.") else it
+            },
+        )
+    }
+
     fun request(state: HermesAskState, request: ApprovalRequest): HermesAskState = state.copy(approval = request)
 
     fun request(state: HermesAskState, request: ClarifyRequest): HermesAskState = state.copy(clarify = request)
@@ -116,7 +131,12 @@ object HermesAskReducer {
         } else {
             "Hermes turned the connection down. Try again later."
         }
-        is GatewayConnection.Waiting -> if (connection.attempt >= 2) "Can’t reach Hermes. Trying again…" else null
+        // Off the tailnet the gateway waits for Tailscale: say so, whatever the attempt.
+        is GatewayConnection.Waiting -> when {
+            connection.reason == LiveTokenProvider.TAILNET -> LiveTokenProvider.TAILNET
+            connection.attempt >= 2 -> "Can’t reach Hermes. Trying again…"
+            else -> null
+        }
         else -> null
     }
 

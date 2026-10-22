@@ -12,9 +12,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
@@ -39,13 +39,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -68,7 +72,6 @@ import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.search.AskOverlay
 import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.search.SearchOverlay
-import com.folio.launcher.ui.ChargeGreen
 import com.folio.launcher.ui.PrintInk
 import com.folio.launcher.ui.VoidBlack
 import kotlin.math.abs
@@ -108,6 +111,8 @@ fun HomeScreen(
     onSearchRoute: (SearchRoute, String) -> Unit = { _, _ -> },
     hermes: HermesAskState = HermesAskState(),
     hermesActions: HermesAskActions = HermesAskActions(),
+    /** Swipe down on idle: the notification shade, unless a test listens in. */
+    onExpandShade: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -155,6 +160,9 @@ fun HomeScreen(
         query = ""
         askQuery = ""
         pinSlot = -1
+        // snapTo cancels a develop mid-way, before it lets go of the look and its name.
+        lookOverride = null
+        flashLook = false
         revealTarget = null
         revealProgress.snapTo(0f)
         pull.cancelSettle()
@@ -221,7 +229,7 @@ fun HomeScreen(
             maxPx = maxSheetPx,
             onGrab = { grabSheet() },
             onSettle = { settleSheet(it) },
-            onSwipeDownShade = { StatusShade.expand(context) },
+            onSwipeDownShade = { if (onExpandShade != null) onExpandShade() else StatusShade.expand(context) },
         )
 
         fun collapse() {
@@ -249,7 +257,8 @@ fun HomeScreen(
             scope.launch {
                 revealProgress.snapTo(0f)
                 revealProgress.animateTo(1f, developSpec())
-                lookOverride = next
+                // The ringer already reads `next`: from here the hardware drives the look again.
+                lookOverride = null
                 revealTarget = null
                 revealProgress.snapTo(0f)
                 delay(1100)
@@ -284,9 +293,9 @@ fun HomeScreen(
 
         val targetLook = revealTarget
         val iconSat = if (targetLook != null) {
-            lerp(look.iconSaturation(), targetLook.iconSaturation(), revealProgress.value)
+            lerp(look.saturation(), targetLook.saturation(), revealProgress.value)
         } else {
-            look.iconSaturation()
+            look.saturation()
         }
 
         val parallax = rememberParallax(
@@ -308,19 +317,59 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
+        // The scrim under the sheet is drawn, not layered: a layer's alpha filled a full-screen
+        // offscreen buffer every frame the sheet was open. pull.px is still read only in draw.
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer {
+                .drawBehind {
                     val open = if (maxSheetPx <= 0f) 0f else (pull.px / maxSheetPx).coerceIn(0f, 1f)
-                    alpha = open * 0.38f
-                }
-                .background(Color.Black),
+                    if (open > 0f) drawRect(Color.Black, alpha = open * 0.38f)
+                },
         )
+
+        // The print's gestures are pointer input only. Assistive tech gets the everyday ones as
+        // actions, on the gestures' own guards, while the print is home's to touch.
+        val printActions = if (gesturesEnabled && !pull.showing) {
+            val center = Offset(constraints.maxWidth / 2f, constraints.maxHeight / 2f)
+            listOf(
+                CustomAccessibilityAction("Next print") {
+                    if (pull.px < 8f) {
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        onNextBing()
+                    }
+                    true
+                },
+                CustomAccessibilityAction("Set ringer to ${look.nextRinger().label()}") {
+                    cycleRingerFrom(center)
+                    true
+                },
+                CustomAccessibilityAction(if (state.aiLabel.isEmpty()) "Ask" else "Ask ${state.aiLabel}") {
+                    if (pull.px < 8f) openAsk()
+                    true
+                },
+                CustomAccessibilityAction("Open Settings") {
+                    onOpenSettings()
+                    true
+                },
+            )
+        } else {
+            emptyList()
+        }
 
         Box(
             Modifier
                 .fillMaxSize()
+                .then(
+                    if (printActions.isEmpty()) {
+                        Modifier
+                    } else {
+                        Modifier.semantics {
+                            contentDescription = "Print"
+                            customActions = printActions
+                        }
+                    },
+                )
                 .then(sheetDrag())
                 .detectPrintSwipe(
                     enabled = gesturesEnabled,
@@ -347,44 +396,78 @@ fun HomeScreen(
                     },
                     onTripleTap = { if (pull.px < 8f) openAsk() },
                 )
-                .pointerInput(gesturesEnabled, look) {
-                    if (!gesturesEnabled) return@pointerInput
-                    detectTapGestures(
-                        onLongPress = { origin -> cycleRingerFrom(origin) },
-                    )
-                },
+                .detectPrintHold(
+                    enabled = gesturesEnabled,
+                    onHold = { origin -> cycleRingerFrom(origin) },
+                ),
         )
 
-        if (!searchOpen &&
-            !askOpen &&
-            state.onboarding == null &&
-            (state.showClock || state.wallpaperCaption.isNotEmpty() || developing || flashLook || state.quote.isNotEmpty())
+        val hint = when {
+            state.silentHint &&
+                state.mode == RingerVisual.Silent &&
+                state.onboarding == null &&
+                !searchOpen &&
+                !askOpen &&
+                !pull.showing ->
+                "Tap to let Silent mute the ringer." to onSilentHint
+            state.mediaHint &&
+                state.onboarding == null &&
+                !searchOpen &&
+                !askOpen &&
+                !pull.showing ->
+                "Tap so Folio can see what’s playing." to onMediaHint
+            else -> null
+        }
+        // The hint stacks under the clock: on the clock's own top anchor it covered the quote.
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ClockCluster(
-                showClock = state.showClock,
-                dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
-                showCharge = chargeHairlineVisible(state.charging, state.charge),
-                charge = state.charge,
-                chargeColor = if (state.charging && namedLook == RingerVisual.Sound) ChargeGreen else PrintInk,
-                quote = state.quote,
-                quoteAuthor = state.quoteAuthor,
-                lookName = if (developing || flashLook) namedLook.label() else null,
-                caption = state.wallpaperCaption,
-                captionBusy = state.wallpaperBusy,
-                onClockTap = { },
-                onClockLongPress = onOpenSettings,
-                onPrintLongPress = { cycleRingerFrom(it) },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                    .padding(top = (paneHeight * 0.045f).coerceIn(18.dp, 32.dp))
-                    .graphicsLayer {
-                        val span = (maxSheetPx - peekSheetPx).coerceAtLeast(1f)
-                        val pastPeek = ((pull.px - peekSheetPx) / span).coerceIn(0f, 1f)
-                        alpha = 1f - pastPeek * 0.92f
-                        translationY = -pastPeek * 18f
-                    },
-            )
+            // Composed whenever home is idle: with Show clock off, the clock's slot is still the way into Settings.
+            if (!searchOpen && !askOpen && state.onboarding == null) {
+                ClockCluster(
+                    showClock = state.showClock,
+                    dimClock = namedLook == RingerVisual.Silent && (!developing || revealProgress.value > 0.45f),
+                    showCharge = chargeHairlineVisible(state.charging, state.charge),
+                    charge = state.charge,
+                    chargeColor = chargeOvalColor(state.charging, namedLook),
+                    quote = state.quote,
+                    quoteAuthor = state.quoteAuthor,
+                    lookName = if (developing || flashLook) namedLook.label() else null,
+                    caption = state.wallpaperCaption,
+                    captionBusy = state.wallpaperBusy,
+                    onClockTap = { },
+                    onClockLongPress = onOpenSettings,
+                    onPrintLongPress = { cycleRingerFrom(it) },
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                        .padding(top = (paneHeight * 0.045f).coerceIn(18.dp, 32.dp))
+                        .graphicsLayer {
+                            val span = (maxSheetPx - peekSheetPx).coerceAtLeast(1f)
+                            val pastPeek = ((pull.px - peekSheetPx) / span).coerceIn(0f, 1f)
+                            alpha = 1f - pastPeek * 0.92f
+                            translationY = -pastPeek * 18f
+                        },
+                )
+            }
+            hint?.let { (text, action) ->
+                Box(
+                    Modifier
+                        .padding(top = 10.dp, start = 20.dp, end = 20.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(VoidBlack.copy(alpha = 0.75f))
+                        .clickable(onClick = action)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text,
+                        color = PrintInk.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
         }
 
         Box(
@@ -395,6 +478,28 @@ fun HomeScreen(
                     WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal),
                 ),
         ) {
+            // Under the dock: once the sheet rises over the faded strip, taps there are for the apps.
+            // Under an overlay (the pin picker too) there is no strip, so TalkBack can't reach it either.
+            if (state.onboarding == null && !searchOpen && !askOpen && pinSlot < 0) {
+                val namedLook = targetLook ?: look
+                PlaybackStrip(
+                    playing = state.musicPlaying,
+                    dim = namedLook == RingerVisual.Silent,
+                    onPrevious = onPreviousTrack,
+                    onPlayPause = onPlayPause,
+                    onNext = onSkipTrack,
+                    onOpen = onOpenPlayer,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(bottom = 156.dp)
+                        .graphicsLayer {
+                            val cover = if (peekSheetPx <= 0f) 0f else (pull.px / peekSheetPx).coerceIn(0f, 1f)
+                            alpha = 1f - cover * 0.95f
+                            translationY = cover * 28f
+                        },
+                )
+            }
             ExpandingDock(
                 pull = pull,
                 maxSheetPx = maxSheetPx,
@@ -417,32 +522,14 @@ fun HomeScreen(
                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                     onHideApp(app)
                 },
+                // Under an overlay a tap on the dock is the overlay's; so is TalkBack's.
+                accessibilityActions = gesturesEnabled,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(bottom = 64.dp)
                     .then(if (pull.locked) Modifier else sheetDrag()),
             )
-            if (state.onboarding == null && !searchOpen && !askOpen) {
-                val namedLook = targetLook ?: look
-                PlaybackStrip(
-                    playing = state.musicPlaying,
-                    dim = namedLook == RingerVisual.Silent,
-                    onPrevious = onPreviousTrack,
-                    onPlayPause = onPlayPause,
-                    onNext = onSkipTrack,
-                    onOpen = onOpenPlayer,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(bottom = 156.dp)
-                        .graphicsLayer {
-                            val cover = if (peekSheetPx <= 0f) 0f else (pull.px / peekSheetPx).coerceIn(0f, 1f)
-                            alpha = 1f - cover * 0.95f
-                            translationY = cover * 28f
-                        },
-                )
-            }
             if (state.onboarding == null) {
                 SearchButton(
                     onClick = { if (!searchOpen && !askOpen && pinSlot < 0) openSearch() },
@@ -576,6 +663,7 @@ fun HomeScreen(
                     hasUsageAccess = state.hasUsageAccess,
                     hasNowPlayingAccess = state.hasNowPlayingAccess,
                     wallpaperBusy = state.wallpaperBusy,
+                    wallpaperCaption = state.wallpaperCaption,
                     onSetDefault = onSetDefault,
                     onSkipRole = onSkipRole,
                     onPickPhoto = onPickPhoto,
@@ -584,41 +672,6 @@ fun HomeScreen(
                     onSkipWallpaper = onSkipWallpaper,
                     onAllowAccess = onOpenDnd,
                     onSkipAccess = onSkipAccess,
-                )
-            }
-        }
-
-        val hint = when {
-            state.silentHint &&
-                state.mode == RingerVisual.Silent &&
-                state.onboarding == null &&
-                !searchOpen &&
-                !askOpen &&
-                !pull.showing ->
-                "Tap to let Silent mute the ringer." to onSilentHint
-            state.mediaHint &&
-                state.onboarding == null &&
-                !searchOpen &&
-                !askOpen &&
-                !pull.showing ->
-                "Tap so Folio can see what’s playing." to onMediaHint
-            else -> null
-        }
-        hint?.let { (text, action) ->
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
-                    .padding(top = 10.dp, start = 20.dp, end = 20.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(VoidBlack.copy(alpha = 0.75f))
-                    .clickable(onClick = action)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text,
-                    color = PrintInk.copy(alpha = 0.7f),
-                    fontSize = 12.sp,
                 )
             }
         }
@@ -634,12 +687,6 @@ private fun RingerVisual.nextRinger(): RingerVisual = when (this) {
     RingerVisual.Sound -> RingerVisual.Vibrate
     RingerVisual.Vibrate -> RingerVisual.Silent
     RingerVisual.Silent -> RingerVisual.Sound
-}
-
-private fun RingerVisual.iconSaturation(): Float = when (this) {
-    RingerVisual.Sound -> 1f
-    RingerVisual.Vibrate -> 0.5f
-    RingerVisual.Silent -> 0f
 }
 
 private fun RingerVisual.label(): String = when (this) {

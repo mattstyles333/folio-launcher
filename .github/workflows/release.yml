@@ -88,16 +88,23 @@ jobs:
           APK="folio-${VERSION}.apk"
           cp "$SRC" "$APK"
           sha256sum "$APK" | tee "${APK}.sha256"
+          # R8 renames classes; only this build's map can retrace a diagnostics stack trace.
+          MAPPING="folio-${VERSION}-mapping.txt"
+          cp app/build/outputs/mapping/release/mapping.txt "$MAPPING"
           SIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort | tail -1)"
           "$SIGNER" verify --verbose --print-certs "$APK"
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "mapping=$MAPPING" >> "$GITHUB_OUTPUT"
           LIVE_APK="hermes-live-${{ steps.ver.outputs.live_version }}.apk"
           cp hermes-live/live/build/outputs/apk/release/live-release.apk "$LIVE_APK"
           sha256sum "$LIVE_APK" | tee "${LIVE_APK}.sha256"
+          LIVE_MAPPING="hermes-live-${{ steps.ver.outputs.live_version }}-mapping.txt"
+          cp hermes-live/live/build/outputs/mapping/release/mapping.txt "$LIVE_MAPPING"
           "$SIGNER" verify --verbose --print-certs "$LIVE_APK"
           # Same signer, or Folio can't read Hermes Live's connection.
           test "$("$SIGNER" verify --print-certs "$APK" | grep SHA-256)" = "$("$SIGNER" verify --print-certs "$LIVE_APK" | grep SHA-256)"
           echo "live_apk=$LIVE_APK" >> "$GITHUB_OUTPUT"
+          echo "live_mapping=$LIVE_MAPPING" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -105,8 +112,10 @@ jobs:
           path: |
             folio-${{ steps.ver.outputs.version }}.apk
             folio-${{ steps.ver.outputs.version }}.apk.sha256
+            ${{ steps.pkg.outputs.mapping }}
             ${{ steps.pkg.outputs.live_apk }}
             ${{ steps.pkg.outputs.live_apk }}.sha256
+            ${{ steps.pkg.outputs.live_mapping }}
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -119,5 +128,7 @@ jobs:
             --generate-notes \
             "${{ steps.pkg.outputs.apk }}" \
             "${{ steps.pkg.outputs.apk }}.sha256" \
+            "${{ steps.pkg.outputs.mapping }}" \
             "${{ steps.pkg.outputs.live_apk }}" \
-            "${{ steps.pkg.outputs.live_apk }}.sha256"
+            "${{ steps.pkg.outputs.live_apk }}.sha256" \
+            "${{ steps.pkg.outputs.live_mapping }}"

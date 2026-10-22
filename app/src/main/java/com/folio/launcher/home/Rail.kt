@@ -1,5 +1,6 @@
 package com.folio.launcher.home
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -26,7 +27,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.folio.launcher.data.LaunchableApp
 import com.folio.launcher.data.RailSlot
@@ -43,7 +55,12 @@ fun Rail(
     onReorder: (Int, Int) -> Unit,
     onHide: (LaunchableApp) -> Unit,
     modifier: Modifier = Modifier,
+    /** Open, pin and hide as accessibility actions; off while an overlay covers the rail and takes its taps. */
+    accessibilityActions: Boolean = true,
 ) {
+    val view = LocalView.current
+    // Pointer deltas run left to right; slot order (and offset) follow the layout direction.
+    val dir = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
     var widthPx by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf<Int?>(null) }
     var dragX by remember { mutableFloatStateOf(0f) }
@@ -73,13 +90,37 @@ fun Rail(
                         scaleX = if (isDragging) 1.08f else 1f
                         scaleY = if (isDragging) 1.08f else 1f
                     }
+                    // Tap, hold and swipe are pointer input only: assistive tech gets them as actions.
+                    .semantics(mergeDescendants = true) {
+                        if (!accessibilityActions) return@semantics
+                        if (app != null) {
+                            role = Role.Button
+                            onClick(label = "Open") {
+                                onLaunch(app)
+                                true
+                            }
+                            customActions = listOf(
+                                CustomAccessibilityAction("Hide from home") {
+                                    onHide(app)
+                                    true
+                                },
+                            )
+                        } else {
+                            contentDescription = "Empty slot"
+                        }
+                        onLongClick(label = "Pin") {
+                            onPinRequest(index)
+                            true
+                        }
+                    }
                     .then(if (app != null) Modifier.swipeAwayToHide(app.key) { onHide(app) } else Modifier)
                     .pointerInput(app?.key) {
                         detectTapGestures(onTap = { app?.let(onLaunch) })
                     }
-                    .pointerInput(index, slotWidth) {
+                    .pointerInput(index, slotWidth, dir) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                 dragging = index
                                 origin = index
                                 dragX = 0f
@@ -98,12 +139,13 @@ fun Rail(
                             },
                             onDrag = { change, amount ->
                                 change.consume()
-                                dragX += amount.x
-                                if (abs(dragX) > 8f) moved = true
+                                dragX += amount.x * dir
+                                // A finger rolls a little as it lifts; that is still a hold to pin.
+                                if (abs(dragX) > viewConfiguration.touchSlop) moved = true
                                 val from = dragging ?: index
                                 val target = (origin + (dragX / slotWidth.coerceAtLeast(1f)))
                                     .roundToInt()
-                                    .coerceIn(0, 3)
+                                    .coerceIn(0, slots.lastIndex)
                                 if (target != from && moved) {
                                     onReorder(from, target)
                                     dragging = target
@@ -120,6 +162,7 @@ fun Rail(
                         bitmap = app.icon,
                         contentDescription = app.label,
                         saturation = iconSaturation,
+                        paused = app.paused,
                         modifier = Modifier
                             .size(52.dp)
                             .clip(CircleShape),

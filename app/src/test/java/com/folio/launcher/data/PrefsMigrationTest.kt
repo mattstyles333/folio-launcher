@@ -29,4 +29,16 @@ class PrefsMigrationTest {
         val prefs = Prefs(bingId = "LakeMagadi", bingPrevId = "")
         assertEquals(prefs, prefs.migrated())
     }
+
+    @Test
+    fun oldBlobs_stillRead_withTheFieldsSinceDropped() {
+        // Written before onboardingComplete and dismissedRecents went: nothing reads them now.
+        val old = """{"showClock":false,"onboardingComplete":true,"dismissedRecents":{"com.chat":1700000000000},""" +
+            """"hiddenPackages":["com.hidden"],"bingId":"LakeMagadi"}"""
+        val prefs = PrefsStore.read(old)!!
+        assertFalse(prefs.showClock)
+        assertEquals(listOf("com.hidden"), prefs.hiddenPackages)
+        assertEquals("LakeMagadi", prefs.bingId)
+        assertEquals(emptyList<String>(), prefs.recentBingIds)
+    }
 }

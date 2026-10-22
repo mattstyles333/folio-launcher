@@ -1,10 +1,15 @@
 package com.folio.launcher.data
 
+import java.text.Collator
+import java.text.Normalizer
 import java.time.LocalDate
 import java.time.ZoneId
 
 object Ranking {
     const val DAY_MS = 86_400_000L
+
+    /** How far back an open counts: for ranking, and for how long UsageStore keeps it. */
+    const val USAGE_WINDOW_MS = 30 * DAY_MS
 
     fun startOfDay(now: Long = System.currentTimeMillis()): Long {
         val zone = ZoneId.systemDefault()
@@ -17,7 +22,7 @@ object Ranking {
 
     fun score(timestamps: List<Long>, now: Long = System.currentTimeMillis()): Int {
         val d7 = now - 7 * DAY_MS
-        val d30 = now - 30 * DAY_MS
+        val d30 = now - USAGE_WINDOW_MS
         val today = startOfDay(now)
         var opens7 = 0
         var opens30 = 0
@@ -47,9 +52,9 @@ object Ranking {
     enum class MatchKind { Prefix, WordPrefix, Acronym, Fuzzy }
 
     fun match(query: String, label: String): MatchKind? {
-        val q = query.trim().lowercase()
+        val q = fold(query.trim())
         if (q.isEmpty()) return null
-        val l = label.lowercase()
+        val l = fold(label)
         if (l.startsWith(q)) return MatchKind.Prefix
         val words = l.split(Regex("[\\s._\\-+/]+")).filter { it.isNotEmpty() }
         if (words.any { it.startsWith(q) }) return MatchKind.WordPrefix
@@ -65,6 +70,30 @@ object Ranking {
             if (i < query.length && c == query[i]) i++
         }
         return i == query.length
+    }
+
+    private val MARKS = Regex("\\p{Mn}+")
+
+    /** Lowercase without accents, so "pokemon" finds "Pokémon GO"; NFC keeps Hangul syllables whole. */
+    private fun fold(s: String): String =
+        Normalizer.normalize(
+            Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARKS, ""),
+            Normalizer.Form.NFC,
+        ).lowercase()
+
+    /** Latest open inside the 30-day window; an older one doesn't lift an app out of the A–Z tail. */
+    private fun lastUsed(timestamps: List<Long>, now: Long): Long {
+        val d30 = now - USAGE_WINDOW_MS
+        return timestamps.filter { it >= d30 }.maxOrNull() ?: 0L
+    }
+
+    /**
+     * A–Z in the phone's language: "Ärzte" before "Bahn", not after "Zoom". A new collator for
+     * each sort, since one isn't thread-safe and the language can change.
+     */
+    fun labelOrder(): Comparator<String> {
+        val collator = Collator.getInstance().apply { strength = Collator.SECONDARY }
+        return Comparator<String> { a, b -> collator.compare(a, b) }
     }
 
     fun suggest(
@@ -83,8 +112,8 @@ object Ranking {
         rail.forEach(::take)
         apps.sortedWith(
             compareByDescending<LaunchableApp> { score(launches[it.packageName].orEmpty(), now) }
-                .thenByDescending { launches[it.packageName].orEmpty().maxOrNull() ?: 0L }
-                .thenBy { it.label.lowercase() },
+                .thenByDescending { lastUsed(launches[it.packageName].orEmpty(), now) }
+                .thenBy(labelOrder()) { it.label },
         ).forEach(::take)
         return out
     }
@@ -103,7 +132,7 @@ object Ranking {
         return hits.sortedWith(
             compareBy<Hit> { it.kind.ordinal }
                 .thenByDescending { it.usage }
-                .thenBy { it.app.label.lowercase() },
+                .thenBy(labelOrder()) { it.app.label },
         ).map { it.app }
     }
 
@@ -125,12 +154,14 @@ object Ranking {
         return if (anyUsage) {
             scored.sortedWith(
                 compareByDescending<Pair<LaunchableApp, Int>> { it.second }
-                    .thenBy { it.first.label.lowercase() },
+                    .thenBy(labelOrder()) { it.first.label },
             ).map { it.first }
         } else {
-            val defaultKeys = defaults.map { it.key }.toSet()
-            defaults + eligible.filter { it.key !in defaultKeys }
-                .sortedBy { it.label.lowercase() }
+            // Defaults are picked from every app: a hidden one or another home screen stays off.
+            val shown = defaults.filter { !it.isHome && it.packageName !in hidden }
+            val defaultKeys = shown.map { it.key }.toSet()
+            shown + eligible.filter { it.key !in defaultKeys }
+                .sortedWith(compareBy(labelOrder()) { it.label })
         }
     }
 
@@ -167,22 +198,31 @@ object Ranking {
                 compareByDescending<Pair<String, String>> {
                     score(launches[it.first].orEmpty(), now)
                 }.thenByDescending {
-                    launches[it.first].orEmpty().maxOrNull() ?: 0L
-                }.thenBy { it.second.lowercase() },
+                    lastUsed(launches[it.first].orEmpty(), now)
+                }.thenBy(labelOrder()) { it.second },
             )
             .map { it.first }
     }
 
+    /**
+     * Opens per package. With usage access the system's opens are the record: read at [readAt]
+     * (wall clock), they already hold every launch from Folio before then, so adding Folio's own
+     * stamps counts those twice. Folio's stamps still fill in where the system has nothing:
+     * packages it never logged, the days before its oldest event (Android keeps only a week or
+     * so), and launches since [readAt] (the system is re-read at most once a minute).
+     */
     fun combinedLaunches(
         local: Map<String, List<Long>>,
         extra: Map<String, List<Long>>,
+        readAt: Long,
     ): Map<String, List<Long>> {
         if (extra.isEmpty()) return local
+        val since = extra.values.minOf { it.minOrNull() ?: Long.MAX_VALUE }
         val keys = local.keys + extra.keys
         return keys.associateWith { pkg ->
             val a = local[pkg].orEmpty()
             val b = extra[pkg].orEmpty()
-            if (b.isEmpty()) a else (a + b).distinct().sorted()
+            if (b.isEmpty()) a else (a.filter { it < since || it > readAt } + b).sorted()
         }
     }
 

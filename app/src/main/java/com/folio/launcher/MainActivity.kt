@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.addCallback
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -37,10 +39,14 @@ import com.folio.launcher.onboarding.AccessScreen
 import com.folio.launcher.search.HermesAskActions
 import com.folio.launcher.settings.SettingsScreen
 import com.folio.launcher.ui.FolioTheme
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
     private val viewModel: HomeViewModel by viewModels()
+
+    /** When the Home role was last asked for (elapsedRealtime). */
+    private var roleAskedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -57,6 +63,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 31) {
             window.attributes = window.attributes.apply { preferredRefreshRate = 120f }
         }
+        // Back on the idle print stays there, as on any home screen (unhandled, the system finishes
+        // Folio). Added before setContent, so the sheet, search, Ask and Settings handlers come first.
+        onBackPressedDispatcher.addCallback {}
 
         setContent {
             FolioTheme {
@@ -78,7 +87,7 @@ class MainActivity : ComponentActivity() {
                 var idleEpoch by remember { mutableIntStateOf(0) }
 
                 LaunchedEffect(Unit) {
-                    viewModel.idleTick.collectLatest { idleEpoch++ }
+                    nav.followIdle(viewModel.idleTick) { idleEpoch++ }
                 }
 
                 val pickPhoto = rememberLauncherForActivityResult(
@@ -87,7 +96,13 @@ class MainActivity : ComponentActivity() {
 
                 val roleLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
-                ) { viewModel.refreshSystemState() }
+                ) {
+                    viewModel.refreshSystemState()
+                    val elapsed = SystemClock.elapsedRealtime() - roleAskedAt
+                    if (roleRefusedWithoutAsking(RingerController.isDefaultHome(this@MainActivity), elapsed)) {
+                        openHomeSettings()
+                    }
+                }
 
                 val accessLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
@@ -110,6 +125,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun openHomeRole() {
+                    roleAskedAt = SystemClock.elapsedRealtime()
                     roleLauncher.launch(RingerController.roleIntent(this@MainActivity))
                 }
 
@@ -164,7 +180,7 @@ class MainActivity : ComponentActivity() {
                     composable("settings") {
                         SettingsScreen(
                             state = state,
-                            onBack = { nav.popBackStack() },
+                            onBack = { nav.popToHome() },
                             onPickPhoto = { openPhotoPicker() },
                             onNextBing = { viewModel.nextBingPrint() },
                             onPreviousPrint = { viewModel.previousPrint() },
@@ -176,6 +192,7 @@ class MainActivity : ComponentActivity() {
                             onCycleAi = { viewModel.cycleAi() },
                             onSetOpenRouterKey = viewModel::setOpenRouterKey,
                             onClearOpenRouterKey = { viewModel.clearOpenRouterKey() },
+                            onRetryOpenRouterKey = { viewModel.retryOpenRouterKey() },
                             onOpenHermesLive = { viewModel.openHermesLive(this@MainActivity) },
                             onRefreshHermes = { viewModel.refreshHermes() },
                         )
@@ -189,6 +206,14 @@ class MainActivity : ComponentActivity() {
         AccessScreen.Dnd -> Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
         AccessScreen.Usage -> Settings.ACTION_USAGE_ACCESS_SETTINGS
         AccessScreen.Media -> Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
+    }
+
+    /** The system's Home app page, which can't refuse; its default apps list where there is none. */
+    private fun openHomeSettings() {
+        runCatching { startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .recoverCatching {
+                startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -224,3 +249,24 @@ class MainActivity : ComponentActivity() {
         var startReported = false
     }
 }
+
+/** Back to the idle print. Does nothing once home is on top, so a second tap can't pop home itself. */
+internal fun NavController.popToHome(): Boolean = popBackStack("home", inclusive = false)
+
+/** Home ([idleTick], from onNewIntent): back to the idle print, Settings included, then [toIdle] resets home's own state. */
+internal suspend fun NavController.followIdle(idleTick: Flow<Unit>, toIdle: () -> Unit) {
+    idleTick.collectLatest {
+        popToHome()
+        toIdle()
+    }
+}
+
+/**
+ * The Home role request came back with Folio still not Home, sooner than anyone could read the
+ * dialog: the system refused without asking ("Don't ask again").
+ */
+internal fun roleRefusedWithoutAsking(isDefaultHome: Boolean, elapsedMs: Long): Boolean =
+    !isDefaultHome && elapsedMs < ROLE_UNASKED_MS
+
+/** A refusal with no dialog is back within a few hundred ms; the dialog alone takes longer to read. */
+private const val ROLE_UNASKED_MS = 500L

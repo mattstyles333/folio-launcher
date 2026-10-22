@@ -170,15 +170,30 @@ class BingClient(private val cacheFile: File? = null) {
             }
         }
 
-        /** A random print that isn't the current or previous one (by Bing identity, not list position). */
+        /** How many of the last prints a random pick stays away from while others are left. */
+        internal const val RECENT_PRINTS = 10
+
+        /**
+         * The next print, by Bing identity (not list position). [avoid] is newest first: the current
+         * and previous prints, then the ones before. A random pick that isn't one of the last
+         * [RECENT_PRINTS] while unseen ones remain, and never the current or previous one while
+         * anything else is left. Nothing to avoid means no print yet: today's, which the archive
+         * lists first (the local market's newest).
+         */
         fun pickNext(
             images: List<BingImage>,
-            avoid: Set<String>,
+            avoid: Collection<String>,
             random: Random = Random.Default,
         ): BingImage? {
             if (images.isEmpty()) return null
-            val fresh = images.filter { it.identity() !in avoid }
-            return (fresh.ifEmpty { images }).random(random)
+            if (avoid.isEmpty()) return images.first()
+            val newestFirst = avoid.toList()
+            for (n in intArrayOf(RECENT_PRINTS, 2)) {
+                val skip = newestFirst.take(n).toSet()
+                val fresh = images.filter { it.identity() !in skip }
+                if (fresh.isNotEmpty()) return fresh.random(random)
+            }
+            return images.random(random)
         }
     }
 }

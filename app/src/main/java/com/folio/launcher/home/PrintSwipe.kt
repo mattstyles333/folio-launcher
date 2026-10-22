@@ -9,6 +9,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -23,6 +24,9 @@ fun Modifier.detectPrintSwipe(
     pointerInput(enabled) {
         if (!enabled) return@pointerInput
         val slop = viewConfiguration.touchSlop * 4f
+        // A fling counts only when the finger also travelled its way: flicking back out of
+        // a swipe right is not a swipe left (with Hermes, a voice call).
+        val flingTravel = 48.dp.toPx()
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val tracker = VelocityTracker()
@@ -52,8 +56,8 @@ fun Modifier.detectPrintSwipe(
                 if (!change.pressed) {
                     val threshold = size.width * 0.18f
                     val vx = tracker.calculateVelocity().x
-                    if (dx > threshold || vx > 900f) right.value()
-                    else if (dx < -threshold || vx < -900f) left.value()
+                    if (dx > threshold || (dx > flingTravel && vx > 900f)) right.value()
+                    else if (dx < -threshold || (dx < -flingTravel && vx < -900f)) left.value()
                     break
                 }
             }

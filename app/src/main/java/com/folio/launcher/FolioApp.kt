@@ -41,6 +41,10 @@ class FolioApp : Application() {
         ringer = RingerController(this)
         wallpaper = WallpaperRepository(this)
         signals = DeviceSignals(this)
+        // Once per process, never stopped: a MainActivity going away (Back, or one opened from a
+        // drawer or the installer) must not take the app list or ringer away from the home one.
+        appRepository.start()
+        ringer.start()
         signals.start()
     }
 

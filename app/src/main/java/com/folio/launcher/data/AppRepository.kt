@@ -1,14 +1,18 @@
 package com.folio.launcher.data
 
+import android.content.ComponentCallbacks
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.provider.Settings
 import android.graphics.Rect
 import android.os.Handler
+import android.os.LocaleList
 import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
@@ -21,10 +25,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AppRepository(private val context: Context) {
     private val launcherApps = context.getSystemService(LauncherApps::class.java)
@@ -39,6 +46,19 @@ class AppRepository(private val context: Context) {
     private val icons = ConcurrentHashMap<String, ImageBitmap>()
     @Volatile
     private var iconPx = 0
+
+    /** Stands in for an icon that couldn't be drawn; never put in [icons], so each load tries the real one again. */
+    @Volatile
+    private var standInIcon: ImageBitmap? = null
+
+    /** Packages changed since the last load began; that load's icons for them may be stale. */
+    private val pending = ConcurrentHashMap.newKeySet<String>()
+
+    /** One load at a time, so an older load can't finish last and publish a stale list. */
+    private val loading = Mutex()
+
+    /** Language and density of the last load: labels are read in one, icons drawn at the other. */
+    private var loadedFor: Pair<LocaleList, Int>? = null
 
     private val callback = object : LauncherApps.Callback() {
         override fun onPackageRemoved(packageName: String, user: UserHandle) = reload(packageName)
@@ -55,37 +75,73 @@ class AppRepository(private val context: Context) {
             user: UserHandle,
             replacing: Boolean,
         ) = reload(*packageNames)
+
+        // An app timer or Focus mode pausing an app, or ending: only the paused flag changes, icons stay cached.
+        override fun onPackagesSuspended(packageNames: Array<out String>, user: UserHandle) = reload()
+
+        override fun onPackagesUnsuspended(packageNames: Array<out String>, user: UserHandle) = reload()
+    }
+
+    /** A new phone language (or display size) changes no package, so nothing else reloads. */
+    private val configCallback = object : ComponentCallbacks {
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            val now = newConfig.locales to newConfig.densityDpi
+            if (now == loadedFor) return
+            loadedFor = now
+            reload()
+        }
+
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun onLowMemory() = Unit
     }
 
     fun start() {
         runCatching {
             launcherApps.registerCallback(callback, Handler(Looper.getMainLooper()))
         }
+        val config = context.resources.configuration
+        loadedFor = config.locales to config.densityDpi
+        runCatching { context.registerComponentCallbacks(configCallback) }
         reload()
     }
 
     fun stop() {
         runCatching { launcherApps.unregisterCallback(callback) }
+        runCatching { context.unregisterComponentCallbacks(configCallback) }
     }
 
     fun reload(vararg changed: String) {
-        if (changed.isNotEmpty()) {
-            icons.keys.removeAll { key -> changed.any { key.startsWith("$it/") } }
-        }
+        pending.addAll(changed)
         reloadJob?.cancel()
         reloadJob = scope.launch {
             delay(40)
-            _apps.value = load()
+            loading.withLock {
+                // Drop changed icons as this load starts, not when the event came: a load
+                // already running then could draw them again from the old package.
+                val done = pending.toList()
+                pending.removeAll(done)
+                if (done.isNotEmpty()) {
+                    icons.keys.removeAll { key -> done.any { key.startsWith("$it/") } }
+                }
+                val list = load()
+                // Cancelled while loading: a newer reload is coming with a fresher list.
+                ensureActive()
+                // A failed load leaves the last list up, not an empty home screen.
+                if (list != null) _apps.value = list
+            }
         }
     }
 
-    private fun load(): List<LaunchableApp> {
-        return runCatching {
+    /** Every launchable app, or null when the system couldn't list them. */
+    private fun load(): List<LaunchableApp>? {
+        return try {
             val user = Process.myUserHandle()
             val infos = launcherApps.getActivityList(null, user)
             val homes = homePackages()
             val density = context.resources.displayMetrics.densityDpi
-            val size = (56 * context.resources.displayMetrics.density).toInt().coerceIn(48, 192)
+            // 48 dp: the drawer's size, drawn 1:1, and shrunk for search's 40 dp rows. The rail's
+            // 52 dp (56 while dragging) takes a slight stretch rather than every icon paying for it.
+            val size = (48 * context.resources.displayMetrics.density).toInt().coerceIn(48, 192)
             if (size != iconPx) {
                 icons.clear()
                 iconPx = size
@@ -97,9 +153,12 @@ class AppRepository(private val context: Context) {
                 val label = info.label?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val iconKey = "${cn.packageName}/${cn.className}@${info.user.hashCode()}"
                 live += iconKey
-                val icon = icons[iconKey] ?: runCatching {
-                    info.getBadgedIcon(density).toBitmap(size, size).asImageBitmap()
-                }.getOrNull()?.also { icons[iconKey] = it } ?: return@mapNotNull null
+                // An icon that can't be drawn mustn't cost its app (and a rail pin with it).
+                val icon = icons[iconKey] ?: try {
+                    info.getBadgedIcon(density).toBitmap(size, size).asImageBitmap().also { icons[iconKey] = it }
+                } catch (_: Exception) {
+                    standIn(size)
+                }
                 LaunchableApp(
                     packageName = cn.packageName,
                     activityName = cn.className,
@@ -107,22 +166,35 @@ class AppRepository(private val context: Context) {
                     label = label,
                     icon = icon,
                     isHome = HomeApps.isHome(cn.packageName, homes),
+                    paused = (info.applicationInfo.flags and ApplicationInfo.FLAG_SUSPENDED) != 0,
                 )
             }.distinctBy { it.key }
-                .sortedBy { it.label.lowercase() }
+                .sortedWith(compareBy(Ranking.labelOrder()) { it.label })
                 .also { icons.keys.retainAll(live) }
-        }.getOrElse { emptyList() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** The system's plain app icon, drawn once per size. */
+    private fun standIn(size: Int): ImageBitmap {
+        standInIcon?.takeIf { it.width == size }?.let { return it }
+        return try {
+            context.packageManager.defaultActivityIcon.toBitmap(size, size).asImageBitmap().also { standInIcon = it }
+        } catch (_: Exception) {
+            ImageBitmap(size, size)
+        }
     }
 
     private fun homePackages(): Set<String> {
-        val out = HashSet<String>()
+        val found = ArrayList<Pair<String, Int>>()
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         fun query(flags: Int) {
             @Suppress("DEPRECATION")
             runCatching {
                 context.packageManager.queryIntentActivities(intent, flags)
             }.getOrNull().orEmpty().forEach { info ->
-                info.activityInfo?.packageName?.let(out::add)
+                info.activityInfo?.packageName?.let { found += it to info.priority }
             }
         }
         query(PackageManager.MATCH_DEFAULT_ONLY)
@@ -131,12 +203,15 @@ class AppRepository(private val context: Context) {
         runCatching {
             context.packageManager
                 .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                ?.let { info -> info.activityInfo?.packageName?.let { found += it to info.priority } }
+        }
+        val settings = runCatching {
+            context.packageManager
+                .resolveActivity(Intent(Settings.ACTION_SETTINGS), PackageManager.MATCH_DEFAULT_ONLY)
                 ?.activityInfo
                 ?.packageName
-                ?.let(out::add)
-        }
-        out.remove(ownPackage)
-        return out
+        }.getOrNull()
+        return HomeApps.homeSet(found, settings, ownPackage)
     }
 
     fun launch(app: LaunchableApp, bounds: Rect? = null): Boolean {
@@ -154,6 +229,10 @@ class AppRepository(private val context: Context) {
             true
         }.getOrDefault(false)
     }
+
+    /** Paused right now (an app timer, Focus mode, an admin): opening it only shows the system's "App paused". */
+    fun isPaused(packageName: String): Boolean =
+        runCatching { context.packageManager.isPackageSuspended(packageName) }.getOrDefault(false)
 
     fun openAppInfo(app: LaunchableApp, bounds: Rect? = null): Boolean {
         val component = ComponentName(app.packageName, app.activityName)

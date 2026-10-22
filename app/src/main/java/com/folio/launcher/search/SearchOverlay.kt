@@ -110,6 +110,8 @@ fun SearchOverlay(
                 .pointerInput(Unit) {
                     var total = 0f
                     detectVerticalDragGestures(
+                        // Each swipe on its own: small nudges mustn't add up to a dismiss.
+                        onDragStart = { total = 0f },
                         onDragEnd = { if (total > 80f) onDismiss() },
                         onVerticalDrag = { _, dy -> total += dy },
                     )
@@ -235,6 +237,7 @@ fun SearchRow(
             bitmap = app.icon,
             contentDescription = null,
             saturation = saturation,
+            paused = app.paused,
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape),

@@ -51,4 +51,16 @@ object HomeApps {
     fun isHome(packageName: String, resolvedHomes: Set<String>): Boolean {
         return packageName in resolvedHomes || packageLooksLikeLauncher(packageName)
     }
+
+    /**
+     * Home screen packages from HOME matches (package to filter priority). Settings declares
+     * one too, FallbackHome at -1000, only for "Phone is starting…"; like the system's Home
+     * picker, leave the Settings app out, or its icon vanishes from the grid and the rail.
+     */
+    fun homeSet(found: List<Pair<String, Int>>, settingsPackage: String?, ownPackage: String): Set<String> {
+        val out = found.filter { it.second >= 0 }.mapTo(HashSet()) { it.first }
+        out.remove(ownPackage)
+        settingsPackage?.let(out::remove)
+        return out
+    }
 }

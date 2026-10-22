@@ -17,6 +17,8 @@ fun AppIcon(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     saturation: Float = 1f,
+    /** Paused by an app timer, Focus mode or an admin: drawn faded, which still reads in Silent's grey. */
+    paused: Boolean = false,
 ) {
     val sat by animateFloatAsState(
         targetValue = saturation.coerceIn(0f, 1f),
@@ -34,6 +36,9 @@ fun AppIcon(
         bitmap = bitmap,
         contentDescription = contentDescription,
         modifier = modifier,
+        alpha = if (paused) PausedAlpha else 1f,
         colorFilter = filter,
     )
 }
+
+private const val PausedAlpha = 0.4f

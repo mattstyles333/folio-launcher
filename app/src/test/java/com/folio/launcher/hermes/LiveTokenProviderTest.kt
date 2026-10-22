@@ -1,5 +1,6 @@
 package com.folio.launcher.hermes
 
+import com.folio.hermes.GatewayUnavailableException
 import com.folio.hermes.HermesAuthException
 import com.folio.hermes.HermesEndpoint
 import kotlinx.coroutines.test.runTest
@@ -31,11 +32,28 @@ class LiveTokenProviderTest {
         assertEquals("fake-token-1", provider.accessToken())
     }
 
+    private suspend fun expectUnavailable(block: suspend () -> Unit): String {
+        try {
+            block()
+        } catch (e: GatewayUnavailableException) {
+            return e.message.orEmpty()
+        }
+        fail("expected GatewayUnavailableException")
+        return ""
+    }
+
     @Test
-    fun signedOutOrAbsent_needsSignIn() = runTest {
-        assertEquals(LiveTokenProvider.SIGNED_OUT, expectSignIn { LiveTokenProvider(home, { null }).accessToken() })
+    fun signedOut_needsSignIn() = runTest {
         assertEquals(LiveTokenProvider.SIGNED_OUT, expectSignIn { LiveTokenProvider(home, { conn("t", signedIn = false) }).accessToken() })
-        assertEquals(LiveTokenProvider.SIGNED_OUT, expectSignIn { LiveTokenProvider(home, { conn("") }).accessToken() })
+    }
+
+    @Test
+    fun noAnswerOrNoTokenYet_isOutOfReachNotSignedOut() = runTest {
+        // Hermes Live not answering, or signed in but unable to renew (offline, server down): the
+        // gateway backs off and tries again instead of stopping on "signed out".
+        expectUnavailable { LiveTokenProvider(home, { null }).accessToken() }
+        expectUnavailable { LiveTokenProvider(home, { conn("") }).accessToken() }
+        expectUnavailable { LiveTokenProvider(home, { conn("fake-old") }, { conn("") }).refreshAfterUnauthorized("fake-old") }
     }
 
     @Test
@@ -56,14 +74,48 @@ class LiveTokenProviderTest {
     @Test
     fun after401_asksHermesLiveToRenew() = runTest {
         var renewals = 0
-        val provider = LiveTokenProvider(home, source = { conn("fake-old") }) {
-            renewals++
-            conn("fake-renewed")
-        }
+        val provider = LiveTokenProvider(
+            home,
+            source = { conn("fake-old") },
+            renewed = {
+                renewals++
+                conn("fake-renewed")
+            },
+        )
         assertEquals("fake-old", provider.accessToken())
         assertEquals(0, renewals)
         assertEquals("fake-renewed", provider.refreshAfterUnauthorized("fake-old"))
         assertEquals(1, renewals)
+    }
+
+    @Test
+    fun plainHttpOffTheTailnet_noTokenAndNoRenewal() = runTest {
+        val box = "http://box.tail1234.ts.net:9119"
+        var up = false
+        var asked = 0
+        var renewals = 0
+        val provider = LiveTokenProvider(
+            HermesEndpoint.of(box),
+            source = { asked++; conn("fake-token", base = box) },
+            renewed = { renewals++; conn("fake-renewed", base = box) },
+            tailnetUp = { up },
+        )
+        // Out of reach, not signed out: the gateway tries again, and Hermes Live is never asked,
+        // so its refresh token and password don't go to whatever answered the name.
+        assertEquals(LiveTokenProvider.TAILNET, expectUnavailable { provider.accessToken() })
+        assertEquals(LiveTokenProvider.TAILNET, expectUnavailable { provider.refreshAfterUnauthorized("fake-token") })
+        assertEquals(0, asked)
+        assertEquals(0, renewals)
+        up = true
+        assertEquals("fake-token", provider.accessToken())
+        assertEquals("fake-renewed", provider.refreshAfterUnauthorized("fake-token"))
+        assertEquals(1, renewals)
+    }
+
+    @Test
+    fun https_neverAsksAboutTheTailnet() = runTest {
+        val provider = LiveTokenProvider(home, { conn("fake-token") }, tailnetUp = { error("asked about Tailscale") })
+        assertEquals("fake-token", provider.accessToken())
     }
 
     @Test

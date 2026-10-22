@@ -25,7 +25,7 @@ data class SearchHint(
 
 /**
  * Jev reads what was typed and picks one route; code decides whether it's sure enough to show.
- * Typing an app's name never leaves the phone — local matching already has it.
+ * Typing an app's name never leaves the phone unless it has a space — local matching already has it.
  */
 object SearchBrain {
     /** Choice confidence below this changes nothing (TypeSafe's "don't act" floor). */
@@ -51,7 +51,7 @@ object SearchBrain {
             "question. If answering needs live, local or personal information you don't have, " +
             "reply with exactly SKIP."
 
-    /** Worth a network call: long enough, and not already an app's name or a word of one. */
+    /** Worth a network call: long enough, and has a space or isn't already an app's name or a word of one. */
     fun worthAsking(query: String, labels: List<String>): Boolean {
         val q = query.trim()
         if (q.length < MIN_CHARS) return false
@@ -74,7 +74,7 @@ object SearchBrain {
             .filter { !it.isHome }
             .sortedWith(
                 compareByDescending<LaunchableApp> { Ranking.score(launches[it.packageName].orEmpty(), now) }
-                    .thenBy { it.label.lowercase() },
+                    .thenBy(Ranking.labelOrder()) { it.label },
             )
             .take(MAX_APPS)
         return optionNames(ordered.map { it.label }).zip(ordered).toMap(LinkedHashMap())
