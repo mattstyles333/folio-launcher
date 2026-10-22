@@ -41,4 +41,30 @@ class PrefsMigrationTest {
         assertEquals("LakeMagadi", prefs.bingId)
         assertEquals(emptyList<String>(), prefs.recentBingIds)
     }
+
+    @Test
+    fun blobsFromBeforeYourPhotos_haveNoRoll() {
+        val prefs = PrefsStore.read("""{"bingId":"LakeMagadi","bingDay":20000,"quoteFit":12}""")!!
+        assertEquals(emptyList<String>(), prefs.rollFiles)
+        assertEquals(-1, prefs.rollAt)
+        assertEquals(-1, prefs.rollPrevAt)
+        assertEquals(-1, prefs.rollDay)
+        assertFalse(prefs.isRollPrint)
+        // The print is still the Bing it was, with its fitted quote.
+        assertTrue(prefs.isBingPrint)
+        assertEquals(12, prefs.quoteFit)
+    }
+
+    @Test
+    fun aRoll_readsBack_andOnlyAPositionInItIsARollPrint() {
+        val prefs = PrefsStore.read(
+            """{"rollFiles":["photo1.jpg","photo2.jpg"],"rollAt":1,"rollPrevAt":0,"rollDay":20000}""",
+        )!!
+        assertEquals(listOf("photo1.jpg", "photo2.jpg"), prefs.rollFiles)
+        assertEquals(20000, prefs.rollDay)
+        assertTrue(prefs.isRollPrint)
+        assertFalse(prefs.isBingPrint)
+        assertFalse(prefs.copy(rollAt = 2).isRollPrint)
+        assertFalse(prefs.copy(rollAt = -1).isRollPrint)
+    }
 }

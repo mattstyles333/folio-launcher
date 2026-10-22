@@ -33,6 +33,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.folio.hermes.telemetry.Telemetry
+import com.folio.launcher.data.PrintController
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.home.HomeScreen
 import com.folio.launcher.onboarding.AccessScreen
@@ -94,6 +95,11 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.PickVisualMedia(),
                 ) { uri -> uri?.let { viewModel.setWallpaper(it) } }
 
+                // Your photos: copied in at once, so nothing waits on the picker's grant.
+                val pickPhotos = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickMultipleVisualMedia(PrintController.ROLL_MAX),
+                ) { uris -> if (uris.isNotEmpty()) viewModel.setPhotos(uris) }
+
                 val roleLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.StartActivityForResult(),
                 ) {
@@ -121,6 +127,16 @@ class MainActivity : ComponentActivity() {
                 fun openPhotoPicker() {
                     pickPhoto.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                    )
+                }
+
+                // Numbered as they're picked, where the picker can: the roll goes round in that order.
+                fun openPhotosPicker() {
+                    pickPhotos.launch(
+                        PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            isOrderedSelection = true,
+                        ),
                     )
                 }
 
@@ -162,7 +178,7 @@ class MainActivity : ComponentActivity() {
                                 viewModel.dismissMediaHint()
                                 viewModel.openAccess(AccessScreen.Media)
                             },
-                            onNextBing = { viewModel.nextBingPrint() },
+                            onNextBing = { viewModel.nextPrint() },
                             onPreviousTrack = { viewModel.previousTrack() },
                             onPlayPause = { viewModel.playPause(this@MainActivity) },
                             onSkipTrack = { viewModel.skipTrack() },
@@ -184,6 +200,7 @@ class MainActivity : ComponentActivity() {
                             state = state,
                             onBack = { nav.popToHome() },
                             onPickPhoto = { openPhotoPicker() },
+                            onPickPhotos = { openPhotosPicker() },
                             onNextBing = { viewModel.nextBingPrint() },
                             onPreviousPrint = { viewModel.previousPrint() },
                             onShowClock = { viewModel.setShowClock(it) },

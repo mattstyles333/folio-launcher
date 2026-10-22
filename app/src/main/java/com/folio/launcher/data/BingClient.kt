@@ -1,5 +1,6 @@
 package com.folio.launcher.data
 
+import android.graphics.BitmapFactory
 import com.folio.hermes.telemetry.Telemetry
 import java.io.File
 import java.net.HttpURLConnection
@@ -64,12 +65,17 @@ class BingClient(private val cacheFile: File? = null) {
         dedupe(pages.flatten())
     }
 
+    /** [width]×[height] is the print's own size: Bing's crop at that size is the print as it shows. */
     fun download(image: BingImage, dest: File, width: Int, height: Int): Boolean {
         lastStatus.set(0)
         val tmp = File(dest.parentFile, "wallpaper.tmp")
+        val crop = image.printCrop(width, height)
         for (url in image.candidateUrls(width, height)) {
             if (!getToFile(url, tmp)) continue
             if (tmp.length() < MIN_IMAGE_BYTES) continue
+            // Bing's resizer is undocumented: a crop at any other size would quietly lower the
+            // print, so the UHD original (cropped here) is next.
+            if (url == crop && !tmp.hasSize(width, height)) continue
             runCatching {
                 if (dest.exists()) dest.delete()
                 if (!tmp.renameTo(dest)) {
@@ -84,6 +90,13 @@ class BingClient(private val cacheFile: File? = null) {
         // Every candidate failed (a missing UHD size alone is normal and not reported).
         Telemetry.warn("bing.fetch_failed", null, mapOf("what" to "image", "http_status" to lastStatus.get()))
         return false
+    }
+
+    /** The image's own size, read from its header alone, is [width]×[height]. */
+    private fun File.hasSize(width: Int, height: Int): Boolean {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(absolutePath, bounds)
+        return BingImage.isPrintCrop(bounds.outWidth, bounds.outHeight, width, height)
     }
 
     private fun readDisk(): BingArchiveCache? {
@@ -217,18 +230,23 @@ data class BingImage(
     val title: String = "",
     val hsh: String = "",
 ) {
+    /**
+     * Where to fetch this print at [width]×[height] (the print's own size), best first: Bing's
+     * portrait crop of the UHD master at that size, about a fifth of the original's bytes; then
+     * the UHD original, cropped here. Bing's own 1080×1920 file is only ever a fallback.
+     */
     fun candidateUrls(width: Int = 1080, height: Int = 2340): List<String> {
-        val host = "https://www.bing.com"
         val list = linkedSetOf<String>()
         if (urlbase.isNotBlank()) {
-            list += "$host${urlbase}_UHD.jpg"
-            list += "$host${urlbase}_1920x1200.jpg"
-            list += "$host${urlbase}_1920x1080.jpg"
-            list += "$host${urlbase}_1080x1920.jpg"
+            printCrop(width, height)?.let { list += it }
+            list += "$HOST${urlbase}_UHD.jpg"
+            list += "$HOST${urlbase}_1920x1200.jpg"
+            list += "$HOST${urlbase}_1920x1080.jpg"
+            list += "$HOST${urlbase}_1080x1920.jpg"
         }
         val raw = when {
             url.startsWith("http") -> url
-            url.isNotBlank() -> host + url
+            url.isNotBlank() -> HOST + url
             else -> null
         }
         if (raw != null) {
@@ -236,6 +254,13 @@ data class BingImage(
             list += raw
         }
         return list.toList()
+    }
+
+    /** Bing's crop of the UHD master at [width]×[height]: rs=1 resizes, c=4 crops to fill, at quality 90. */
+    fun printCrop(width: Int, height: Int): String? {
+        if (urlbase.isBlank() || width <= 0 || height <= 0) return null
+        val uhd = "$HOST${urlbase}_UHD.jpg"
+        return uhd + (if ('?' in uhd) "&" else "?") + "w=$width&h=$height&rs=1&c=4&qlt=90"
     }
 
     private fun sized(url: String, width: Int, height: Int): String {
@@ -263,6 +288,15 @@ data class BingImage(
     }
 
     companion object {
+        private const val HOST = "https://www.bing.com"
+
+        /**
+         * A downloaded [printCrop] is kept only at exactly the size asked for. Anything else (the
+         * parameters ignored, a smaller or reshaped answer) falls through to the UHD original.
+         */
+        fun isPrintCrop(width: Int, height: Int, askedW: Int, askedH: Int): Boolean =
+            askedW > 0 && askedH > 0 && width == askedW && height == askedH
+
         private val OHR = Regex("OHR\\.([A-Za-z0-9]+)")
         private val WIDTH = Regex("([?&]w=)\\d+")
         private val HEIGHT = Regex("([?&]h=)\\d+")

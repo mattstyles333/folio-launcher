@@ -26,6 +26,9 @@ class WallpaperRepository(private val context: Context) : PrintFiles {
     val file: File get() = File(context.filesDir, "wallpaper.jpg")
     private val prevFile: File get() = File(context.filesDir, "wallpaper.prev.jpg")
     private val nextFile: File get() = File(context.filesDir, "wallpaper.next.jpg")
+
+    /** Your photos, each already fitted to the print: the picker's URIs don't outlast its grant. */
+    private val rollDir: File get() = File(context.filesDir, "roll")
     private val bing = BingClient(File(context.filesDir, "bing-archive.json"))
 
     override fun exists(): Boolean = file.exists() && file.length() > 0L
@@ -62,36 +65,76 @@ class WallpaperRepository(private val context: Context) : PrintFiles {
         }
     }
 
-    /**
-     * Re-encodes the picked photo upright (EXIF applied) and no larger than the print needs,
-     * so a 50 MP original never has to be decoded at full size again.
-     */
     override suspend fun importFromUri(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         runCatching {
-            val (w, h) = printSize()
-            val source = ImageDecoder.createSource(context.contentResolver, uri)
-            val bmp = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                val scale = coverScale(info.size.width, info.size.height, w, h)
-                if (scale < 1f) {
-                    decoder.setTargetSize(
-                        (info.size.width * scale).roundToInt().coerceAtLeast(1),
-                        (info.size.height * scale).roundToInt().coerceAtLeast(1),
-                    )
-                }
-            }
-            nextFile.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-            bmp.recycle()
-            if (nextFile.length() <= 0L) return@runCatching false
+            if (!encodeForPrint(uri, nextFile)) return@runCatching false
             promoteNext()
             true
         }.getOrDefault(false)
     }
 
-    /** Downloads a Bing print that isn't one of [avoid] (Bing identities, newest first; empty means no print yet, so today's). */
+    override suspend fun addToRoll(uri: Uri): String? = withContext(Dispatchers.IO) {
+        val dest = runCatching {
+            rollDir.mkdirs()
+            File.createTempFile("photo", ".jpg", rollDir)
+        }.getOrNull() ?: return@withContext null
+        if (runCatching { encodeForPrint(uri, dest) }.getOrDefault(false)) {
+            dest.name
+        } else {
+            dest.delete()
+            null
+        }
+    }
+
+    override suspend fun showFromRoll(name: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val photo = rollPhoto(name)
+            if (photo == null || photo.length() <= 0L) return@runCatching false
+            photo.copyTo(nextFile, overwrite = true)
+            promoteNext()
+            exists()
+        }.getOrDefault(false)
+    }
+
+    override suspend fun pruneRoll(keep: Collection<String>) {
+        withContext(Dispatchers.IO) {
+            rollDir.listFiles()?.forEach { if (it.name !in keep) it.delete() }
+        }
+    }
+
+    /** A roll photo by its stored name; never a path out of the roll's own folder. */
+    private fun rollPhoto(name: String): File? =
+        File(rollDir, name).takeIf { name.isNotEmpty() && it.name == name && it.isFile }
+
+    /**
+     * The photo at [uri] as the print keeps it, in [dest]: upright (EXIF applied), shrunk until it
+     * just covers the print, and only the window load() would cut from it. A 50 MP original is
+     * never decoded at full size again, and nothing the print can't show is stored.
+     */
+    private fun encodeForPrint(uri: Uri, dest: File): Boolean {
+        val (w, h) = printSize()
+        val source = ImageDecoder.createSource(context.contentResolver, uri)
+        val decoded = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val (outW, outH) = CoverCrop.coverSize(info.size.width, info.size.height, w, h)
+            if (outW != info.size.width || outH != info.size.height) decoder.setTargetSize(outW, outH)
+        }
+        val win = CoverCrop.window(decoded.width, decoded.height, w, h)
+        val bmp = Bitmap.createBitmap(decoded, win.x, win.y, win.width, win.height)
+        if (bmp !== decoded) decoded.recycle()
+        dest.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+        bmp.recycle()
+        return dest.length() > 0L
+    }
+
+    /**
+     * Downloads a Bing print that isn't one of [avoid] (Bing identities, newest first; empty means
+     * no print yet, so today's), asked for at the print's own size: Bing's crop then comes back as
+     * load() shows it, with nothing to cut or scale here.
+     */
     override suspend fun importBing(avoid: Set<String>): BingShot? = withContext(Dispatchers.IO) {
         runCatching {
-            val (w, h) = panelSize()
+            val (w, h) = printSize()
             val image = BingClient.pickNext(bing.archive(), avoid) ?: return@runCatching null
             if (!bing.download(image, nextFile, w, h)) return@runCatching null
             promoteNext()
@@ -220,11 +263,5 @@ class WallpaperRepository(private val context: Context) : PrintFiles {
     companion object {
         /** A little over the panel so parallax never shows an edge. */
         private const val PARALLAX_BLEED = 1.08f
-
-        /** Scale (≤ 1 means shrink) at which [srcW]×[srcH] just covers [dstW]×[dstH]. */
-        internal fun coverScale(srcW: Int, srcH: Int, dstW: Int, dstH: Int): Float {
-            if (srcW <= 0 || srcH <= 0) return 1f
-            return max(dstW.toFloat() / srcW, dstH.toFloat() / srcH)
-        }
     }
 }

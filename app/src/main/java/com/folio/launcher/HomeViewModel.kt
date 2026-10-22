@@ -711,9 +711,16 @@ class HomeViewModel(
 
     fun setWallpaper(uri: Uri) = print.setFromUri(uri)
 
+    /** Settings › Your photos: what the picker handed back, copied in before its grant ends. */
+    fun setPhotos(uris: List<Uri>) = print.setRoll(uris)
+
     fun useSystemWallpaper() = print.useSystem()
 
-    fun nextBingPrint() = print.next()
+    /** Double-tap: the next of your photos while the print is one, else the next Bing. */
+    fun nextPrint() = print.next()
+
+    /** Settings › Bing print: a Bing, leaving your photos. */
+    fun nextBingPrint() = print.nextBing()
 
     fun previousPrint() = print.previous()
 
@@ -843,6 +850,8 @@ class HomeViewModel(
             wallpaperBusy = printState.busy,
             wallpaperCaption = printState.caption,
             hasPreviousPrint = printState.hasPrevious,
+            rollNote = printState.rollNote,
+            rollSize = if (prefs.isRollPrint) prefs.rollFiles.size else 0,
             charging = extraState.charging,
             charge = extraState.charge,
             musicPlaying = extraState.musicPlaying,
