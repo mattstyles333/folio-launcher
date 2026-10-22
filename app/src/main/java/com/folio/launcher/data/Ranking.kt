@@ -1,8 +1,8 @@
 package com.folio.launcher.data
 
+import java.lang.ref.WeakReference
 import java.text.Collator
 import java.text.Normalizer
-import java.time.LocalDate
 import java.time.ZoneId
 
 object Ranking {
@@ -20,10 +20,13 @@ object Ranking {
             .toEpochMilli()
     }
 
-    fun score(timestamps: List<Long>, now: Long = System.currentTimeMillis()): Int {
+    fun score(timestamps: List<Long>, now: Long = System.currentTimeMillis()): Int =
+        score(timestamps, now, startOfDay(now))
+
+    /** [score] with the start of [now]'s day worked out once for a whole ranking, not once per app. */
+    internal fun score(timestamps: List<Long>, now: Long, today: Long): Int {
         val d7 = now - 7 * DAY_MS
         val d30 = now - USAGE_WINDOW_MS
-        val today = startOfDay(now)
         var opens7 = 0
         var opens30 = 0
         var usedToday = false
@@ -49,19 +52,31 @@ object Ranking {
         return now - seen >= DAY_MS
     }
 
-    enum class MatchKind { Prefix, WordPrefix, Acronym, Fuzzy }
+    /** Best first. [Typo] is the last resort: a match with a slip never ranks above one without. */
+    enum class MatchKind { Prefix, WordPrefix, Acronym, Fuzzy, Typo }
 
-    fun match(query: String, label: String): MatchKind? {
-        val q = fold(query.trim())
-        if (q.isEmpty()) return null
-        val l = fold(label)
-        if (l.startsWith(q)) return MatchKind.Prefix
-        val words = l.split(Regex("[\\s._\\-+/]+")).filter { it.isNotEmpty() }
-        if (words.any { it.startsWith(q) }) return MatchKind.WordPrefix
-        val acronym = words.map { it.first() }.joinToString("")
-        if (acronym.startsWith(q)) return MatchKind.Acronym
-        if (fuzzy(q, l)) return MatchKind.Fuzzy
+    /** The shortest query a slip is forgiven in: in three letters, one wrong changes too much. */
+    private const val TYPO_MIN = 4
+
+    fun match(query: String, label: String): MatchKind? = match(fold(query.trim()), Folded(label))
+
+    /** [query] already folded. */
+    private fun match(query: String, label: Folded): MatchKind? {
+        if (query.isEmpty()) return null
+        if (label.text.startsWith(query)) return MatchKind.Prefix
+        if (label.words.any { it.startsWith(query) }) return MatchKind.WordPrefix
+        if (label.acronym.startsWith(query)) return MatchKind.Acronym
+        if (fuzzy(query, label.text)) return MatchKind.Fuzzy
+        if (query.length >= TYPO_MIN && label.oneSlipFrom(query)) return MatchKind.Typo
         return null
+    }
+
+    /** [query] (as typed) is an app's name, or the start of one of its words, for one of [apps]: what never needs Jev. */
+    internal fun namesAnApp(query: String, apps: List<LaunchableApp>): Boolean {
+        val q = fold(query.trim())
+        return q.isNotEmpty() && folded(apps).any { label ->
+            label.text.startsWith(q) || label.words.any { it.startsWith(q) }
+        }
     }
 
     private fun fuzzy(query: String, label: String): Boolean {
@@ -72,7 +87,66 @@ object Ranking {
         return i == query.length
     }
 
+    /**
+     * [query] is one slip from the start of [text]: a letter wrong, missing or extra, or two
+     * letters swapped ("spitify", "sptoify", "spotiffy" all start "spotify"). Looked for where
+     * the two first differ: a slip further on can always be moved back to there.
+     */
+    private fun slipFromStart(query: String, text: String): Boolean {
+        val n = query.length
+        val m = text.length
+        var i = 0
+        while (i < n && i < m && query[i] == text[i]) i++
+        if (i == n) return true
+        if (m >= n) {
+            // A wrong letter: the rest lines up.
+            if (text.regionMatches(i + 1, query, i + 1, n - i - 1)) return true
+            // Two letters swapped.
+            if (i + 1 < n && query[i] == text[i + 1] && query[i + 1] == text[i] &&
+                text.regionMatches(i + 2, query, i + 2, n - i - 2)
+            ) {
+                return true
+            }
+        }
+        // A letter too many in the query, or one missing from it.
+        if (m >= n - 1 && text.regionMatches(i, query, i + 1, n - i - 1)) return true
+        return m >= n + 1 && text.regionMatches(i + 1, query, i, n - i)
+    }
+
     private val MARKS = Regex("\\p{Mn}+")
+
+    private val WORD_SPLIT = Regex("[\\s._\\-+/]+")
+
+    /** A label folded ([fold]) and split into words once: what each keystroke's query is compared with. */
+    private class Folded(label: String) {
+        val text = fold(label)
+        val words = text.split(WORD_SPLIT).filter { it.isNotEmpty() }
+        val acronym = words.map { it.first() }.joinToString("")
+
+        /** One slip from the start of the label, or of one of its words. */
+        fun oneSlipFrom(query: String): Boolean =
+            slipFromStart(query, text) || words.any { it != text && slipFromStart(query, it) }
+    }
+
+    /** An app list's labels, folded. The list is held weakly: an old one (and its icons) isn't kept alive for this. */
+    private class FoldedApps(apps: List<LaunchableApp>) {
+        val list = WeakReference(apps)
+        val labels: List<Folded> = apps.map { Folded(it.label) }
+    }
+
+    @Volatile
+    private var lastFolded: FoldedApps? = null
+
+    /** [apps]' labels folded once per app list (a published list never changes), not on every keystroke. */
+    private fun folded(apps: List<LaunchableApp>): List<Folded> {
+        lastFolded?.let { if (it.list.get() === apps && it.labels.size == apps.size) return it.labels }
+        return FoldedApps(apps).also { lastFolded = it }.labels
+    }
+
+    /** Folds [apps]' labels now, off the main thread, so search's first keystroke doesn't have to. */
+    fun prepareSearch(apps: List<LaunchableApp>) {
+        folded(apps)
+    }
 
     /** Lowercase without accents, so "pokemon" finds "Pokémon GO"; NFC keeps Hangul syllables whole. */
     private fun fold(s: String): String =
@@ -81,10 +155,31 @@ object Ranking {
             Normalizer.Form.NFC,
         ).lowercase()
 
-    /** Latest open inside the 30-day window; an older one doesn't lift an app out of the A–Z tail. */
-    private fun lastUsed(timestamps: List<Long>, now: Long): Long {
+    /**
+     * [item]'s opens summed up once for a sort, not on every comparison: its [score], and its
+     * latest open inside the 30-day window ([last]; an older one doesn't lift an app out of the A–Z tail).
+     */
+    private class Used<T>(val item: T, val label: String, val score: Int, val last: Long)
+
+    private fun <T> used(item: T, label: String, timestamps: List<Long>, now: Long, today: Long): Used<T> {
         val d30 = now - USAGE_WINDOW_MS
-        return timestamps.filter { it >= d30 }.maxOrNull() ?: 0L
+        var last = 0L
+        for (t in timestamps) if (t >= d30 && t > last) last = t
+        return Used(item, label, score(timestamps, now, today), last)
+    }
+
+    /** Most-used first (habit score, then the latest open), then A–Z in the phone's language. */
+    private fun <T> mostUsedFirst(items: List<Used<T>>): List<T> {
+        val byLabel = labelOrder()
+        return items.sortedWith(
+            Comparator { a, b ->
+                when {
+                    a.score != b.score -> b.score.compareTo(a.score)
+                    a.last != b.last -> b.last.compareTo(a.last)
+                    else -> byLabel.compare(a.label, b.label)
+                }
+            },
+        ).map { it.item }
     }
 
     /**
@@ -110,11 +205,9 @@ object Ranking {
             if (seen.add(app.key)) out += app
         }
         rail.forEach(::take)
-        apps.sortedWith(
-            compareByDescending<LaunchableApp> { score(launches[it.packageName].orEmpty(), now) }
-                .thenByDescending { lastUsed(launches[it.packageName].orEmpty(), now) }
-                .thenBy(labelOrder()) { it.label },
-        ).forEach(::take)
+        val today = startOfDay(now)
+        mostUsedFirst(apps.map { used(it, it.label, launches[it.packageName].orEmpty(), now, today) })
+            .forEach(::take)
         return out
     }
 
@@ -125,9 +218,14 @@ object Ranking {
         now: Long = System.currentTimeMillis(),
     ): List<LaunchableApp> {
         data class Hit(val app: LaunchableApp, val kind: MatchKind, val usage: Int)
-        val hits = apps.mapNotNull { app ->
-            val kind = match(query, app.label) ?: return@mapNotNull null
-            Hit(app, kind, score(launches[app.packageName].orEmpty(), now))
+        val q = fold(query.trim())
+        if (q.isEmpty()) return emptyList()
+        val labels = folded(apps)
+        val today = startOfDay(now)
+        val hits = apps.indices.mapNotNull { i ->
+            val app = apps[i]
+            val kind = match(q, labels[i]) ?: return@mapNotNull null
+            Hit(app, kind, score(launches[app.packageName].orEmpty(), now, today))
         }
         return hits.sortedWith(
             compareBy<Hit> { it.kind.ordinal }
@@ -149,7 +247,8 @@ object Ranking {
                 it.packageName !in hidden &&
                 isEligible(it.packageName, firstSeen, launches, now)
         }
-        val scored = eligible.map { it to score(launches[it.packageName].orEmpty(), now) }
+        val today = startOfDay(now)
+        val scored = eligible.map { it to score(launches[it.packageName].orEmpty(), now, today) }
         val anyUsage = scored.any { it.second > 0 }
         return if (anyUsage) {
             scored.sortedWith(
@@ -191,17 +290,13 @@ object Ranking {
         now: Long = System.currentTimeMillis(),
         hide: Set<String> = emptySet(),
     ): List<String> {
-        return labeled
-            .filter { it.first !in rail && it.first !in hide }
-            .distinctBy { it.first }
-            .sortedWith(
-                compareByDescending<Pair<String, String>> {
-                    score(launches[it.first].orEmpty(), now)
-                }.thenByDescending {
-                    lastUsed(launches[it.first].orEmpty(), now)
-                }.thenBy(labelOrder()) { it.second },
-            )
-            .map { it.first }
+        val today = startOfDay(now)
+        return mostUsedFirst(
+            labeled
+                .filter { it.first !in rail && it.first !in hide }
+                .distinctBy { it.first }
+                .map { (pkg, label) -> used(pkg, label, launches[pkg].orEmpty(), now, today) },
+        )
     }
 
     /**

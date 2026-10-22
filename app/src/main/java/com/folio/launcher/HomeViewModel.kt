@@ -34,6 +34,7 @@ import com.folio.launcher.data.Ranking
 import com.folio.launcher.data.RingerController
 import com.folio.launcher.data.RingerVisual
 import com.folio.launcher.data.SearchBrain
+import com.folio.launcher.data.SearchCache
 import com.folio.launcher.data.SearchHint
 import com.folio.launcher.data.SearchRoute
 import com.folio.launcher.data.SlotPref
@@ -115,6 +116,12 @@ class HomeViewModel(
 
     /** Jev's route (and DeepSeek's line) for what's typed in search. Empty without a key. */
     val searchHint: StateFlow<SearchHint> = _searchHint.asStateFlow()
+
+    /** What Jev and DeepSeek said this session, by query; a query typed again needs no call. */
+    private val searchCache = SearchCache(viewModelScope)
+
+    /** When OpenRouter's connection was last opened ahead of Jev (elapsedRealtime); null: not yet. */
+    private var jevWarmedAt: Long? = null
 
     private val hermesAsk = HermesAsk(
         parent = viewModelScope,
@@ -211,6 +218,10 @@ class HomeViewModel(
             }
         }
         viewModelScope.launch { searchQuery.collectLatest(::think) }
+        viewModelScope.launch(Dispatchers.Default) {
+            // Each app list's labels folded once, here: not on the main thread at search's first keystroke.
+            appsRepo.apps.collect { Ranking.prepareSearch(it) }
+        }
         viewModelScope.launch {
             combine(app.signals.charge, app.signals.musicPlaying) { charge, playing -> charge to playing }
                 .collect { (charge, playing) ->
@@ -566,41 +577,62 @@ class HomeViewModel(
         searchQuery.value = query.trim()
     }
 
-    /** Once per keystroke; collectLatest drops a call still in flight when the next one arrives. */
+    /** Search opened: with a key, open OpenRouter's connection now, so Jev's first answer doesn't wait on DNS, TCP and TLS. */
+    fun onSearchOpened() {
+        viewModelScope.launch {
+            val key = prefsStore.data.first().openRouterKey
+            val now = SystemClock.elapsedRealtime()
+            if (!jevMayAsk(key) || !SearchBrain.warmDue(now, jevWarmedAt)) return@launch
+            jevWarmedAt = now
+            OpenRouter(key).warm()
+        }
+    }
+
+    /**
+     * Once per keystroke; collectLatest moves on when the next one arrives. A query asked before
+     * shows its route at once; a new one is asked once typing pauses, and that call finishes even
+     * if typing moves on (into [searchCache], for a backspace).
+     */
     private suspend fun think(query: String) {
         _searchHint.value = SearchHint(query = query)
         val key = prefsStore.data.first().openRouterKey
         if (!jevMayAsk(key)) return
         if (query.length < SearchBrain.MIN_CHARS) return
-        delay(SearchBrain.PAUSE_MS)
         val apps = appsRepo.apps.value
-        val options = withContext(Dispatchers.Default) {
-            if (!SearchBrain.worthAsking(query, apps.map { it.label })) return@withContext null
-            SearchBrain.candidates(apps, state.value.launches)
+        val offer = withContext(Dispatchers.Default) {
+            if (!SearchBrain.worthAsking(query, apps)) return@withContext null
+            searchCache.offer(apps, state.value.launches)
         } ?: return
-        val (brainState, questions) = SearchBrain.request(
-            query,
-            options.mapValues { it.value.packageName },
-            music = apps.any { it.packageName == Spotify.PACKAGE },
-        )
-        val router = OpenRouter(key)
-        val answers = router.decide(brainState, questions)
-        noteJevStatus(key, router)
-        if (answers == null) return
+        // In already (a backspace, a retype) or on its way: no pause, and no second call.
+        val known = searchCache.answers(key, offer, query)
+        if (known == null) delay(SearchBrain.PAUSE_MS)
+        val asked = known ?: searchCache.ask(key, offer, query) {
+            val router = OpenRouter(key)
+            router.decide(SearchBrain.state(query), offer.questions).also { noteJevStatus(key, router) }
+        }
+        val answers = asked.await() ?: return
         val route = when (val picked = SearchBrain.route(query, answers)) {
             SearchRoute.Ask -> if (state.value.aiLabel.isEmpty()) SearchRoute.Web else picked
             else -> picked
         } ?: return
         when (route) {
             is SearchRoute.App -> {
-                val app = options[route.name] ?: return
+                val app = offer.options[route.name] ?: return
                 _searchHint.value = SearchHint(query, route, app = app)
             }
             SearchRoute.Answer -> {
-                _searchHint.value = SearchHint(query, route, answering = true)
-                val line = router.write(SearchBrain.ANSWER_SYSTEM, query)?.let(SearchBrain::cleanAnswer)
-                noteJevStatus(key, router)
-                _searchHint.value = if (line != null) {
+                val written = searchCache.line(key, query)
+                if (written?.isCompleted != true) _searchHint.value = SearchHint(query, route, answering = true)
+                // Jev's route came from memory, so typing may not have paused yet.
+                if (written == null && known != null) delay(SearchBrain.PAUSE_MS)
+                val writing = written ?: searchCache.write(key, query) {
+                    val router = OpenRouter(key)
+                    // DeepSeek's SKIP is kept, as ""; no answer at all is null, and asked again next time.
+                    router.write(SearchBrain.ANSWER_SYSTEM, query).also { noteJevStatus(key, router) }
+                        ?.let { SearchBrain.cleanAnswer(it).orEmpty() }
+                }
+                val line = writing.await()
+                _searchHint.value = if (!line.isNullOrEmpty()) {
                     SearchHint(query, route, answer = line)
                 } else {
                     SearchHint(query, SearchRoute.Web)
@@ -688,6 +720,7 @@ class HomeViewModel(
         keyCheck?.cancel()
         extra.value = extra.value.copy(brain = null, pasted = null)
         _searchHint.value = SearchHint()
+        searchCache.clear()
         viewModelScope.launch { prefsStore.update { it.copy(openRouterKey = "") } }
     }
 
