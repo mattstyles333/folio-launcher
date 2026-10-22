@@ -35,21 +35,21 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 | Gesture | What |
 |---|---|
-| Tap Search | Spotlight. With an OpenRouter key (Settings → Jev), Jev reads what you type and offers one route: the app you meant ("trains" → Trainline), the web, a one-line answer, your Ask app, or Spotify. Enter follows it. |
+| Tap Search | Spotlight: apps by name, a word's start or initials, and a typo forgiven ("spitify" finds Spotify). With an OpenRouter key (Settings → Jev), Jev reads what you type and offers one route: the app you meant ("trains" → Trainline), the web, a one-line answer, your Ask app, or Spotify. Enter follows it. Something you searched before comes back at once. |
 | Triple-tap the print, or long-press Search | Ask: Hermes when Hermes Live is installed and signed in (it answers over the print), otherwise Grok, ChatGPT, Gemini or Claude. Settings → Ask picks which. |
 | Swipe left on the print | Hermes chosen: a Hermes Live voice call; otherwise open the chosen AI app |
 | Swipe right on the print | Google Search |
-| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull further to scroll. Most used first. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. Long-press an icon in the sheet or search for app info. |
+| Drag the four icons up | App sheet — follows your finger. A short swipe peeks the most-used apps in thumb reach; pull further to scroll. Most used first. Other launchers stay out of the grid; search still finds them. Swipe an icon right to hide it. Long-press an icon in the sheet or search for its shortcuts (say, a new incognito tab or a recent chat; while Folio is your Home app) and App info. |
 | Long-press one of the four icons | Pick an app to pin in that slot. Long-press and drag to reorder. Settings → Reset pins: the four fill from use again. |
 | Swipe down on the print | Notification shade |
-| Double-tap the print | Next Bing photograph + next quote |
+| Double-tap the print | Next Bing photograph + next quote; on your own photos (Settings → Your photos), the next of them |
 | Long-press the print or the quote | Cycle Sound → Vibrate → Silent (sets the real ringer; media stays on). Next grade develops from your finger. |
-| Long-press the clock | Settings — pick your own photo here too. With Show clock off, long-press where it sat. |
+| Long-press the clock | Settings — pick your own photo here too, or up to 30 that take turns, one a day (Your photos). With Show clock off, long-press where it sat. |
 | Plug in | Hairline oval around the clock fills with charge. Green on Sound. Closed at 100%. Same oval when the battery is at 15% or below, even unplugged. |
 | Music | Previous / play / next above the four icons, always there. Tap play to pause, or to start Spotify if nothing is playing; long-press play opens the player (Spotify if there is none). |
 | Settings → Hidden apps | Unhide. |
 
-Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page; with an OpenRouter key, Jev picks the line that suits the photograph (only its Bing title and caption are sent). The print itself refreshes on the first unlock after midnight; Settings → Previous print goes back one.
+Quotes sit above the clock — one short line a day, from an on-device bank. A new Bing print turns the page; with an OpenRouter key, Jev picks the line that suits the photograph (only its Bing title and caption are sent). The print itself refreshes on the first unlock after midnight (a new Bing, or the next of your photos, offline); Settings → Previous print goes back one.
 
 ## Permissions
 
@@ -57,10 +57,10 @@ First launch: **Set as Home**. Today's Bing print loads itself. Then one **Allow
 
 | Access | When |
 |---|---|
-| Internet | Bing prints. With an OpenRouter key: searches that aren't an app's name (or that have a space), plus your app labels and package names, go to Jev; one-line answers come from DeepSeek V4.1 Flash. No key, no calls. With Hermes chosen, what you ask Hermes (in its overlay, or a search Jev routes there) goes to your own Hermes server, at the address Hermes Live hands over, only while that overlay is open; a plain-http Tailscale (`*.ts.net`) address is used only while Tailscale is on (Folio reads the phone's network state to check). Release builds also send crash reports, errors and start-up time (event names, codes, stack traces; tagged with app version, phone model, Android version and a random install ID; never what you type or say, answers or keys) to the maintainer's diagnostics endpoint, set at build time from the CI variable `FOLIO_DIAGNOSTICS_URL`; Settings → Diagnostics turns it off, and builds you make yourself send nothing. |
-| Photo picker | Settings → Choose photo. No broad storage. |
+| Internet | Bing prints (Bing's crop at the print's size, about 0.6–0.8 MB each; the 3.6 MB UHD original only if that fails). With an OpenRouter key: what you type in search goes to Jev with your app list (labels and package names, most-used first), and a one-line answer is written by DeepSeek V4.1 Flash from what you typed. Opening search sends OpenRouter one small request carrying only the key (at most once a minute), so the connection is open before you type. No key, no calls. With Hermes chosen, what you ask Hermes (in its overlay, or a search Jev routes there) goes to your own Hermes server, at the address Hermes Live hands over, only while that overlay is open, and only over https: Folio never uses a plain-http address (Settings → Hermes says so; set Hermes Live to your https address). Release builds also send crash reports, errors and start-up time (event names, codes, stack traces; tagged with app version, phone model, Android version and a random install ID; never what you type or say, answers or keys) to the maintainer's diagnostics endpoint, set at build time from the CI variable `FOLIO_DIAGNOSTICS_URL`; Settings → Diagnostics turns it off, and builds you make yourself send nothing. |
+| Photo picker | Settings → Choose photo, or Your photos (up to 30; Google Photos shows there when it's the picker's cloud app). Folio keeps its own print-sized copies, never access to your library. No broad storage. |
 | Do Not Disturb | Optional. Asked once at onboarding. Silent still *looks* silent if you deny, until the ringer changes. |
-| Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Last 30 days of opens. |
+| Usage access | Optional. Asked once at onboarding, or Settings → Better ranking. Recent opens (Android keeps about ten days), including before Folio. |
 | Notification access | Optional. Settings → Now playing. Needed for Spotify controls on the print. Folio's switch greyed out? Android 13+ restricts it for APKs installed from a browser or file manager: Settings → Apps → Folio → ⋮ → Allow restricted settings first. |
 
 ## Build
