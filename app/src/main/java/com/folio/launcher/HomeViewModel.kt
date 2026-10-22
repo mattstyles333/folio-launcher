@@ -43,7 +43,6 @@ import com.folio.launcher.hermes.HermesAsk
 import com.folio.launcher.hermes.HermesAskState
 import com.folio.launcher.hermes.HermesAvailability
 import com.folio.launcher.hermes.HermesLive
-import com.folio.launcher.hermes.Tailnet
 import com.folio.hermes.ApprovalChoice
 import com.folio.launcher.onboarding.AccessGrants
 import com.folio.launcher.onboarding.AccessScreen
@@ -121,14 +120,15 @@ class HomeViewModel(
         renewedConnection = { withContext(Dispatchers.IO) { hermesConnection(forceRefresh = true) } },
         loadSessionId = { prefsStore.data.first().hermesSessionId },
         saveSessionId = { id -> prefsStore.update { it.copy(hermesSessionId = id) } },
-        tailnet = Tailnet.of(app),
     )
 
     /** The Hermes Ask overlay: exchanges, tool line, approvals. */
     val hermes: StateFlow<HermesAskState> = hermesAsk.state
 
     private var hermesJob: Job? = null
-    private var hermesCheckedAt = 0L
+
+    /** When Hermes Live was last asked (elapsedRealtime); null until the first ask. */
+    private var hermesCheckedAt: Long? = null
 
     /** When system usage was last read (elapsedRealtime); null until the first read. */
     private var usageQueriedAt: Long? = null
@@ -496,10 +496,14 @@ class HomeViewModel(
         if (!HermesLive.open(host)) HermesLive.openReleases(host)
     }
 
-    /** Re-read whether Hermes Live is installed and signed in. Off the main thread; never blocks resume. */
+    /**
+     * Re-read whether Hermes Live is installed and signed in. Off the main thread; never blocks resume.
+     * A resume (not [force]) asks only while Hermes is out of reach or signed out, at most every few
+     * minutes ([HermesLive.resumeCheckDue]); Hermes Live announces sign-in and sign-out itself.
+     */
     fun refreshHermes(force: Boolean = true) {
         val now = SystemClock.elapsedRealtime()
-        if (!force && now - hermesCheckedAt < HERMES_RECHECK_MS) return
+        if (!force && !HermesLive.resumeCheckDue(extra.value.hermes, hermesCheckedAt, now)) return
         if (hermesJob?.isActive == true) return
         hermesCheckedAt = now
         hermesJob = viewModelScope.launch {
@@ -864,7 +868,6 @@ class HomeViewModel(
     companion object {
         private const val KEY_PENDING_ACCESS = "pending_access"
         private const val KEY_WALKING = "access_walking"
-        private const val HERMES_RECHECK_MS = 10_000L
         private const val USAGE_RECHECK_MS = 60_000L
         private const val JEV_PAUSE_MS = 60_000L
 

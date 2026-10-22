@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.app.Application
+import com.folio.launcher.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -15,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.xmlpull.v1.XmlPullParser
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
@@ -84,11 +86,49 @@ class HermesLiveTest {
         }
         assertEquals(HermesAvailability.Unreachable, HermesLive.availability(true, HermesConnection.from(down)))
         assertNull(HermesConnection.from(null))
-        // Out of reach is still signed in, so Hermes stays the Ask provider; only signed out (or not installed) drops it.
+        // Out of reach (or on plain http) is still signed in, so Hermes stays the Ask provider and says
+        // why; only signed out (or not installed) drops it.
         assertEquals(
-            listOf(HermesAvailability.Unreachable, HermesAvailability.Ready),
+            listOf(HermesAvailability.Unreachable, HermesAvailability.PlainHttp, HermesAvailability.Ready),
             HermesAvailability.entries.filter { it.signedIn },
         )
+    }
+
+    @Test
+    fun signedInToPlainHttp_isNeverReady() {
+        // A Tailscale name or address on plain http: HermesEndpoint takes it, Folio doesn't, token or not.
+        for (base in listOf("http://box.tail1234.ts.net:9119", "http://100.101.102.103:9119")) {
+            val plain = Bundle().apply {
+                putBoolean("signed_in", true)
+                putString("base_url", base)
+                putString("access_token", "fake-token")
+            }
+            assertEquals(base, HermesAvailability.PlainHttp, HermesLive.availability(true, HermesConnection.from(plain)))
+            plain.remove("access_token")
+            assertEquals(base, HermesAvailability.PlainHttp, HermesLive.availability(true, HermesConnection.from(plain)))
+            plain.putBoolean("signed_in", false)
+            assertEquals(base, HermesAvailability.SignedOut, HermesLive.availability(true, HermesConnection.from(plain)))
+        }
+    }
+
+    @Test
+    fun resumeAsksAgain_onlyOutOfReachOrSignedOut_atMostEveryFiveMinutes() {
+        val five = HermesLive.RESUME_RECHECK_MS
+        assertEquals(5 * 60_000L, five)
+        // Never asked yet: whatever the default says.
+        for (availability in HermesAvailability.entries) {
+            assertTrue("$availability", HermesLive.resumeCheckDue(availability, checkedAt = null, now = 5_000))
+        }
+        // Pushed when it changes (sign-in, sign-out, a package change), and asked as Settings or the overlay opens.
+        for (availability in listOf(HermesAvailability.Ready, HermesAvailability.NotInstalled, HermesAvailability.PlainHttp)) {
+            assertFalse("$availability", HermesLive.resumeCheckDue(availability, checkedAt = 5_000, now = 5_000 + 10 * five))
+        }
+        // Can end without a word: asked again, but not on every return home.
+        for (availability in listOf(HermesAvailability.Unreachable, HermesAvailability.SignedOut)) {
+            assertFalse("$availability", HermesLive.resumeCheckDue(availability, checkedAt = 5_000, now = 15_000))
+            assertFalse("$availability", HermesLive.resumeCheckDue(availability, checkedAt = 5_000, now = 4_999 + five))
+            assertTrue("$availability", HermesLive.resumeCheckDue(availability, checkedAt = 5_000, now = 5_000 + five))
+        }
     }
 
     @Test
@@ -109,6 +149,20 @@ class HermesLiveTest {
         // installed first: signature only, or any app could ask for the token.
         val declared = info.permissions.orEmpty().single { it.name == HermesLive.PERMISSION }
         assertEquals(PermissionInfo.PROTECTION_SIGNATURE, declared.protection)
+    }
+
+    @Test
+    fun noPlainHttpAnywhere_andNoNetworkStateToRead() {
+        // The network security config is the base rule alone: no domain gets plain http, ts.net included.
+        val parser = app.resources.getXml(R.xml.network_security_config)
+        val tags = mutableListOf<String>()
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.START_TAG) tags += parser.name
+        }
+        assertEquals(listOf("network-security-config", "base-config"), tags)
+        // Nothing checks for Tailscale any more, so Folio doesn't ask to see the network.
+        val info = app.packageManager.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
+        assertFalse(info.requestedPermissions.orEmpty().contains("android.permission.ACCESS_NETWORK_STATE"))
     }
 
     private companion object {

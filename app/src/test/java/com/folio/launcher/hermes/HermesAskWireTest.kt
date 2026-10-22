@@ -30,6 +30,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -44,12 +45,16 @@ import org.junit.Test
  * FakeHermesServer): Hermes Live's token reaches only Hermes Live's base URL, a turn streams into
  * the overlay state, an approval waits for the user's tap, and closing the overlay drops the socket
  * (and its cards); reopening reads how a cut-off turn ended without sending anything again.
- * The base URL is a `*.ts.net` name (the one cleartext HermesEndpoint allows) resolved to loopback,
- * with Tailscale up unless a test turns it off.
+ * The base URL is https, as Folio requires; the test's client carries each request for it to the
+ * dashboard on loopback, as plain http (a unit test has no certificate). A plain-http base URL is
+ * never dialled.
  */
 class HermesAskWireTest {
     private val server = MockWebServer()
     private val bearers = CopyOnWriteArrayList<String?>()
+
+    /** Every URL the gateway asked for, before the test's client carried it to loopback. */
+    private val dialled = CopyOnWriteArrayList<HttpUrl>()
     private val frames = LinkedBlockingQueue<JsonObject>()
     private val closed = LinkedBlockingQueue<Int>()
     private val responders = ConcurrentHashMap<String, (WebSocket, JsonElement, JsonObject) -> Unit>()
@@ -114,21 +119,15 @@ class HermesAskWireTest {
     private fun event(ws: WebSocket, type: String, sid: String, payload: String) =
         check(ws.send("""{"jsonrpc":"2.0","method":"event","params":{"type":"$type","session_id":"$sid","payload":$payload}}"""))
 
-    private fun live() = HermesConnection(true, "http://hermes.test.ts.net:${server.port}", "fake-token", expiresAtMs = Long.MAX_VALUE)
+    private fun live() = HermesConnection(true, LIVE_BASE, "fake-token", expiresAtMs = Long.MAX_VALUE)
 
-    /** Tailscale as HermesAsk asks about it; these tests dial loopback themselves, so nothing is bound. */
-    private class FakeTailnet : Tailnet {
-        @Volatile var up = true
-
-        override fun isUp() = up
-        override fun bind(base: OkHttpClient) = base
-    }
+    /** Hermes Live on plain http, at the dashboard's own port: were anything sent there, the server would see it. */
+    private fun plainHttp() = HermesConnection(true, "http://hermes.test.ts.net:${server.port}", "fake-token", expiresAtMs = Long.MAX_VALUE)
 
     /** [connectTimeoutMs]: how long a call waits for a socket, shortened where a test waits it out. */
     private fun hermesAsk(
         connection: suspend () -> HermesConnection? = { live() },
         renewed: suspend () -> HermesConnection? = connection,
-        tailnet: Tailnet = FakeTailnet(),
         connectTimeoutMs: Long? = null,
     ) = HermesAsk(
         parent = parent,
@@ -136,9 +135,16 @@ class HermesAskWireTest {
         renewedConnection = renewed,
         loadSessionId = { "" },
         saveSessionId = { saved += it },
-        tailnet = tailnet,
         gatewayFactory = { config, tokens, scope ->
-            val http = OkHttpClient.Builder().dns { listOf(InetAddress.getLoopbackAddress()) }.build()
+            val http = OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    val asked = chain.request().url
+                    dialled += asked
+                    val local = asked.newBuilder().scheme("http").port(server.port).build()
+                    chain.proceed(chain.request().newBuilder().url(local).build())
+                }
+                .dns { listOf(InetAddress.getLoopbackAddress()) }
+                .build()
             val tuned = connectTimeoutMs?.let { config.copy(connectTimeoutMs = it) } ?: config
             HermesGateway(tuned, tokens, http, scope).also { gateway = it }
         },
@@ -209,6 +215,9 @@ class HermesAskWireTest {
         assertEquals("Dry until four.", hermes.state.value.exchanges.single().reply)
         assertTrue(bearers.isNotEmpty())
         assertTrue(bearers.all { it == "Bearer fake-token" })
+        // Only ever Hermes Live's base URL, over https: the ticket, then the socket.
+        assertEquals(setOf("/api/auth/ws-ticket", "/api/ws"), dialled.map { it.encodedPath }.toSet())
+        assertTrue(dialled.all { it.toString().startsWith("$LIVE_BASE/") })
         val submit = generateSequence { frames.poll() }.first { (it["method"] as? JsonPrimitive)?.content == "prompt.submit" }
         assertEquals("Weather this afternoon?", submit["params"]!!.jsonObject["text"]!!.jsonPrimitive.content)
         until("stored id saved") { saved == listOf("stored-1") }
@@ -257,7 +266,7 @@ class HermesAskWireTest {
         assertTrue(bearers.size <= 2)
     }
 
-    /** Answers every request with a 401, as whatever answers the name off the tailnet might. */
+    /** Answers every request with a 401, as whatever answers a plain-http address on the way might. */
     private fun refusesEverything() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -269,46 +278,48 @@ class HermesAskWireTest {
     }
 
     @Test
-    fun offTheTailnet_nothingIsDialledAndNoRenewalIsAsked() = runBlocking {
+    fun plainHttp_nothingIsBuiltOrDialled_andNoRenewalIsAsked() = runBlocking {
         refusesEverything()
         val renewals = AtomicInteger()
-        val hermes = hermesAsk(renewed = { renewals.incrementAndGet(); live() }, tailnet = Tailnet.Off)
+        val hermes = hermesAsk(connection = { plainHttp() }, renewed = { renewals.incrementAndGet(); plainHttp() })
         withContext(main) { hermes.attach() }
-        until("told to turn on Tailscale") { hermes.state.value.error == LiveTokenProvider.TAILNET }
+        until("told to set the https address") { hermes.state.value.error == LiveTokenProvider.PLAIN_HTTP }
         withContext(main) { hermes.ask("Anything new?") }
         until("question failed") { hermes.state.value.exchanges.singleOrNull()?.status == ExchangeStatus.Failed }
-        assertEquals(LiveTokenProvider.TAILNET, hermes.state.value.exchanges.single().note)
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, hermes.state.value.exchanges.single().note)
         delay(200)
         assertNull("no gateway built", gateway)
         assertEquals(0, server.requestCount)
         assertEquals(0, renewals.get())
+        assertTrue(dialled.isEmpty())
     }
 
     @Test
-    fun tailscaleOffMidSession_theReconnectSendsNoTokenAndAsksNoRenewal() = runBlocking {
-        val tailnet = FakeTailnet()
+    fun hermesLiveMovedToPlainHttpMidSession_theReconnectSendsNoTokenAndAsksNoRenewal() = runBlocking {
+        val onPlainHttp = AtomicBoolean(false)
         val renewals = AtomicInteger()
-        val hermes = hermesAsk(renewed = { renewals.incrementAndGet(); live() }, tailnet = tailnet)
+        val current: suspend () -> HermesConnection? = { if (onPlainHttp.get()) plainHttp() else live() }
+        val hermes = hermesAsk(connection = current, renewed = { renewals.incrementAndGet(); current() })
         withContext(main) { hermes.attach() }
         until("connected") { gateway?.connection?.value is GatewayConnection.Ready }
         val requests = server.requestCount
-        // Tailscale goes off and the socket drops; a 401 here would have asked Hermes Live to renew.
-        tailnet.up = false
+        // Hermes Live is pointed at plain http and the socket drops; a 401 here would have asked Hermes Live to renew.
+        onPlainHttp.set(true)
         refusesEverything()
         socket.close(1001, "restart")
-        until("held back off the tailnet") {
-            (gateway?.connection?.value as? GatewayConnection.Waiting)?.reason == LiveTokenProvider.TAILNET
-        }
-        // The overlay says what to do, not just that Hermes can't be reached.
-        until("told to turn on Tailscale") { hermes.state.value.error == LiveTokenProvider.TAILNET }
+        // It stops instead of retrying: only another address in Hermes Live can fix it.
+        until("stopped") { (gateway?.connection?.value as? GatewayConnection.Stopped)?.reason == LiveTokenProvider.PLAIN_HTTP }
+        // The overlay says what to change, not just that Hermes can't be reached.
+        until("told to set the https address") { hermes.state.value.error == LiveTokenProvider.PLAIN_HTTP }
         assertEquals(requests, server.requestCount)
         assertEquals(0, renewals.get())
-        // A question says what to do instead of waiting for a socket.
+        // A question says so too, and sends nothing.
         withContext(main) { hermes.ask("Still there?") }
         until("question failed") { hermes.state.value.exchanges.singleOrNull()?.status == ExchangeStatus.Failed }
-        assertEquals(LiveTokenProvider.TAILNET, hermes.state.value.exchanges.single().note)
+        assertEquals(LiveTokenProvider.PLAIN_HTTP, hermes.state.value.exchanges.single().note)
         assertEquals(requests, server.requestCount)
         assertEquals(0, renewals.get())
+        assertTrue(dialled.all { it.isHttps })
     }
 
     /** Asks "Catch me up", which streams a first chunk, then closes the overlay mid-turn. */
@@ -507,5 +518,10 @@ class HermesAskWireTest {
         }
         socket.close(1001, "restart")
         until("connection line shown") { hermes.state.value.error == LiveTokenProvider.REFUSED }
+    }
+
+    private companion object {
+        /** Hermes Live's base URL in these tests. */
+        const val LIVE_BASE = "https://hermes.test"
     }
 }
